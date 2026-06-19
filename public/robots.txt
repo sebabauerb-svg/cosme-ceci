@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://cgcosmetologiamedica.uy/sitemap-index.xml
+Sitemap: https://cosme-ceci.vercel.app/sitemap-index.xml
