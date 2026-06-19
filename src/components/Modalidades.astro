@@ -1,0 +1,98 @@
+---
+import { modalidades } from '../data/modalidades';
+import { whatsappLink } from '../data/site';
+---
+
+<section class="section section--alt" id="modalidades">
+  <div class="container">
+    <div class="mod__head reveal">
+      <span class="eyebrow">Modalidades de atención</span>
+      <h2>Cuatro formas de cuidar tu piel</h2>
+      <p class="lead mx-auto text-center">
+        El cuidado de la piel ocurre en dos planos: el abordaje clínico en camilla y la
+        disciplina diaria en casa. Estas modalidades articulan ambos, según tu estilo de vida
+        y tus objetivos.
+      </p>
+    </div>
+
+    <div class="mod__grid">
+      {modalidades.map((m) => {
+        // El Club tiene su propia sección detallada más abajo: la tarjeta lleva ahí.
+        const esClub = m.id === 'club';
+        const href = esClub
+          ? '#club'
+          : whatsappLink(`Hola Ceci! Me interesa ${m.nombre}. ¿Cómo coordinamos?`);
+        return (
+          <article class={`card mod__card reveal ${m.destacado ? 'mod__card--feat' : ''}`}>
+            <header class="mod__top">
+              <h3>{m.nombre}</h3>
+              <p class="mod__sub">{m.subtitulo}</p>
+            </header>
+
+            <p class="mod__desc">{m.descripcion}</p>
+
+            <p class="mod__alcance"><strong>Incluye:</strong> {m.alcance}</p>
+
+            <div class="mod__foot">
+              <div class="mod__precio">
+                {m.precio && <span class="mod__monto">{m.precio}</span>}
+                {m.precioNota && <span class="mod__nota">{m.precioNota}</span>}
+              </div>
+              <a
+                href={href}
+                class={`btn ${m.destacado ? 'btn--primary' : 'btn--ghost'}`}
+                {...(esClub ? {} : { target: '_blank', rel: 'noopener' })}
+              >
+                {m.ctaTexto}
+              </a>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  </div>
+</section>
+
+<style>
+  .mod__head { text-align: center; max-width: 760px; margin-inline: auto; }
+  .mod__head h2 { margin: 0.4rem 0 1rem; }
+  .mod__grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    margin-top: 3rem;
+  }
+  .mod__card { display: flex; flex-direction: column; }
+  .mod__card--feat { border-color: var(--sage); box-shadow: var(--shadow); }
+  .mod__top { margin-bottom: 1rem; }
+  .mod__sub {
+    color: var(--sage-deep);
+    font-weight: 600;
+    font-size: 0.92rem;
+    margin-top: 0.2rem;
+  }
+  .mod__desc { margin-bottom: 1rem; }
+  .mod__alcance {
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+    background: var(--cream);
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 1.4rem;
+  }
+  .mod__alcance strong { color: var(--ink); }
+  .mod__foot {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .mod__precio { display: flex; flex-direction: column; }
+  .mod__monto { font-family: var(--font-serif); font-size: 1.7rem; color: var(--ink); }
+  .mod__nota { font-size: 0.82rem; color: var(--ink-soft); max-width: 22ch; }
+  @media (max-width: 760px) {
+    .mod__grid { grid-template-columns: 1fr; }
+  }
+</style>

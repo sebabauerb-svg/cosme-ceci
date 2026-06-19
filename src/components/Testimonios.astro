@@ -1,0 +1,79 @@
+---
+// CONFIRMAR: testimonios de ejemplo. Reemplazar por testimonios reales de pacientes
+// (con su autorización). Foco en la experiencia, la personalización y el trato.
+const testimonios = [
+  {
+    texto:
+      'Lo que más valoro es que no me ofreció todo de una. Primero evaluó mi piel y recién ' +
+      'ahí armó un plan. Se nota el criterio profesional detrás de cada paso.',
+    autora: 'Carolina M.',
+    detalle: 'Montevideo',
+  },
+  {
+    texto:
+      'Venía probando cosas sin rumbo. Ceci me ordenó la rutina y me explicó el porqué de cada ' +
+      'producto. Por primera vez entiendo lo que le pasa a mi piel.',
+    autora: 'Valentina S.',
+    detalle: 'San José',
+  },
+  {
+    texto:
+      'La atención es súper cuidada y personalizada. Te sentís acompañada en todo el proceso, ' +
+      'no es un tratamiento más en serie.',
+    autora: 'Lucía P.',
+    detalle: 'Montevideo',
+  },
+];
+---
+
+<section class="section">
+  <div class="container">
+    <div class="testi__head reveal">
+      <h2>Atención cercana, resultados cuidados</h2>
+    </div>
+    <div class="testi__grid">
+      {testimonios.map((t) => (
+        <figure class="card testi__card reveal">
+          <blockquote>“{t.texto}”</blockquote>
+          <figcaption>
+            <span class="testi__ava" aria-hidden="true">{t.autora.charAt(0)}</span>
+            <span class="testi__by">
+              <strong>{t.autora}</strong>
+              <span>{t.detalle}</span>
+            </span>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .testi__head { text-align: center; margin-bottom: 3rem; }
+  .testi__head h2 { margin-top: 0.4rem; }
+  .testi__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+  .testi__card { display: flex; flex-direction: column; gap: 1.2rem; }
+  .testi__card blockquote {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    line-height: 1.45;
+    color: var(--ink);
+  }
+  .testi__card figcaption { display: flex; align-items: center; gap: 0.8rem; }
+  .testi__ava {
+    flex: none;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    color: var(--cream);
+    background: linear-gradient(150deg, var(--sage), var(--clay));
+  }
+  .testi__by { display: flex; flex-direction: column; }
+  .testi__card strong { color: var(--ink); }
+  .testi__by span { font-size: 0.88rem; color: var(--ink-soft); }
+  @media (max-width: 860px) {
+    .testi__grid { grid-template-columns: 1fr; }
+  }
+</style>

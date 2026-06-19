@@ -1,0 +1,240 @@
+/* ============================================================
+   SKINCARE INTELIGENTE — Sistema de diseño
+   Paleta natural y premium: salvia, arcilla y crema.
+   Transmite calma, criterio clínico y confianza, sin caer en
+   el rosa cliché. Tipografía: Fraunces (serif) + Inter (sans).
+   ============================================================ */
+
+:root {
+  /* Color */
+  --ink: #2a302b;          /* texto principal, verde-carbón */
+  --ink-soft: #55605a;     /* texto secundario */
+  --cream: #faf6f0;        /* fondo principal */
+  --cream-deep: #f3ece1;   /* fondo de secciones alternas */
+  --sand: #e7dccd;         /* bordes suaves, tarjetas */
+  --sage: #6e7f6a;         /* acento primario */
+  --sage-deep: #4f5d4c;    /* acento oscuro, hovers */
+  --clay: #c0805f;         /* acento cálido / CTA */
+  --clay-deep: #a76a4b;
+  --white: #ffffff;
+  --shadow: 18px 18px 50px -28px rgba(42, 48, 43, 0.35);
+
+  /* Tipografía */
+  --font-serif: 'Fraunces', 'Georgia', serif;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Medidas */
+  --maxw: 1120px;
+  --radius: 18px;
+  --radius-sm: 10px;
+  --space: clamp(4rem, 9vw, 7.5rem);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--cream);
+  line-height: 1.65;
+  font-size: 1.05rem;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+h1 { font-size: clamp(2.4rem, 6vw, 4rem); }
+h2 { font-size: clamp(1.9rem, 4.2vw, 2.9rem); }
+h3 { font-size: clamp(1.25rem, 2.4vw, 1.6rem); }
+
+p { color: var(--ink-soft); }
+
+a { color: inherit; text-decoration: none; }
+
+img { max-width: 100%; display: block; }
+
+/* Layout helpers */
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: clamp(1.25rem, 5vw, 2.5rem);
+}
+
+.section {
+  padding-block: var(--space);
+  /* Evita que el nav fijo tape el título al saltar a una sección con ancla */
+  scroll-margin-top: 88px;
+}
+
+.section--alt {
+  background: var(--cream-deep);
+}
+
+.eyebrow {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sage-deep); /* contraste AA: sage-deep llega a ~6.4:1 sobre crema */
+  margin-bottom: 1rem;
+}
+
+.lead {
+  font-size: clamp(1.05rem, 1.6vw, 1.22rem);
+  color: var(--ink-soft);
+  max-width: 60ch;
+}
+
+/* Botones */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.9rem 1.6rem;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, color 0.18s ease,
+    box-shadow 0.18s ease;
+  text-align: center;
+}
+.btn:hover { transform: translateY(-2px); }
+
+.btn--primary {
+  background: var(--clay);
+  color: var(--white);
+  box-shadow: 0 10px 24px -12px rgba(167, 106, 75, 0.8);
+}
+.btn--primary:hover { background: var(--clay-deep); }
+
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--sand);
+}
+.btn--ghost:hover { border-color: var(--sage); color: var(--sage-deep); }
+
+.btn--wa {
+  background: #25d366;
+  color: #06351a;
+}
+.btn--wa:hover { background: #1fb858; }
+
+/* Tarjetas */
+.card {
+  background: var(--white);
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  padding: clamp(1.5rem, 3vw, 2.25rem);
+}
+
+/* Salto al contenido (accesibilidad) */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--cream);
+  padding: 0.6rem 1rem;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-weight: 600;
+  transition: top 0.18s ease;
+}
+.skip-link:focus { top: 0; }
+
+/* Animación de entrada al hacer scroll.
+   Curva ease-out-quint para un asentamiento suave (sin rebote). */
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+/* Stagger: aplicar a hijos de una grilla para que entren escalonados */
+.stagger > *:nth-child(2) { --reveal-delay: 80ms; }
+.stagger > *:nth-child(3) { --reveal-delay: 160ms; }
+.stagger > *:nth-child(4) { --reveal-delay: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .btn:hover { transform: none; }
+  .hero__copy > * { animation: none !important; opacity: 1 !important; transform: none !important; }
+}
+
+/* Selección y foco: detalle de marca + accesibilidad */
+::selection {
+  background: var(--sage);
+  color: var(--cream);
+}
+:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Placeholder de imagen: tile elegante para slots de foto aún vacíos */
+.media-ph {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(150deg, var(--sand), var(--cream-deep)),
+    var(--cream-deep);
+  border: 1px dashed color-mix(in srgb, var(--sage) 55%, transparent);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: var(--sage-deep);
+  gap: 0.2rem;
+  overflow: hidden;
+}
+.media-ph::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120px 120px at 70% 20%, rgba(192, 128, 95, 0.16), transparent 70%);
+}
+.media-ph span { font-family: var(--font-serif); font-size: 1.05rem; position: relative; }
+.media-ph small { font-size: 0.78rem; opacity: 0.75; position: relative; }
+
+/* Utilidades */
+.text-center { text-align: center; }
+.mx-auto { margin-inline: auto; }
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0);
+  white-space: nowrap; border: 0;
+}

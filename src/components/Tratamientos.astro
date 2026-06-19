@@ -1,0 +1,105 @@
+---
+import { categoriasTratamientos } from '../data/tratamientos';
+import { whatsappLink } from '../data/site';
+---
+
+<section class="section" id="tratamientos">
+  <div class="container">
+    <div class="trat__head reveal">
+      <span class="eyebrow">Tratamientos</span>
+      <h2>Protocolos clínicos, faciales y corporales</h2>
+      <p class="lead mx-auto text-center">
+        Cada procedimiento se indica según el diseño final de tu tratamiento. El valor
+        definitivo se define en la consulta de valoración, para que pagues exactamente por lo
+        que tu piel necesita.
+      </p>
+    </div>
+
+    <div class="trat__cats">
+      {categoriasTratamientos.map((cat) => (
+        <div class="trat__cat reveal">
+          <div class="trat__catHead">
+            <span class="trat__grupo">{cat.grupo}</span>
+            <h3>{cat.titulo}</h3>
+            <p>{cat.intro}</p>
+          </div>
+          <ul class="trat__list">
+            {cat.tratamientos.map((t) => (
+              <li>
+                <h4>{t.nombre}</h4>
+                <p>{t.descripcion}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+
+    <div class="trat__cta reveal">
+      <p>¿No sabés cuál es para vos? Lo definimos juntas en tu consulta de valoración.</p>
+      <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
+        Agendá tu valoración
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .trat__head { text-align: center; max-width: 760px; margin-inline: auto; }
+  .trat__head h2 { margin: 0.4rem 0 1rem; }
+  .trat__cats { display: grid; gap: 2.5rem; margin-top: 3rem; }
+  .trat__cat {
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 2rem;
+    align-items: start;
+    padding-top: 2rem;
+    border-top: 1px solid var(--sand);
+  }
+  .trat__cat:first-child { border-top: 0; padding-top: 0; }
+  .trat__grupo {
+    font-size: 0.74rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--clay);
+    font-weight: 600;
+  }
+  .trat__catHead h3 { margin: 0.4rem 0 0.6rem; }
+  .trat__catHead p { font-size: 0.95rem; }
+  .trat__catHead { position: sticky; top: 100px; }
+  .trat__list {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.1rem;
+  }
+  .trat__list li {
+    background: var(--white);
+    border: 1px solid var(--sand);
+    border-radius: var(--radius-sm);
+    padding: 1.2rem;
+  }
+  .trat__list h4 {
+    font-family: var(--font-serif);
+    font-size: 1.08rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+    color: var(--ink);
+  }
+  .trat__list p { font-size: 0.92rem; }
+  .trat__cta {
+    margin-top: 3rem;
+    text-align: center;
+    display: grid;
+    gap: 1.2rem;
+    justify-items: center;
+  }
+  .trat__cta p { font-size: 1.05rem; color: var(--ink); }
+  @media (max-width: 860px) {
+    .trat__cat { grid-template-columns: 1fr; gap: 1.2rem; }
+    .trat__catHead { position: static; }
+  }
+  @media (max-width: 560px) {
+    .trat__list { grid-template-columns: 1fr; }
+  }
+</style>

@@ -1,0 +1,81 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import WhatsappFloat from '../components/WhatsappFloat.astro';
+import { site } from '../data/site';
+
+const marca = `${site.marca.nombre} · ${site.marca.subtitulo}`;
+// Nota: texto base orientativo. Conviene que un asesor legal en Uruguay lo valide
+// antes de publicar (especialmente lo relativo al alcance profesional).
+---
+
+<Base title="Aviso legal" path="/aviso-legal">
+  <Nav />
+  <main class="legal">
+    <div class="container">
+      <span class="eyebrow">Información</span>
+      <h1>Aviso legal</h1>
+
+      <section>
+        <h2>1. Sobre este espacio</h2>
+        <p>
+          {marca} es un espacio de cosmetología médica orientado al cuidado profesional de la
+          piel. Cada tratamiento se indica a partir de una evaluación profesional y se diseña
+          de forma personalizada según las necesidades de cada paciente.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Valores y protocolos</h2>
+        <p>
+          Los valores publicados son de referencia y pueden variar según el diseño final del
+          tratamiento, el estado de la piel en consulta, los activos seleccionados y la
+          combinación de tecnologías. El valor definitivo se confirma en la consulta de
+          valoración. Los paquetes de sesiones son personales, intransferibles y tienen una
+          vigencia de uso definida al momento de la contratación.
+        </p>
+      </section>
+
+      <section>
+        <h2>3. Derivación responsable</h2>
+        <p>
+          Ante cualquier signo o condición que requiera atención médica, se recomendará la
+          consulta con el profesional médico correspondiente. El cuidado cosmético acompaña la
+          salud de la piel, sin reemplazar el diagnóstico ni el tratamiento médico cuando este
+          sea necesario.
+        </p>
+      </section>
+
+      <section>
+        <h2>4. Privacidad</h2>
+        <p>
+          La información y las fotografías que compartas se utilizan únicamente para tu
+          evaluación y seguimiento profesional, y se tratan de forma confidencial.
+        </p>
+      </section>
+
+      <p class="legal__nota">
+        Última actualización: junio 2026. Texto orientativo, sujeto a revisión por un asesor
+        legal habilitado en Uruguay.
+      </p>
+    </div>
+  </main>
+  <Footer />
+  <WhatsappFloat />
+</Base>
+
+<style>
+  .legal { padding-block: clamp(3rem, 7vw, 5rem); }
+  .legal h1 { margin: 0.4rem 0 2rem; }
+  .legal section { margin-bottom: 2rem; max-width: 72ch; }
+  .legal h2 { font-size: 1.4rem; margin-bottom: 0.7rem; }
+  .legal p { margin-bottom: 0.8rem; }
+  .legal__nota {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--sand);
+    font-size: 0.88rem;
+    font-style: italic;
+  }
+</style>

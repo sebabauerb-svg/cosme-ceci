@@ -1,0 +1,62 @@
+---
+import { imagenes } from '../data/imagenes';
+
+// Tomamos hasta 3 slots para la composición. Cada uno puede tener foto o placeholder.
+const slots = imagenes.espacio.slice(0, 3);
+while (slots.length < 3) slots.push({ src: '', alt: '' });
+const medidas = ['≈ 1000 × 1250', '≈ 1000 × 800', '≈ 1000 × 800'];
+---
+
+<section class="section esp" id="espacio">
+  <div class="container">
+    <div class="esp__head reveal">
+      <span class="eyebrow">El espacio</span>
+      <h2>Un lugar pensado para tu piel</h2>
+      <p class="lead">
+        Atención boutique: exclusiva, pausada y minuciosamente personalizada. Un espacio
+        cuidado donde cada detalle acompaña el cuidado de tu piel.
+      </p>
+    </div>
+
+    <div class="esp__grid reveal">
+      {slots.map((img, i) => (
+        <figure class={`esp__cell esp__cell--${i}`}>
+          {img.src ? (
+            <img src={img.src} alt={img.alt} loading="lazy" decoding="async" />
+          ) : (
+            <div class="media-ph">
+              <span>Imagen del espacio</span>
+              <small>{medidas[i]} px</small>
+            </div>
+          )}
+        </figure>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .esp__head { max-width: 620px; }
+  .esp__head h2 { margin: 0.4rem 0 1rem; }
+  .esp__grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 1.25rem;
+    margin-top: 3rem;
+    min-height: 460px;
+  }
+  .esp__cell {
+    margin: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .esp__cell--0 { grid-row: 1 / 3; }
+  .esp__cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .esp__cell .media-ph { min-height: 200px; }
+  @media (max-width: 720px) {
+    .esp__grid { grid-template-columns: 1fr 1fr; grid-template-rows: auto; min-height: 0; }
+    .esp__cell--0 { grid-row: auto; grid-column: 1 / 3; aspect-ratio: 16 / 10; }
+    .esp__cell--1, .esp__cell--2 { aspect-ratio: 1 / 1; }
+  }
+</style>

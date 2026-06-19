@@ -1,0 +1,53 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import WhatsappFloat from '../../components/WhatsappFloat.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => data.publicado);
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const fmt = (d: Date) =>
+  d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Base title={post.data.titulo} description={post.data.descripcion} path={`/blog/${post.id}`}>
+  <Nav />
+  <main class="post">
+    <article class="container">
+      <a class="post__back" href="/blog">← Volver al blog</a>
+      <time datetime={post.data.fecha.toISOString()}>{fmt(post.data.fecha)} · {post.data.autora}</time>
+      <h1>{post.data.titulo}</h1>
+      <div class="post__body">
+        <Content />
+      </div>
+    </article>
+  </main>
+  <Footer />
+  <WhatsappFloat />
+</Base>
+
+<style>
+  .post { padding-block: clamp(3rem, 7vw, 5rem); }
+  .post article { max-width: 70ch; }
+  .post__back { color: var(--sage-deep); font-weight: 600; font-size: 0.92rem; }
+  .post time { display: block; margin: 1.5rem 0 0.5rem; font-size: 0.88rem; color: var(--ink-soft); }
+  .post h1 { margin-bottom: 1.5rem; }
+  .post__body :global(h2) { font-size: 1.5rem; margin: 2rem 0 0.8rem; }
+  .post__body :global(p) { margin-bottom: 1.1rem; }
+  .post__body :global(blockquote) {
+    padding: 1.2rem 1.4rem;
+    margin: 1.5rem 0;
+    font-style: italic;
+    color: var(--ink);
+    background: var(--cream-deep);
+    border-radius: var(--radius-sm);
+  }
+  .post__body :global(hr) { border: 0; border-top: 1px solid var(--sand); margin: 2rem 0; }
+  .post__body :global(a) { color: var(--clay-deep); text-decoration: underline; }
+</style>

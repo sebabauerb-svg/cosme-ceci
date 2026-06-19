@@ -1,0 +1,74 @@
+---
+const pasos = [
+  {
+    n: '01',
+    titulo: 'Evaluación profesional',
+    texto:
+      'Cada tratamiento comienza con una consulta. Analizamos el estado actual de tu piel, ' +
+      'tus antecedentes, tu rutina domiciliaria y tus objetivos a corto y largo plazo.',
+  },
+  {
+    n: '02',
+    titulo: 'Protocolo individualizado',
+    texto:
+      'A partir de esa valoración diseño un protocolo a tu medida, que puede incluir uno o ' +
+      'varios procedimientos, considerando lo que tu piel realmente necesita.',
+  },
+  {
+    n: '03',
+    titulo: 'Acompañamiento en el tiempo',
+    texto:
+      'La piel cambia con las estaciones, los hábitos y cada etapa de la vida. Te acompaño con ' +
+      'ajustes y seguimiento para sostener su salud y equilibrio a largo plazo.',
+  },
+];
+---
+
+<section class="section" id="forma-de-trabajar">
+  <div class="container">
+    <div class="cf__head reveal">
+      <h2>Primero entender tu piel. Después, tratarla.</h2>
+      <p class="lead">
+        Porque no todas las pieles necesitan lo mismo, cada protocolo nace de una valoración
+        profesional. Ahí está la diferencia.
+      </p>
+    </div>
+
+    <ol class="cf__steps">
+      {pasos.map((p) => (
+        <li class="cf__step reveal">
+          <span class="cf__num">{p.n}</span>
+          <div>
+            <h3>{p.titulo}</h3>
+            <p>{p.texto}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .cf__head { max-width: 680px; }
+  .cf__head h2 { margin: 0.4rem 0 1rem; }
+  .cf__steps {
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-top: 3rem;
+  }
+  .cf__step { padding-top: 1.5rem; border-top: 2px solid var(--sand); }
+  .cf__num {
+    font-family: var(--font-serif);
+    font-size: 2.4rem;
+    color: var(--clay);
+    display: block;
+    margin-bottom: 0.6rem;
+    line-height: 1;
+  }
+  .cf__step h3 { margin-bottom: 0.5rem; }
+  @media (max-width: 760px) {
+    .cf__steps { grid-template-columns: 1fr; }
+  }
+</style>

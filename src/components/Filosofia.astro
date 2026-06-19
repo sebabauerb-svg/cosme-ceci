@@ -1,0 +1,64 @@
+---
+const pilares = [
+  {
+    titulo: 'Personalización',
+    texto: 'Cada piel es única y requiere un enfoque exclusivo. Nada de protocolos en serie.',
+  },
+  {
+    titulo: 'Seguridad',
+    texto: 'Protocolos adaptados y fundamentados en criterios profesionales y evidencia.',
+  },
+  {
+    titulo: 'Resultados',
+    texto: 'Mejorar la calidad cutánea respetando siempre su equilibrio biológico.',
+  },
+];
+---
+
+<section class="section section--alt" id="filosofia">
+  <div class="container">
+    <div class="filo__head reveal">
+      <h2>Cada piel cuenta una historia diferente</h2>
+      <p class="lead mx-auto text-center">
+        Mi trabajo empieza escuchando, observando y comprendiendo las necesidades específicas
+        de cada paciente antes de indicar cualquier tratamiento. La Cosmetología Médica actual
+        no consiste en aplicar procedimientos estandarizados, sino en diseñar estrategias
+        personalizadas para mejorar la salud, calidad y apariencia de la piel de forma segura
+        y progresiva.
+      </p>
+    </div>
+
+    <div class="filo__grid stagger">
+      {pilares.map((p) => (
+        <div class="filo__pilar reveal">
+          <span class="filo__dot" aria-hidden="true"></span>
+          <h3>{p.titulo}</h3>
+          <p>{p.texto}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .filo__head { text-align: center; max-width: 760px; margin-inline: auto; }
+  .filo__head h2 { margin: 0.4rem 0 1.2rem; }
+  .filo__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin-top: 3rem;
+  }
+  .filo__pilar { padding-top: 1.4rem; border-top: 1px solid var(--sand); }
+  .filo__dot {
+    display: block;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(150deg, var(--sage), var(--clay));
+    margin-bottom: 1rem;
+  }
+  .filo__pilar h3 { margin-bottom: 0.5rem; }
+  @media (max-width: 760px) {
+    .filo__grid { grid-template-columns: 1fr; }
+  }
+</style>

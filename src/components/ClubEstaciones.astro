@@ -1,0 +1,139 @@
+---
+import { club } from '../data/club';
+import { whatsappLink } from '../data/site';
+---
+
+<section class="section club" id="club">
+  <div class="container">
+    <div class="club__head reveal">
+      <span class="eyebrow">{club.subtitulo}</span>
+      <h2>{club.nombre}</h2>
+      <p class="lead mx-auto text-center">{club.intro}</p>
+      <a
+        class="club__more"
+        href={whatsappLink('Hola Ceci! Me gustaría saber más sobre el Club de las Estaciones.')}
+        target="_blank"
+        rel="noopener"
+      >
+        Quiero saber más →
+      </a>
+    </div>
+
+    <div class="club__estaciones">
+      {club.estaciones.map((e) => (
+        <div class="club__est reveal">
+          <span class="club__estName">{e.nombre}</span>
+          <p>{e.texto}</p>
+        </div>
+      ))}
+    </div>
+
+    <div class="club__plan reveal">
+      <div class="club__incluye">
+        <h3>Qué incluye tu membresía</h3>
+        <ul>
+          {club.incluye.map((i) => (
+            <li><span aria-hidden="true">✓</span> {i}</li>
+          ))}
+        </ul>
+        <p class="club__nota">{club.nota}</p>
+      </div>
+
+      <aside class="club__precio">
+        <span class="club__monto">{club.precio}</span>
+        <span class="club__periodo">{club.precioPeriodo}</span>
+        <span class="club__cuotas">{club.cuotas}</span>
+        <a
+          href={whatsappLink('Hola Ceci! Me interesa el Club de las Estaciones. ¿Me contás los planes?')}
+          class="btn btn--primary"
+          target="_blank"
+          rel="noopener"
+        >
+          {club.cta}
+        </a>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<style>
+  .club {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .club :global(.eyebrow) { color: var(--clay); }
+  .club h2 { color: var(--cream); }
+  .club__head { text-align: center; max-width: 720px; margin-inline: auto; }
+  .club__head h2 { margin: 0.4rem 0 1rem; }
+  .club__head :global(.lead) { color: var(--sand); }
+  .club__more {
+    display: inline-block;
+    margin-top: 1.4rem;
+    color: var(--cream);
+    font-weight: 600;
+    border-bottom: 1.5px solid var(--clay);
+    padding-bottom: 2px;
+    transition: color 0.18s ease, border-color 0.18s ease;
+  }
+  .club__more:hover { color: var(--clay); border-color: var(--cream); }
+
+  .club__estaciones {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-top: 3rem;
+  }
+  .club__est {
+    background: rgba(250, 246, 240, 0.05);
+    border: 1px solid rgba(250, 246, 240, 0.14);
+    border-radius: var(--radius-sm);
+    padding: 1.3rem;
+  }
+  .club__estName {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    color: var(--cream);
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+  .club__est p { color: var(--sand); font-size: 0.92rem; }
+
+  .club__plan {
+    display: grid;
+    grid-template-columns: 1.4fr 0.6fr;
+    gap: 2rem;
+    margin-top: 2rem;
+    align-items: center;
+    background: rgba(250, 246, 240, 0.05);
+    border: 1px solid rgba(250, 246, 240, 0.14);
+    border-radius: var(--radius);
+    padding: clamp(1.5rem, 4vw, 2.5rem);
+  }
+  .club__incluye h3 { color: var(--cream); margin-bottom: 1.1rem; }
+  .club__incluye ul { list-style: none; display: grid; gap: 0.8rem; margin-bottom: 1.4rem; }
+  .club__incluye li { display: flex; gap: 0.7rem; color: var(--cream); }
+  .club__incluye span { color: var(--sage); font-weight: 700; flex: none; }
+  .club__nota { color: var(--sand); font-size: 0.9rem; opacity: 0.85; }
+
+  .club__precio {
+    text-align: center;
+    background: var(--cream);
+    border-radius: var(--radius);
+    padding: 1.8rem 1.4rem;
+    display: grid;
+    gap: 0.25rem;
+    justify-items: center;
+  }
+  .club__monto { font-family: var(--font-serif); font-size: 2.6rem; color: var(--ink); line-height: 1; }
+  .club__periodo { color: var(--ink-soft); font-size: 0.95rem; }
+  .club__cuotas { color: var(--ink-soft); font-size: 0.85rem; margin: 0.4rem 0 1rem; max-width: 22ch; }
+  .club__precio .btn { width: 100%; justify-content: center; }
+
+  @media (max-width: 860px) {
+    .club__estaciones { grid-template-columns: repeat(2, 1fr); }
+    .club__plan { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 460px) {
+    .club__estaciones { grid-template-columns: 1fr; }
+  }
+</style>

@@ -1,0 +1,91 @@
+---
+const faqs = [
+  {
+    q: '¿Atendés presencial y online?',
+    a:
+      'Sí. La atención presencial es en Montevideo y San José. La Consulta Virtual está pensada ' +
+      'para quienes están fuera de esas zonas o buscan un seguimiento continuo desde su casa, ' +
+      'con el mismo rigor profesional.',
+  },
+  {
+    q: '¿Cómo es la primera consulta?',
+    a:
+      'Es una evaluación clínica completa: analizamos el estado de tu piel, tus antecedentes y ' +
+      'objetivos, armamos tu historia clínica estética y diseñamos tu primer protocolo ' +
+      'personalizado. Tiene un valor de $1.800, que se bonifica si contratás un protocolo el ' +
+      'mismo día.',
+  },
+  {
+    q: '¿Por qué los tratamientos no tienen un precio fijo en la web?',
+    a:
+      'Porque cada protocolo se diseña a medida. El estado de tu piel, los activos elegidos y la ' +
+      'combinación de tecnologías definen el valor final, para que pagues exactamente por lo que ' +
+      'tu piel necesita. El detalle se conversa en la consulta.',
+  },
+  {
+    q: '¿Qué es el Asesoramiento Skincare Inteligente?',
+    a:
+      'Es una modalidad enfocada en el consumo consciente: revisamos los productos que ya tenés, ' +
+      'corregimos errores de aplicación, eliminamos pasos redundantes y reordenamos tu rutina ' +
+      'para sacarle el máximo provecho a tu inversión actual.',
+  },
+  {
+    q: '¿Qué es el Club de las Estaciones?',
+    a:
+      'Una membresía anual de cuidado evolutivo: incluye una consulta diagnóstica en cada cambio ' +
+      'de estación para reevaluar tu piel y adaptar tu recetario domiciliario. Cuidado ' +
+      'preventivo y fundamentado durante todo el año.',
+  },
+];
+---
+
+<section class="section section--alt" id="preguntas">
+  <div class="container faq__inner">
+    <div class="faq__head reveal">
+      <span class="eyebrow">Preguntas frecuentes</span>
+      <h2>Lo que más solés preguntar</h2>
+    </div>
+
+    <div class="faq__list">
+      {faqs.map((f) => (
+        <details class="faq__item reveal">
+          <summary>{f.q}</summary>
+          <p>{f.a}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .faq__inner { max-width: 760px; margin-inline: auto; }
+  .faq__head { text-align: center; margin-bottom: 2.5rem; }
+  .faq__head h2 { margin-top: 0.4rem; }
+  .faq__list { display: grid; gap: 0.8rem; }
+  .faq__item {
+    background: var(--white);
+    border: 1px solid var(--sand);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 1.3rem;
+  }
+  .faq__item summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--ink);
+    padding: 1rem 0;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
+  .faq__item summary::-webkit-details-marker { display: none; }
+  .faq__item summary::after {
+    content: '+';
+    font-size: 1.4rem;
+    color: var(--sage);
+    transition: transform 0.2s ease;
+  }
+  .faq__item[open] summary::after { transform: rotate(45deg); }
+  .faq__item p { padding-bottom: 1.1rem; margin: 0; }
+</style>

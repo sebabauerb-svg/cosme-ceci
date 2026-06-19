@@ -1,0 +1,52 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import WhatsappFloat from '../../components/WhatsappFloat.astro';
+
+const posts = (await getCollection('blog', ({ data }) => data.publicado)).sort(
+  (a, b) => b.data.fecha.getTime() - a.data.fecha.getTime()
+);
+const fmt = (d: Date) =>
+  d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Base title="Blog" description="Notas sobre comprar skincare con criterio, cuidar la piel y gastar mejor." path="/blog">
+  <Nav />
+  <main class="blog">
+    <div class="container">
+      <span class="eyebrow">Blog</span>
+      <h1>Comprar mejor, cuidarse mejor</h1>
+      <p class="lead">Notas cortas sobre criterio, rutina y cómo dejar de gastar de más.</p>
+
+      {posts.length === 0 ? (
+        <p class="blog__empty">Pronto vas a encontrar acá las primeras notas.</p>
+      ) : (
+        <ul class="blog__list">
+          {posts.map((p) => (
+            <li class="card reveal">
+              <time datetime={p.data.fecha.toISOString()}>{fmt(p.data.fecha)}</time>
+              <h2><a href={`/blog/${p.id}`}>{p.data.titulo}</a></h2>
+              <p>{p.data.descripcion}</p>
+              <a class="blog__more" href={`/blog/${p.id}`}>Leer la nota →</a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  </main>
+  <Footer />
+  <WhatsappFloat />
+</Base>
+
+<style>
+  .blog { padding-block: clamp(3rem, 7vw, 5rem); }
+  .blog h1 { margin: 0.4rem 0 1rem; }
+  .blog__list { list-style: none; display: grid; gap: 1.25rem; margin-top: 2.5rem; }
+  .blog__list time { font-size: 0.85rem; color: var(--sage-deep); font-weight: 600; }
+  .blog__list h2 { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; }
+  .blog__list h2 a:hover { color: var(--sage-deep); }
+  .blog__more { color: var(--clay-deep); font-weight: 600; display: inline-block; margin-top: 0.6rem; }
+  .blog__empty { margin-top: 2.5rem; }
+</style>

@@ -1,0 +1,140 @@
+---
+import { site, whatsappLink } from '../data/site';
+import { imagenes } from '../data/imagenes';
+const heroImg = imagenes.hero;
+---
+
+<section class="hero">
+  <div class="container hero__inner">
+    <div class="hero__copy hero__copy--in">
+      <span class="eyebrow">Cosmetología Médica · Montevideo y San José</span>
+      <h1>Cuidado profesional para una piel sana, equilibrada y luminosa.</h1>
+      <p class="lead">
+        No hay recetas mágicas ni protocolos en serie. Cada piel cuenta una historia distinta,
+        y por eso cada tratamiento empieza con una evaluación profesional y un protocolo
+        diseñado a la medida real de tu piel.
+      </p>
+
+      <div class="hero__cta">
+        <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
+          Agendá tu valoración
+        </a>
+        <a href="/#modalidades" class="btn btn--ghost">Ver modalidades</a>
+      </div>
+
+      <ul class="hero__trust">
+        <li><strong>Enfoque boutique</strong> y personalizado</li>
+        <li><strong>Tecnología</strong> y activos de última generación</li>
+        <li><strong>Atención</strong> basada en evidencia</li>
+      </ul>
+    </div>
+
+    <div class="hero__art hero__art--in">
+      {heroImg.src ? (
+        <div class="hero__photo">
+          <img src={heroImg.src} alt={heroImg.alt} width="1200" height="1600" decoding="async" />
+        </div>
+      ) : (
+        <div aria-hidden="true">
+          <div class="hero__orb"></div>
+          <div class="hero__leaf"></div>
+        </div>
+      )}
+      <div class="hero__pill hero__pill--1" aria-hidden="true">Personalización</div>
+      <div class="hero__pill hero__pill--2" aria-hidden="true">Seguridad</div>
+      <div class="hero__pill hero__pill--3" aria-hidden="true">Resultados</div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(1100px 520px at 78% -8%, rgba(110, 127, 106, 0.18), transparent 60%),
+      radial-gradient(700px 420px at 0% 110%, rgba(192, 128, 95, 0.14), transparent 55%);
+  }
+  .hero__inner {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 3rem;
+    align-items: center;
+    padding-block: clamp(3rem, 8vw, 6rem);
+  }
+  .hero h1 { margin: 0.6rem 0 1.4rem; }
+
+  /* Entrada de carga: el contenido del hero asienta escalonado (ease-out-quint) */
+  @keyframes heroIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: none; }
+  }
+  .hero__copy--in > * { animation: heroIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .hero__copy--in > *:nth-child(1) { animation-delay: 0.05s; }
+  .hero__copy--in > *:nth-child(2) { animation-delay: 0.13s; }
+  .hero__copy--in > *:nth-child(3) { animation-delay: 0.21s; }
+  .hero__copy--in > *:nth-child(4) { animation-delay: 0.29s; }
+  .hero__copy--in > *:nth-child(5) { animation-delay: 0.37s; }
+  .hero__art--in { animation: heroIn 1s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero__copy--in > *, .hero__art--in { animation: none; }
+  }
+  .hero__cta { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 2rem; }
+  .hero__trust {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.6rem;
+    list-style: none;
+    margin-top: 2.6rem;
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--sand);
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+  .hero__trust strong { color: var(--ink); font-family: var(--font-serif); font-weight: 500; }
+
+  .hero__art { position: relative; aspect-ratio: 1 / 1; min-height: 320px; }
+  .hero__orb {
+    position: absolute;
+    inset: 8%;
+    border-radius: 50%;
+    background: linear-gradient(150deg, var(--sage) 0%, var(--clay) 100%);
+    opacity: 0.92;
+  }
+  .hero__leaf {
+    position: absolute;
+    width: 46%; height: 46%;
+    right: 14%; bottom: 12%;
+    background: var(--cream);
+    border-radius: 0 100% 0 100%;
+    opacity: 0.32;
+  }
+  .hero__photo {
+    position: absolute;
+    inset: 4%;
+    border-radius: 50% 50% 48% 48% / 46% 46% 50% 50%;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .hero__photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 48%; }
+  .hero__pill {
+    position: absolute;
+    background: var(--white);
+    border: 1px solid var(--sand);
+    border-radius: 999px;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink);
+    box-shadow: var(--shadow);
+  }
+  .hero__pill--1 { top: 12%; left: -8%; }
+  .hero__pill--2 { top: 46%; right: -6%; }
+  .hero__pill--3 { bottom: 12%; left: 2%; }
+
+  @media (max-width: 860px) {
+    .hero__inner { grid-template-columns: 1fr; }
+    .hero__art { order: -1; max-width: 340px; margin-inline: auto; width: 100%; }
+  }
+</style>

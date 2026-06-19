@@ -1,0 +1,150 @@
+---
+import { site, whatsappLink } from '../data/site';
+
+const links = [
+  { href: '/#filosofia', label: 'Filosofía' },
+  { href: '/#modalidades', label: 'Modalidades' },
+  { href: '/#tratamientos', label: 'Tratamientos' },
+  { href: '/#sobre-ceci', label: 'Sobre mí' },
+  { href: '/blog', label: 'Blog' },
+];
+---
+
+<header class="nav" id="top">
+  <div class="container nav__inner">
+    <a href="/" class="nav__brand" aria-label={`${site.marca.nombre} — inicio`}>
+      <span class="nav__mark" aria-hidden="true">{site.marca.iniciales}</span>
+      <span class="nav__brandtext">
+        <span class="nav__name">{site.marca.nombre}</span>
+        <span class="nav__sub">{site.marca.subtitulo}</span>
+      </span>
+    </a>
+
+    <nav class="nav__links" aria-label="Navegación principal">
+      {links.map((l) => <a href={l.href}>{l.label}</a>)}
+    </nav>
+
+    <a href={whatsappLink()} class="btn btn--primary nav__cta" target="_blank" rel="noopener">
+      Agendar consulta
+    </a>
+
+    <button class="nav__toggle" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-mobile">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+
+  <nav class="nav__mobile" id="nav-mobile" aria-label="Navegación móvil" hidden>
+    {links.map((l) => <a href={l.href}>{l.label}</a>)}
+    <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
+      Agendar consulta
+    </a>
+  </nav>
+</header>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(250, 246, 240, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--sand);
+  }
+  .nav__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    min-height: 76px;
+  }
+  .nav__brand { display: flex; align-items: center; gap: 0.7rem; }
+  .nav__mark {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, var(--clay), var(--sage));
+    color: var(--cream);
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    letter-spacing: 0.02em;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .nav__brandtext { display: flex; flex-direction: column; line-height: 1.1; }
+  .nav__name {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .nav__sub {
+    font-size: 0.66rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--sage);
+    font-weight: 600;
+  }
+  .nav__links {
+    display: flex;
+    gap: 1.7rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+  .nav__links a:hover { color: var(--sage-deep); }
+  .nav__cta { padding: 0.6rem 1.2rem; font-size: 0.92rem; }
+
+  .nav__toggle {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 6px;
+  }
+  .nav__toggle span {
+    width: 24px; height: 2px;
+    background: var(--ink);
+    border-radius: 2px;
+  }
+
+  .nav__mobile {
+    display: none;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 1rem clamp(1.25rem, 5vw, 2.5rem) 1.5rem;
+    border-top: 1px solid var(--sand);
+  }
+  .nav__mobile a:not(.btn) {
+    padding: 0.7rem 0;
+    font-weight: 500;
+    border-bottom: 1px solid var(--sand);
+  }
+  .nav__mobile .btn { margin-top: 0.6rem; }
+
+  @media (max-width: 980px) {
+    .nav__links, .nav__cta { display: none; }
+    .nav__toggle { display: flex; }
+    .nav__mobile[data-open='true'] { display: flex; }
+  }
+</style>
+
+<script>
+  const toggle = document.querySelector('.nav__toggle');
+  const menu = document.getElementById('nav-mobile');
+  toggle?.addEventListener('click', () => {
+    const open = menu?.getAttribute('data-open') === 'true';
+    const next = !open;
+    menu?.setAttribute('data-open', String(next));
+    if (next) menu?.removeAttribute('hidden');
+    toggle.setAttribute('aria-expanded', String(next));
+  });
+  menu?.querySelectorAll('a').forEach((a) =>
+    a.addEventListener('click', () => {
+      menu.setAttribute('data-open', 'false');
+      toggle?.setAttribute('aria-expanded', 'false');
+    })
+  );
+</script>
