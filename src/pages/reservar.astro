@@ -28,7 +28,8 @@ const items = modalidades.map((m) => ({
     <div class="container booking__wrap">
       <header class="booking__head">
         <span class="eyebrow">Reservá tu turno</span>
-        <h1>Coordiná tu atención en 4 pasos</h1>
+        <h1>Coordinemos tu atención</h1>
+        <p class="booking__lead">Elegí la modalidad y el horario que mejor te queden. Te toma un minuto.</p>
         <ol class="booking__steps" aria-hidden="true">
           <li data-ind="1" class="is-active">Modalidad</li>
           <li data-ind="2">Fecha y hora</li>
@@ -43,15 +44,13 @@ const items = modalidades.map((m) => ({
         <div class="opts">
           {items.map((m) => (
             <button class="opt" data-id={m.id}>
-              <span class="opt__main">
+              <span class="opt__head">
                 <span class="opt__name">{m.nombre}</span>
-                <span class="opt__sub">{m.subtitulo}</span>
-              </span>
-              <span class="opt__right">
                 <span class="opt__price">{m.precio}</span>
-                {m.precioNota && <span class="opt__nota">{m.precioNota}</span>}
               </span>
-              <span class="opt__arrow" aria-hidden="true">→</span>
+              <span class="opt__sub">{m.subtitulo}</span>
+              {m.precioNota && <span class="opt__nota">{m.precioNota}</span>}
+              <span class="opt__cta" aria-hidden="true">Elegir →</span>
             </button>
           ))}
         </div>
@@ -95,6 +94,11 @@ const items = modalidades.map((m) => ({
       <section class="step" data-step="4" hidden aria-label="Resumen y pago">
         <h2 class="step__title">Confirmá y pagá</h2>
         <div class="resumen" id="resumen"></div>
+        <ul class="trust">
+          <li>Pago protegido por Mercado Pago</li>
+          <li>Tarjeta, débito o dinero en cuenta</li>
+          <li>¿Necesitás reprogramar? Escribime y lo vemos sin problema</li>
+        </ul>
         <button class="btn pay" id="pagar">Pagar con Mercado Pago</button>
         <p class="step__hint center">Pago 100% al reservar · demostración (no se cobra nada).</p>
         <div class="step__nav center">
@@ -245,7 +249,21 @@ const items = modalidades.map((m) => ({
   }
   .booking__wrap { max-width: 660px; margin-inline: auto; }
   .booking__head { text-align: center; margin-bottom: 2.5rem; }
-  .booking__head h1 { margin: 0.3rem 0 1.5rem; font-size: clamp(1.8rem, 4vw, 2.4rem); }
+  .booking__head h1 {
+    margin: 0.3rem 0 0.6rem;
+    font-size: clamp(1.6rem, 3.2vw, 2.1rem);
+    text-wrap: balance;
+  }
+  .booking__lead {
+    max-width: 44ch;
+    margin: 0 auto 1.6rem;
+    color: var(--ink-soft);
+    font-size: 0.98rem;
+  }
+  /* Reaseguro en el paso de pago */
+  .trust { list-style: none; display: grid; gap: 0.55rem; max-width: 460px; margin: 0 auto 1.4rem; }
+  .trust li { display: flex; gap: 0.55rem; align-items: flex-start; font-size: 0.88rem; color: var(--ink-soft); }
+  .trust li::before { content: '✓'; color: var(--sage); font-weight: 700; flex: none; }
   .booking__steps {
     display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.1rem;
     list-style: none; font-size: 0.82rem; color: var(--ink-soft); counter-reset: s;
@@ -270,19 +288,19 @@ const items = modalidades.map((m) => ({
   /* Opciones de modalidad (server-side → estilos scoped OK) */
   .opts { display: grid; gap: 0.85rem; }
   .opt {
-    display: flex; align-items: center; gap: 1rem; text-align: left;
+    display: grid; gap: 0.25rem; text-align: left;
     background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
-    padding: 1.1rem 1.3rem; cursor: pointer;
+    padding: 1.15rem 1.35rem; cursor: pointer;
     transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
   }
   .opt:hover { border-color: var(--sage); transform: translateY(-2px); box-shadow: var(--shadow); }
-  .opt__main { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; min-width: 0; }
-  .opt__name { font-family: var(--font-serif); font-size: 1.15rem; color: var(--ink); }
-  .opt__sub { font-size: 0.86rem; color: var(--ink-soft); }
-  .opt__right { display: flex; flex-direction: column; align-items: flex-end; text-align: right; flex: none; }
-  .opt__price { font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); white-space: nowrap; }
-  .opt__nota { font-size: 0.72rem; color: var(--ink-soft); max-width: 14ch; }
-  .opt__arrow { color: var(--clay); font-size: 1.2rem; flex: none; }
+  .opt__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .opt__name { font-family: var(--font-serif); font-size: 1.18rem; color: var(--ink); }
+  .opt__price { font-family: var(--font-serif); font-size: 1.18rem; color: var(--ink); white-space: nowrap; flex: none; }
+  .opt__sub { font-size: 0.9rem; color: var(--ink-soft); }
+  .opt__nota { font-size: 0.82rem; color: var(--ink-soft); }
+  .opt__cta { justify-self: end; font-size: 0.85rem; font-weight: 600; color: var(--clay); margin-top: 0.35rem; }
+  .opt:hover .opt__cta { text-decoration: underline; }
 
   .cal__label { font-weight: 600; font-size: 0.9rem; margin: 0 0 0.7rem; color: var(--ink); }
   #slots-label { margin-top: 1.5rem; }
@@ -319,7 +337,7 @@ const items = modalidades.map((m) => ({
   .cal__days { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .cal__day {
     background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
-    padding: 0.5rem 0.95rem; cursor: pointer; font-size: 0.88rem; text-transform: capitalize;
+    padding: 0.7rem 1.05rem; cursor: pointer; font-size: 0.88rem; text-transform: capitalize;
     transition: border-color 0.15s ease, background 0.15s ease;
   }
   .cal__day:hover { border-color: var(--sage); }
