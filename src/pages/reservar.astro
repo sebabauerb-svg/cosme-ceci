@@ -286,7 +286,7 @@ const items = modalidades.map((m) => ({
   @media (prefers-reduced-motion: reduce) { .step { animation: none; } }
 
   /* Opciones de modalidad (server-side → estilos scoped OK) */
-  .opts { display: grid; gap: 0.85rem; }
+  .opts { display: grid; gap: 0.85rem; margin-top: 1.8rem; }
   .opt {
     display: grid; gap: 0.25rem; text-align: left;
     background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
@@ -297,8 +297,8 @@ const items = modalidades.map((m) => ({
   .opt__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
   .opt__name { font-family: var(--font-serif); font-size: 1.18rem; color: var(--ink); }
   .opt__price { font-family: var(--font-serif); font-size: 1.18rem; color: var(--ink); white-space: nowrap; flex: none; }
-  .opt__sub { font-size: 0.9rem; color: var(--ink-soft); }
-  .opt__nota { font-size: 0.82rem; color: var(--ink-soft); }
+  .opt__sub { font-size: 0.92rem; color: var(--ink); font-weight: 600; }
+  .opt__nota { font-size: 0.82rem; color: var(--ink-soft); font-weight: 400; }
   .opt__cta { justify-self: end; font-size: 0.85rem; font-weight: 600; color: var(--clay); margin-top: 0.35rem; }
   .opt:hover .opt__cta { text-decoration: underline; }
 
