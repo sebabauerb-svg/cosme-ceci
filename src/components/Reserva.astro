@@ -15,14 +15,12 @@ const { enlaces, contacto } = site;
         </p>
 
         <div class="reserva__cta">
-          <a href={whatsappLink()} class="btn btn--wa" target="_blank" rel="noopener">
-            Escribir por WhatsApp
+          <a href="/reservar" class="btn btn--primary">
+            Reservar online
           </a>
-          {enlaces.agenda && (
-            <a href={enlaces.agenda} class="btn btn--ghost" target="_blank" rel="noopener">
-              Ver agenda online
-            </a>
-          )}
+          <a href={whatsappLink()} class="btn btn--wa" target="_blank" rel="noopener">
+            O escribime por WhatsApp
+          </a>
         </div>
         <p class="reserva__fine">Atención en Montevideo y San José · Consulta virtual sin límites geográficos.</p>
       </div>

@@ -6,15 +6,13 @@ import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
 
 // PROTOTIPO (sandbox): flujo de reserva visual. Sin backend ni pagos reales.
-// Datos que el cliente necesita, serializados para el script del navegador.
 const items = modalidades.map((m) => ({
   id: m.id,
   nombre: m.nombre,
   subtitulo: m.subtitulo,
   precio: m.precio ?? 'A coordinar',
   precioNota: m.precioNota ?? '',
-  // El Club es una membresía anual: no se agenda un turno suelto.
-  esMembresia: m.id === 'club',
+  esMembresia: m.id === 'club', // el Club es membresía anual, no turno suelto
 }));
 ---
 
@@ -39,22 +37,34 @@ const items = modalidades.map((m) => ({
         </ol>
       </header>
 
-      <!-- Paso 1: Modalidad -->
+      <!-- Paso 1: Modalidad (renderizado en el servidor → estilos aplican) -->
       <section class="step is-active" data-step="1" aria-label="Elegí la modalidad">
         <h2 class="step__title">¿Qué querés reservar?</h2>
-        <div class="opts" id="modalidades"></div>
+        <div class="opts">
+          {items.map((m) => (
+            <button class="opt" data-id={m.id}>
+              <span class="opt__main">
+                <span class="opt__name">{m.nombre}</span>
+                <span class="opt__sub">{m.subtitulo}</span>
+              </span>
+              <span class="opt__right">
+                <span class="opt__price">{m.precio}</span>
+                {m.precioNota && <span class="opt__nota">{m.precioNota}</span>}
+              </span>
+              <span class="opt__arrow" aria-hidden="true">→</span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <!-- Paso 2: Fecha y hora -->
       <section class="step" data-step="2" hidden aria-label="Elegí fecha y hora">
         <h2 class="step__title">Elegí día y horario</h2>
         <p class="step__hint">Disponibilidad de ejemplo. En la versión final saldrá de la agenda real de Ceci.</p>
-        <div class="cal">
-          <div class="cal__days" id="dias"></div>
-          <div class="cal__slots" id="horarios">
-            <p class="cal__empty">Elegí un día para ver los horarios.</p>
-          </div>
-        </div>
+        <p class="cal__label">Días disponibles</p>
+        <div class="cal__days" id="dias"></div>
+        <p class="cal__label" id="slots-label" hidden>Horarios</p>
+        <div class="cal__slots" id="horarios"></div>
         <div class="step__nav">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -85,10 +95,7 @@ const items = modalidades.map((m) => ({
       <section class="step" data-step="4" hidden aria-label="Resumen y pago">
         <h2 class="step__title">Confirmá y pagá</h2>
         <div class="resumen" id="resumen"></div>
-        <button class="btn pay" id="pagar">
-          <svg viewBox="0 0 32 32" width="22" height="22" fill="currentColor" aria-hidden="true"><circle cx="16" cy="16" r="15"/></svg>
-          Pagar con Mercado Pago
-        </button>
+        <button class="btn pay" id="pagar">Pagar con Mercado Pago</button>
         <p class="step__hint center">Pago 100% al reservar · demostración (no se cobra nada).</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
@@ -114,7 +121,6 @@ const items = modalidades.map((m) => ({
 
 <script define:vars={{ items }}>
   const state = { modalidad: null, fecha: null, hora: null, nombre: '', tel: '', email: '' };
-
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -124,45 +130,34 @@ const items = modalidades.map((m) => ({
       el.toggleAttribute('hidden', !active);
       el.classList.toggle('is-active', active);
     });
-    $$('.booking__steps li').forEach((li) => {
-      li.classList.toggle('is-active', Number(li.dataset.ind) <= step);
-    });
+    $$('.booking__steps li').forEach((li) =>
+      li.classList.toggle('is-active', Number(li.dataset.ind) <= step)
+    );
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // --- Paso 1: modalidades ---
-  const cont = $('#modalidades');
-  items.forEach((m) => {
-    const b = document.createElement('button');
-    b.className = 'opt';
-    b.innerHTML =
-      `<span class="opt__name">${m.nombre}</span>` +
-      `<span class="opt__sub">${m.subtitulo}</span>` +
-      `<span class="opt__price">${m.precio}${m.precioNota ? ` · <em>${m.precioNota}</em>` : ''}</span>`;
+  // Paso 1: opciones (ya están en el HTML; solo enganchamos el click)
+  $$('.opt').forEach((b) =>
     b.addEventListener('click', () => {
-      state.modalidad = m;
-      // El Club es membresía: saltea la elección de horario.
-      goTo(m.esMembresia ? 3 : 2);
-    });
-    cont.appendChild(b);
-  });
+      state.modalidad = items.find((i) => i.id === b.dataset.id);
+      goTo(state.modalidad.esMembresia ? 3 : 2);
+    })
+  );
 
-  // --- Paso 2: días y horarios (mock) ---
+  // Paso 2: días y horarios (mock)
   const HORARIOS = ['09:00', '10:30', '14:00', '15:30', '17:00'];
   function proximosDias(n) {
     const out = [];
     const d = new Date();
     while (out.length < n) {
       d.setDate(d.getDate() + 1);
-      const dia = d.getDay(); // 0 dom, 6 sáb
-      if (dia !== 0) out.push(new Date(d)); // lun a sáb
+      if (d.getDay() !== 0) out.push(new Date(d)); // lun a sáb
     }
     return out;
   }
-  function fmtDia(date) {
-    return date.toLocaleDateString('es-UY', { weekday: 'short', day: 'numeric', month: 'short' });
-  }
-  const diasCont = $('#dias');
+  const fmtDia = (date) =>
+    date.toLocaleDateString('es-UY', { weekday: 'short', day: 'numeric', month: 'short' });
+
   proximosDias(12).forEach((date) => {
     const b = document.createElement('button');
     b.className = 'cal__day';
@@ -173,11 +168,13 @@ const items = modalidades.map((m) => ({
       state.fecha = fmtDia(date);
       renderSlots();
     });
-    diasCont.appendChild(b);
+    $('#dias').appendChild(b);
   });
+
   function renderSlots() {
     const cont = $('#horarios');
     cont.innerHTML = '';
+    $('#slots-label').hidden = false;
     HORARIOS.forEach((h) => {
       const b = document.createElement('button');
       b.className = 'cal__slot';
@@ -190,14 +187,11 @@ const items = modalidades.map((m) => ({
     });
   }
 
-  // --- Paso 3: datos ---
+  // Paso 3: datos
   $('#form').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
-    if (!f.nombre.value.trim() || !f.tel.value.trim()) {
-      f.reportValidity();
-      return;
-    }
+    if (!f.nombre.value.trim() || !f.tel.value.trim()) return f.reportValidity();
     state.nombre = f.nombre.value.trim();
     state.tel = f.tel.value.trim();
     state.email = f.email.value.trim();
@@ -205,7 +199,7 @@ const items = modalidades.map((m) => ({
     goTo(4);
   });
 
-  // --- Paso 4: resumen ---
+  // Paso 4: resumen
   function renderResumen() {
     const m = state.modalidad;
     const cuando = m.esMembresia
@@ -218,7 +212,7 @@ const items = modalidades.map((m) => ({
       `<div class="resumen__row resumen__row--total"><span>Total a pagar</span><strong>${m.precio}</strong></div>`;
   }
 
-  // --- Paso 4 → 5: pago (mock) ---
+  // Pago (mock)
   $('#pagar').addEventListener('click', () => {
     const btn = $('#pagar');
     btn.disabled = true;
@@ -232,12 +226,11 @@ const items = modalidades.map((m) => ({
     }, 900);
   });
 
-  // --- Volver ---
+  // Volver
   $$('[data-back]').forEach((b) =>
     b.addEventListener('click', () => {
       const cur = Number(b.closest('.step').dataset.step);
-      const prev = cur === 3 && state.modalidad?.esMembresia ? 1 : cur - 1;
-      goTo(prev);
+      goTo(cur === 3 && state.modalidad?.esMembresia ? 1 : cur - 1);
     })
   );
 </script>
@@ -250,13 +243,11 @@ const items = modalidades.map((m) => ({
     font-size: 0.9rem;
     padding: 0.6rem 1rem;
   }
-  .demo strong { font-weight: 700; }
-
-  .booking__wrap { max-width: 720px; margin-inline: auto; }
+  .booking__wrap { max-width: 660px; margin-inline: auto; }
   .booking__head { text-align: center; margin-bottom: 2.5rem; }
-  .booking__head h1 { margin: 0.3rem 0 1.5rem; font-size: clamp(1.9rem, 4vw, 2.6rem); }
+  .booking__head h1 { margin: 0.3rem 0 1.5rem; font-size: clamp(1.8rem, 4vw, 2.4rem); }
   .booking__steps {
-    display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.2rem;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.1rem;
     list-style: none; font-size: 0.82rem; color: var(--ink-soft); counter-reset: s;
   }
   .booking__steps li { counter-increment: s; display: flex; align-items: center; gap: 0.4rem; }
@@ -269,45 +260,35 @@ const items = modalidades.map((m) => ({
   .booking__steps li.is-active::before { background: var(--sage); color: var(--cream); }
 
   .step { animation: fade 0.4s ease both; }
-  .step__title { font-size: 1.4rem; margin-bottom: 0.4rem; text-align: center; }
+  .step__title { font-size: 1.45rem; margin-bottom: 0.4rem; text-align: center; }
   .step__hint { font-size: 0.9rem; color: var(--ink-soft); text-align: center; margin-bottom: 1.4rem; }
-  .step__hint.center, .step__nav.center { text-align: center; justify-content: center; }
+  .step__hint.center, .step__nav.center { justify-content: center; }
   .step__nav { display: flex; gap: 0.8rem; margin-top: 1.6rem; }
   @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .step { animation: none; } }
 
-  /* Opciones de modalidad */
-  .opts { display: grid; gap: 0.9rem; }
+  /* Opciones de modalidad (server-side → estilos scoped OK) */
+  .opts { display: grid; gap: 0.85rem; }
   .opt {
-    text-align: left; background: var(--white); border: 1px solid var(--sand);
-    border-radius: var(--radius-sm); padding: 1.1rem 1.3rem; cursor: pointer;
-    display: grid; gap: 0.2rem; transition: border-color 0.18s ease, transform 0.18s ease;
+    display: flex; align-items: center; gap: 1rem; text-align: left;
+    background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
+    padding: 1.1rem 1.3rem; cursor: pointer;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
   }
-  .opt:hover { border-color: var(--sage); transform: translateY(-2px); }
+  .opt:hover { border-color: var(--sage); transform: translateY(-2px); box-shadow: var(--shadow); }
+  .opt__main { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; min-width: 0; }
   .opt__name { font-family: var(--font-serif); font-size: 1.15rem; color: var(--ink); }
-  .opt__sub { font-size: 0.88rem; color: var(--ink-soft); }
-  .opt__price { font-size: 0.92rem; color: var(--sage-deep); font-weight: 600; margin-top: 0.3rem; }
-  .opt__price em { font-style: normal; color: var(--ink-soft); font-weight: 400; }
+  .opt__sub { font-size: 0.86rem; color: var(--ink-soft); }
+  .opt__right { display: flex; flex-direction: column; align-items: flex-end; text-align: right; flex: none; }
+  .opt__price { font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); white-space: nowrap; }
+  .opt__nota { font-size: 0.72rem; color: var(--ink-soft); max-width: 14ch; }
+  .opt__arrow { color: var(--clay); font-size: 1.2rem; flex: none; }
 
-  /* Calendario mock */
-  .cal__days { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.4rem; }
-  .cal__day {
-    background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
-    padding: 0.5rem 0.9rem; cursor: pointer; font-size: 0.88rem; text-transform: capitalize;
-    transition: border-color 0.15s ease;
-  }
-  .cal__day:hover { border-color: var(--sage); }
-  .cal__day.is-sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
-  .cal__slots { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-  .cal__slot {
-    background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm);
-    padding: 0.6rem 1.1rem; cursor: pointer; font-weight: 600; color: var(--ink);
-  }
-  .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
-  .cal__empty { color: var(--ink-soft); font-size: 0.9rem; }
+  .cal__label { font-weight: 600; font-size: 0.9rem; margin: 0 0 0.7rem; color: var(--ink); }
+  #slots-label { margin-top: 1.5rem; }
 
   /* Formulario */
-  .form { display: grid; gap: 1rem; }
+  .form { display: grid; gap: 1rem; max-width: 460px; margin-inline: auto; }
   .form label { display: grid; gap: 0.35rem; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
   .form input {
     font: inherit; font-weight: 400; padding: 0.7rem 0.9rem; border: 1px solid var(--sand);
@@ -316,23 +297,14 @@ const items = modalidades.map((m) => ({
   .form input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }
   .form__note { font-size: 0.82rem; color: var(--ink-soft); }
 
-  /* Resumen + pago */
   .resumen {
     background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
-    padding: 1.4rem 1.6rem; margin-bottom: 1.4rem;
+    padding: 1.4rem 1.6rem; margin-bottom: 1.4rem; max-width: 460px; margin-inline: auto;
   }
-  .resumen__row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; }
-  .resumen__row span { color: var(--ink-soft); }
-  .resumen__row strong { color: var(--ink); text-align: right; }
-  .resumen__row--total { border-top: 1px solid var(--sand); margin-top: 0.4rem; padding-top: 0.9rem; }
-  .resumen__row--total strong { font-family: var(--font-serif); font-size: 1.3rem; }
-  .pay {
-    width: 100%; justify-content: center; background: #009ee3; color: #fff; gap: 0.6rem;
-  }
+  .pay { width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; background: #009ee3; color: #fff; }
   .pay:hover { background: #0089c7; }
   .pay:disabled { opacity: 0.7; cursor: default; }
 
-  /* Confirmación */
   .done { text-align: center; padding: 2rem 0; }
   .done__check {
     width: 64px; height: 64px; border-radius: 50%; background: var(--sage); color: var(--cream);
@@ -340,4 +312,28 @@ const items = modalidades.map((m) => ({
   }
   .done h2 small { color: var(--ink-soft); font-size: 0.9rem; }
   .done p { margin-bottom: 1rem; }
+</style>
+
+<!-- Estilos para elementos creados por JS (globales solo en esta página → sí aplican) -->
+<style is:global>
+  .cal__days { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .cal__day {
+    background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
+    padding: 0.5rem 0.95rem; cursor: pointer; font-size: 0.88rem; text-transform: capitalize;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .cal__day:hover { border-color: var(--sage); }
+  .cal__day.is-sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  .cal__slots { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .cal__slot {
+    background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm);
+    padding: 0.6rem 1.1rem; cursor: pointer; font-weight: 600; color: var(--ink);
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  .resumen__row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; }
+  .resumen__row span { color: var(--ink-soft); }
+  .resumen__row strong { color: var(--ink); text-align: right; }
+  .resumen__row--total { border-top: 1px solid var(--sand); margin-top: 0.4rem; padding-top: 0.9rem; }
+  .resumen__row--total strong { font-family: var(--font-serif); font-size: 1.3rem; }
 </style>

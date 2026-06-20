@@ -1,5 +1,5 @@
 ---
-import { site, whatsappLink } from '../data/site';
+import { site } from '../data/site';
 
 const links = [
   { href: '/#filosofia', label: 'Filosofía' },
@@ -24,7 +24,7 @@ const links = [
       {links.map((l) => <a href={l.href}>{l.label}</a>)}
     </nav>
 
-    <a href={whatsappLink()} class="btn btn--primary nav__cta" target="_blank" rel="noopener">
+    <a href="/reservar" class="btn btn--primary nav__cta">
       Agendar consulta
     </a>
 
@@ -35,7 +35,7 @@ const links = [
 
   <nav class="nav__mobile" id="nav-mobile" aria-label="Navegación móvil" hidden>
     {links.map((l) => <a href={l.href}>{l.label}</a>)}
-    <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
+    <a href="/reservar" class="btn btn--primary">
       Agendar consulta
     </a>
   </nav>
