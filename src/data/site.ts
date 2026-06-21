@@ -43,7 +43,7 @@ export const site = {
 
   // Enlaces operativos (CONFIRMAR): se enchufan los reales cuando estén listos
   enlaces: {
-    pagoMercadoPago: '', // link de pago fijo, opcional
+    pagoMercadoPago: 'https://link.mercadopago.com.uy/cecigutierrezcm', // link de pago de Ceci
     agenda: '', // agenda online (Calendly, etc.), opcional → si vacío, se coordina por WhatsApp
   },
 
