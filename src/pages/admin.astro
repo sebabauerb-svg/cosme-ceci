@@ -1,0 +1,229 @@
+---
+export const prerender = false;
+
+import Base from '../layouts/Base.astro';
+import { isAdmin } from '../lib/admin';
+import { getSql } from '../lib/db';
+
+const authed = isAdmin(Astro.cookies);
+
+const LUGARES = [
+  { slug: 'montevideo', nombre: 'Montevideo' },
+  { slug: 'san-jose', nombre: 'San José' },
+  { slug: 'online', nombre: 'Online (Virtual / Skincare Inteligente)' },
+];
+const DIAS = [
+  { n: 1, l: 'Lun' },
+  { n: 2, l: 'Mar' },
+  { n: 3, l: 'Mié' },
+  { n: 4, l: 'Jue' },
+  { n: 5, l: 'Vie' },
+  { n: 6, l: 'Sáb' },
+];
+const HORAS = ['08:00','09:00','10:00','10:30','11:00','12:00','14:00','15:00','15:30','16:00','17:00','18:00','19:00'];
+
+// Config y reservas (solo si está logueada)
+const config: Record<string, Set<string>> = { montevideo: new Set(), 'san-jose': new Set(), online: new Set() };
+let reservas: any[] = [];
+let dbError = '';
+
+if (authed) {
+  try {
+    const sql = getSql();
+    const conf = await sql`
+      select coalesce(s.nombre, 'Online') as lugar, d.dia_semana, to_char(d.hora,'HH24:MI') as hora
+      from disponibilidad d left join sedes s on s.id = d.sede_id
+    `;
+    const map: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose', Online: 'online' };
+    for (const r of conf as any[]) {
+      const slug = map[r.lugar] ?? 'online';
+      config[slug].add(`${r.dia_semana}|${r.hora}`);
+    }
+    reservas = (await sql`
+      select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
+             r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
+             r.nombre, r.telefono, r.estado, r.created_at
+      from reservas r left join sedes s on s.id = r.sede_id
+      order by r.created_at desc limit 50
+    `) as any[];
+  } catch (e) {
+    dbError = e instanceof Error ? e.message : String(e);
+  }
+}
+---
+
+<Base title="Panel de Ceci" path="/admin">
+  <main class="admin">
+    <div class="container">
+      {!authed ? (
+        <div class="login">
+          <h1>Panel de Ceci</h1>
+          <p>Ingresá tu contraseña para administrar horarios y ver reservas.</p>
+          <form id="login-form">
+            <input type="password" name="password" placeholder="Contraseña" autocomplete="current-password" required />
+            <button type="submit" class="btn btn--primary">Entrar</button>
+          </form>
+          <p id="login-error" class="login__err" hidden></p>
+        </div>
+      ) : (
+        <div class="panel">
+          <header class="panel__head">
+            <h1>Panel de Ceci</h1>
+            <button id="logout" class="btn btn--ghost">Salir</button>
+          </header>
+
+          {dbError && <p class="login__err">Error de base de datos: {dbError}</p>}
+
+          <section class="card">
+            <h2>Horarios disponibles</h2>
+            <p class="muted">Marcá los horarios que atendés en cada lugar. Lo que dejes marcado es lo que verán las clientas al reservar.</p>
+            {LUGARES.map((lugar) => (
+              <div class="sede-block">
+                <div class="sede-block__top">
+                  <h3>{lugar.nombre}</h3>
+                  <button class="btn btn--primary btn--sm" data-guardar={lugar.slug}>Guardar {lugar.nombre}</button>
+                </div>
+                <div class="grid-wrap">
+                  <table class="grid">
+                    <thead>
+                      <tr><th>Hora</th>{DIAS.map((d) => <th>{d.l}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {HORAS.map((h) => (
+                        <tr>
+                          <td class="grid__hora">{h}</td>
+                          {DIAS.map((d) => (
+                            <td>
+                              <input
+                                type="checkbox"
+                                data-lugar={lugar.slug}
+                                data-dia={d.n}
+                                data-hora={h}
+                                checked={config[lugar.slug].has(`${d.n}|${h}`)}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p class="sede-msg" data-msg={lugar.slug}></p>
+              </div>
+            ))}
+          </section>
+
+          <section class="card">
+            <h2>Reservas ({reservas.length})</h2>
+            {reservas.length === 0 ? (
+              <p class="muted">Todavía no hay reservas.</p>
+            ) : (
+              <div class="grid-wrap">
+                <table class="grid grid--res">
+                  <thead>
+                    <tr><th>Servicio</th><th>Sede</th><th>Día</th><th>Hora</th><th>Nombre</th><th>WhatsApp</th><th>Estado</th></tr>
+                  </thead>
+                  <tbody>
+                    {reservas.map((r) => (
+                      <tr>
+                        <td>{r.modalidad}</td>
+                        <td>{r.sede}</td>
+                        <td>{r.fecha ?? '—'}</td>
+                        <td>{r.hora ?? '—'}</td>
+                        <td>{r.nombre}</td>
+                        <td>{r.telefono}</td>
+                        <td><span class={`badge badge--${r.estado}`}>{r.estado}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  </main>
+</Base>
+
+<script>
+  // Login
+  const lf = document.getElementById('login-form');
+  lf?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = document.getElementById('login-error');
+    const pw = (lf.querySelector('input[name="password"]') as HTMLInputElement).value;
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (res.ok) {
+      location.reload();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      if (err) { err.textContent = d.error || 'No se pudo entrar.'; err.hidden = false; }
+    }
+  });
+
+  // Logout
+  document.getElementById('logout')?.addEventListener('click', async () => {
+    await fetch('/api/admin/login', { method: 'DELETE' });
+    location.reload();
+  });
+
+  // Guardar disponibilidad por lugar
+  document.querySelectorAll('[data-guardar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const lugar = (btn as HTMLElement).dataset.guardar!;
+      const slots = [...document.querySelectorAll(`input[data-lugar="${lugar}"]:checked`)].map((c) => ({
+        dia: Number((c as HTMLElement).dataset.dia),
+        hora: (c as HTMLElement).dataset.hora,
+      }));
+      const msg = document.querySelector(`[data-msg="${lugar}"]`) as HTMLElement;
+      if (msg) msg.textContent = 'Guardando…';
+      const res = await fetch('/api/admin/disponibilidad', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ lugar, slots }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (msg) msg.textContent = res.ok ? `✓ Guardado (${d.guardados} horarios)` : `Error: ${d.error || 'no se pudo'}`;
+    });
+  });
+</script>
+
+<style>
+  .admin { padding-block: clamp(2rem, 5vw, 3.5rem); }
+  .login { max-width: 380px; margin: 2rem auto; text-align: center; }
+  .login h1 { margin-bottom: 0.6rem; }
+  .login form { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 1.4rem; }
+  .login input {
+    font: inherit; padding: 0.7rem 0.9rem; border: 1px solid var(--sand);
+    border-radius: var(--radius-sm); background: var(--white);
+  }
+  .login__err { color: var(--clay-deep); font-size: 0.9rem; margin-top: 0.8rem; }
+
+  .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+  .panel__head h1 { font-size: clamp(1.6rem, 3vw, 2rem); }
+  .muted { color: var(--ink-soft); font-size: 0.92rem; margin-bottom: 1rem; }
+  .card { margin-bottom: 2rem; }
+  .card h2 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+
+  .sede-block { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--sand); }
+  .sede-block__top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .sede-block__top h3 { font-size: 1.1rem; }
+  .btn--sm { padding: 0.45rem 1rem; font-size: 0.88rem; }
+  .grid-wrap { overflow-x: auto; margin-top: 0.8rem; }
+  .grid { border-collapse: collapse; font-size: 0.88rem; }
+  .grid th, .grid td { border: 1px solid var(--sand); padding: 0.4rem 0.6rem; text-align: center; }
+  .grid th { background: var(--cream-deep); font-weight: 600; }
+  .grid__hora { font-weight: 600; background: var(--cream-deep); white-space: nowrap; }
+  .grid input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--sage); cursor: pointer; }
+  .sede-msg { font-size: 0.85rem; color: var(--sage-deep); margin-top: 0.5rem; min-height: 1.2em; }
+
+  .grid--res th, .grid--res td { text-align: left; font-size: 0.85rem; }
+  .badge { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--sand); color: var(--ink); }
+  .badge--confirmada { background: color-mix(in srgb, var(--sage) 35%, var(--cream)); color: var(--sage-deep); }
+  .badge--cancelada, .badge--expirada { background: color-mix(in srgb, var(--clay) 30%, var(--cream)); color: var(--clay-deep); }
+</style>
