@@ -156,7 +156,7 @@ if (authed) {
               <div class="grid-wrap">
                 <table class="grid grid--res">
                   <thead>
-                    <tr><th>Servicio</th><th>Sede</th><th>Día</th><th>Hora</th><th>Nombre</th><th>WhatsApp</th><th>Estado</th></tr>
+                    <tr><th>Servicio</th><th>Sede</th><th>Día</th><th>Hora</th><th>Nombre</th><th>WhatsApp</th><th>Estado</th><th></th></tr>
                   </thead>
                   <tbody>
                     {reservas.map((r) => (
@@ -168,6 +168,7 @@ if (authed) {
                         <td>{r.nombre}</td>
                         <td>{r.telefono}</td>
                         <td><span class={`badge badge--${r.estado}`}>{r.estado}</span></td>
+                        <td><button class="del" data-id={r.id}>Borrar</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -233,6 +234,17 @@ if (authed) {
           : `Error: ${d.error || 'no se pudo'}`;
     });
   });
+
+  // Borrar reserva
+  document.querySelectorAll('.del').forEach((b) => {
+    b.addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta reserva? Se libera el cupo.')) return;
+      const id = (b as HTMLElement).dataset.id;
+      const res = await fetch(`/api/admin/reserva?id=${id}`, { method: 'DELETE' });
+      if (res.ok) (b as HTMLElement).closest('tr')?.remove();
+      else alert('No se pudo borrar.');
+    });
+  });
 </script>
 
 <style>
@@ -279,4 +291,6 @@ if (authed) {
   .badge { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--sand); color: var(--ink); }
   .badge--confirmada { background: color-mix(in srgb, var(--sage) 35%, var(--cream)); color: var(--sage-deep); }
   .badge--cancelada, .badge--expirada { background: color-mix(in srgb, var(--clay) 30%, var(--cream)); color: var(--clay-deep); }
+  .del { background: none; border: 0; color: var(--clay-deep); cursor: pointer; font-size: 0.82rem; text-decoration: underline; }
+  .del:hover { color: var(--ink); }
 </style>
