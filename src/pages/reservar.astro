@@ -60,10 +60,23 @@ const items = modalidades.map((m) => ({
       <section class="step" data-step="2" hidden aria-label="Elegí fecha y hora">
         <h2 class="step__title">Elegí día y horario</h2>
         <p class="step__hint">Disponibilidad de ejemplo. En la versión final saldrá de la agenda real de Ceci.</p>
-        <p class="cal__label">Días disponibles</p>
-        <div class="cal__days" id="dias"></div>
-        <p class="cal__label" id="slots-label" hidden>Horarios</p>
-        <div class="cal__slots" id="horarios"></div>
+
+        <!-- Sede: solo para Consulta Presencial -->
+        <div class="sede" id="sede" hidden>
+          <p class="cal__label">¿Dónde preferís atenderte?</p>
+          <div class="sede__opts">
+            <button class="sede__btn" data-sede="Montevideo">Montevideo</button>
+            <button class="sede__btn" data-sede="San José">San José</button>
+          </div>
+        </div>
+
+        <div id="agenda" hidden>
+          <p class="cal__label" id="dias-label">Días disponibles</p>
+          <div class="cal__days" id="dias"></div>
+          <p class="cal__label" id="slots-label" hidden>Horarios</p>
+          <div class="cal__slots" id="horarios"></div>
+        </div>
+
         <div class="step__nav">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -143,8 +156,27 @@ const items = modalidades.map((m) => ({
   // Paso 1: opciones (ya están en el HTML; solo enganchamos el click)
   $$('.opt').forEach((b) =>
     b.addEventListener('click', () => {
-      state.modalidad = items.find((i) => i.id === b.dataset.id);
-      goTo(state.modalidad.esMembresia ? 3 : 2);
+      const m = items.find((i) => i.id === b.dataset.id);
+      state.modalidad = m;
+      state.lugar = null;
+      if (m.esMembresia) return goTo(3); // el Club no agenda turno
+      const presencial = m.id === 'presencial';
+      $('#sede').hidden = !presencial;
+      $('#agenda').hidden = presencial; // en presencial, la agenda aparece al elegir sede
+      $$('.sede__btn').forEach((s) => s.classList.remove('is-sel'));
+      $('#dias-label').textContent = 'Días disponibles';
+      goTo(2);
+    })
+  );
+
+  // Sede (presencial): al elegir, se muestra la disponibilidad de esa sede
+  $$('.sede__btn').forEach((s) =>
+    s.addEventListener('click', () => {
+      $$('.sede__btn').forEach((x) => x.classList.remove('is-sel'));
+      s.classList.add('is-sel');
+      state.lugar = s.dataset.sede;
+      $('#agenda').hidden = false;
+      $('#dias-label').textContent = `Días disponibles en ${state.lugar}`;
     })
   );
 
@@ -209,11 +241,13 @@ const items = modalidades.map((m) => ({
     const cuando = m.esMembresia
       ? 'Membresía anual (coordinamos la primera consulta al sumarte)'
       : `${state.fecha} · ${state.hora} h`;
-    $('#resumen').innerHTML =
-      `<div class="resumen__row"><span>Servicio</span><strong>${m.nombre}</strong></div>` +
-      `<div class="resumen__row"><span>Cuándo</span><strong>${cuando}</strong></div>` +
-      `<div class="resumen__row"><span>A nombre de</span><strong>${state.nombre}</strong></div>` +
-      `<div class="resumen__row resumen__row--total"><span>Total a pagar</span><strong>${m.precio}</strong></div>`;
+    const filas = [`<div class="resumen__row"><span>Servicio</span><strong>${m.nombre}</strong></div>`];
+    if (state.lugar)
+      filas.push(`<div class="resumen__row"><span>Dónde</span><strong>${state.lugar}</strong></div>`);
+    filas.push(`<div class="resumen__row"><span>Cuándo</span><strong>${cuando}</strong></div>`);
+    filas.push(`<div class="resumen__row"><span>A nombre de</span><strong>${state.nombre}</strong></div>`);
+    filas.push(`<div class="resumen__row resumen__row--total"><span>Total a pagar</span><strong>${m.precio}</strong></div>`);
+    $('#resumen').innerHTML = filas.join('');
   }
 
   // Pago (mock)
@@ -225,7 +259,7 @@ const items = modalidades.map((m) => ({
       const m = state.modalidad;
       $('#done-text').textContent = m.esMembresia
         ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-        : `${state.nombre}, tu ${m.nombre} quedó para el ${state.fecha} a las ${state.hora} h.`;
+        : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó para el ${state.fecha} a las ${state.hora} h.`;
       goTo(5);
     }, 900);
   });
@@ -304,6 +338,17 @@ const items = modalidades.map((m) => ({
 
   .cal__label { font-weight: 600; font-size: 0.9rem; margin: 0 0 0.7rem; color: var(--ink); }
   #slots-label { margin-top: 1.5rem; }
+
+  /* Selector de sede (solo presencial) */
+  .sede { margin-bottom: 1.6rem; }
+  .sede__opts { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+  .sede__btn {
+    background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
+    padding: 0.7rem 1.4rem; cursor: pointer; font-weight: 600; color: var(--ink);
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .sede__btn:hover { border-color: var(--sage); }
+  .sede__btn.is-sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
 
   /* Formulario */
   .form { display: grid; gap: 1rem; max-width: 460px; margin-inline: auto; }
