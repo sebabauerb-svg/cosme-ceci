@@ -21,8 +21,8 @@ const items = modalidades.map((m) => ({
   <Nav />
 
   <div class="demo">
-    🧪 <strong>Versión de prueba</strong> — al confirmar se abre un WhatsApp con tu reserva para Ceci.
-    El pago se coordina por ese mismo chat.
+    🧪 <strong>Versión de prueba</strong> — la reserva se guarda y bloquea el cupo; el pago se abona
+    por el link de Mercado Pago y se coordina por WhatsApp.
   </div>
 
   <main id="contenido" class="section booking">
@@ -126,7 +126,8 @@ const items = modalidades.map((m) => ({
           <span class="done__check" aria-hidden="true">✓</span>
           <h2>¡Casi listo!</h2>
           <p id="done-text"></p>
-          <p class="step__hint">Enviá el mensaje que abrimos en WhatsApp y Ceci te confirma el turno y te pasa cómo abonar. Si no se abrió solo, escribile directamente.</p>
+          <p class="step__hint">Para confirmar tu turno, aboná tu reserva y avisale a Ceci por WhatsApp (te abrimos el chat). El cupo queda reservado mientras tanto.</p>
+          <a id="pago-link" class="btn btn--primary pay" target="_blank" rel="noopener" hidden>Pagar mi reserva</a>
           <a href="/reservar" class="btn btn--ghost">Hacer otra reserva</a>
         </div>
       </section>
@@ -137,8 +138,8 @@ const items = modalidades.map((m) => ({
   <WhatsappFloat />
 </Base>
 
-<script define:vars={{ items, whatsapp: site.contacto.whatsapp }}>
-  const state = { modalidad: null, fecha: null, hora: null, nombre: '', tel: '', email: '' };
+<script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago }}>
+  const state = { modalidad: null, sedeSlug: 'online', lugar: null, fecha: null, fechaLabel: null, hora: null, nombre: '', tel: '', email: '' };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -154,7 +155,10 @@ const items = modalidades.map((m) => ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // Paso 1: opciones (ya están en el HTML; solo enganchamos el click)
+  const slugSede = (lugar) =>
+    lugar === 'Montevideo' ? 'montevideo' : lugar === 'San José' ? 'san-jose' : 'online';
+
+  // Paso 1: opciones
   $$('.opt').forEach((b) =>
     b.addEventListener('click', () => {
       const m = items.find((i) => i.id === b.dataset.id);
@@ -163,56 +167,75 @@ const items = modalidades.map((m) => ({
       if (m.esMembresia) return goTo(3); // el Club no agenda turno
       const presencial = m.id === 'presencial';
       $('#sede').hidden = !presencial;
-      $('#agenda').hidden = presencial; // en presencial, la agenda aparece al elegir sede
+      $('#agenda').hidden = true;
       $$('.sede__btn').forEach((s) => s.classList.remove('is-sel'));
-      $('#dias-label').textContent = 'Días disponibles';
       goTo(2);
+      if (!presencial) {
+        // virtual / skincare = online: cargamos disponibilidad directo
+        state.sedeSlug = 'online';
+        $('#dias-label').textContent = 'Días disponibles';
+        $('#agenda').hidden = false;
+        cargarDisponibilidad('online');
+      }
     })
   );
 
-  // Sede (presencial): al elegir, se muestra la disponibilidad de esa sede
+  // Sede (presencial): al elegir, cargamos la disponibilidad de esa sede
   $$('.sede__btn').forEach((s) =>
     s.addEventListener('click', () => {
       $$('.sede__btn').forEach((x) => x.classList.remove('is-sel'));
       s.classList.add('is-sel');
       state.lugar = s.dataset.sede;
+      state.sedeSlug = slugSede(state.lugar);
       $('#agenda').hidden = false;
       $('#dias-label').textContent = `Días disponibles en ${state.lugar}`;
+      cargarDisponibilidad(state.sedeSlug);
     })
   );
 
-  // Paso 2: días y horarios (mock)
-  const HORARIOS = ['09:00', '10:30', '14:00', '15:30', '17:00'];
-  function proximosDias(n) {
-    const out = [];
-    const d = new Date();
-    while (out.length < n) {
-      d.setDate(d.getDate() + 1);
-      if (d.getDay() !== 0) out.push(new Date(d)); // lun a sáb
+  // Paso 2: disponibilidad real desde la API (excluye turnos ya tomados)
+  async function cargarDisponibilidad(sedeSlug) {
+    const dias = $('#dias');
+    dias.innerHTML = '<p class="cal__msg">Buscando horarios…</p>';
+    $('#horarios').innerHTML = '';
+    $('#slots-label').hidden = true;
+    try {
+      const res = await fetch(`/api/disponibilidad?sede=${encodeURIComponent(sedeSlug)}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'error');
+      renderDias(data.slots);
+    } catch (e) {
+      dias.innerHTML = '<p class="cal__msg">No pudimos cargar los horarios. Probá de nuevo.</p>';
     }
-    return out;
   }
-  const fmtDia = (date) =>
-    date.toLocaleDateString('es-UY', { weekday: 'short', day: 'numeric', month: 'short' });
 
-  proximosDias(12).forEach((date) => {
-    const b = document.createElement('button');
-    b.className = 'cal__day';
-    b.textContent = fmtDia(date);
-    b.addEventListener('click', () => {
-      $$('.cal__day').forEach((x) => x.classList.remove('is-sel'));
-      b.classList.add('is-sel');
-      state.fecha = fmtDia(date);
-      renderSlots();
+  function renderDias(slots) {
+    const cont = $('#dias');
+    cont.innerHTML = '';
+    if (!slots.length) {
+      cont.innerHTML = '<p class="cal__msg">No hay horarios disponibles por ahora.</p>';
+      return;
+    }
+    slots.forEach((d) => {
+      const b = document.createElement('button');
+      b.className = 'cal__day';
+      b.textContent = d.label;
+      b.addEventListener('click', () => {
+        $$('.cal__day').forEach((x) => x.classList.remove('is-sel'));
+        b.classList.add('is-sel');
+        state.fecha = d.fecha;
+        state.fechaLabel = d.label;
+        renderSlots(d.horas);
+      });
+      cont.appendChild(b);
     });
-    $('#dias').appendChild(b);
-  });
+  }
 
-  function renderSlots() {
+  function renderSlots(horas) {
     const cont = $('#horarios');
     cont.innerHTML = '';
     $('#slots-label').hidden = false;
-    HORARIOS.forEach((h) => {
+    horas.forEach((h) => {
       const b = document.createElement('button');
       b.className = 'cal__slot';
       b.textContent = h;
@@ -241,7 +264,7 @@ const items = modalidades.map((m) => ({
     const m = state.modalidad;
     const cuando = m.esMembresia
       ? 'Membresía anual (coordinamos la primera consulta al sumarte)'
-      : `${state.fecha} · ${state.hora} h`;
+      : `${state.fechaLabel} · ${state.hora} h`;
     const filas = [`<div class="resumen__row"><span>Servicio</span><strong>${m.nombre}</strong></div>`];
     if (state.lugar)
       filas.push(`<div class="resumen__row"><span>Dónde</span><strong>${state.lugar}</strong></div>`);
@@ -251,24 +274,66 @@ const items = modalidades.map((m) => ({
     $('#resumen').innerHTML = filas.join('');
   }
 
-  // Confirmar: abre WhatsApp con la reserva pre-cargada hacia Ceci
   function waMensaje() {
     const m = state.modalidad;
-    const l = ['Hola Ceci! Quiero reservar:', `• ${m.nombre}`];
+    const l = ['Hola Ceci! Acabo de reservar por la web:', `• ${m.nombre}`];
     if (state.lugar) l.push(`• Sede: ${state.lugar}`);
-    if (!m.esMembresia) l.push(`• Día y hora: ${state.fecha} · ${state.hora} h`);
+    if (!m.esMembresia) l.push(`• Día y hora: ${state.fechaLabel} · ${state.hora} h`);
     l.push(`• A nombre de: ${state.nombre}`);
     if (state.email) l.push(`• Email: ${state.email}`);
-    l.push('¿Coordinamos el pago y lo confirmamos?');
+    l.push('¿Coordinamos el pago para confirmarla?');
     return l.join('\n');
   }
-  $('#confirmar').addEventListener('click', () => {
-    window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`, '_blank', 'noopener');
+
+  // Confirmar: registra la reserva (BLOQUEA el cupo), abre WhatsApp y muestra el pago
+  $('#confirmar').addEventListener('click', async () => {
+    const btn = $('#confirmar');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Reservando…';
     const m = state.modalidad;
-    $('#done-text').textContent = m.esMembresia
-      ? `${state.nombre}, te abrimos WhatsApp para coordinar tu ${m.nombre} con Ceci.`
-      : `${state.nombre}, te abrimos WhatsApp con tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} del ${state.fecha} a las ${state.hora} h.`;
-    goTo(5);
+    try {
+      const res = await fetch('/api/reservar', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          modalidad: m.id,
+          sede: state.sedeSlug,
+          fecha: m.esMembresia ? null : state.fecha,
+          hora: m.esMembresia ? null : state.hora,
+          nombre: state.nombre,
+          telefono: state.tel,
+          email: state.email,
+          precio: m.precio,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        alert('Ese horario se ocupó recién. Te muestro los disponibles para elegir otro.');
+        cargarDisponibilidad(state.sedeSlug);
+        goTo(2);
+        return;
+      }
+      if (!res.ok || !data.ok) throw new Error(data.error || 'error');
+
+      // Reserva creada y cupo bloqueado: abrimos WhatsApp y mostramos el pago.
+      window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`, '_blank', 'noopener');
+      $('#done-text').textContent = m.esMembresia
+        ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
+        : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
+      const pagoLink = $('#pago-link');
+      if (pago && pagoLink) {
+        pagoLink.href = pago;
+        pagoLink.hidden = false;
+      }
+      goTo(5);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = orig;
+      alert('No pudimos registrar la reserva. Probá de nuevo en un momento.');
+    }
   });
 
   // Volver
@@ -345,6 +410,7 @@ const items = modalidades.map((m) => ({
 
   .cal__label { font-weight: 600; font-size: 0.9rem; margin: 0 0 0.7rem; color: var(--ink); }
   #slots-label { margin-top: 1.5rem; }
+  .cal__msg { color: var(--ink-soft); font-size: 0.92rem; margin: 0.3rem 0; }
 
   /* Selector de sede (solo presencial) */
   .sede { margin-bottom: 1.6rem; }
