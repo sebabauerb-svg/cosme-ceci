@@ -1,0 +1,21 @@
+import { neon } from '@neondatabase/serverless';
+
+/**
+ * Cliente de base de datos (Neon · Postgres).
+ * La conexión viene de las variables que inyecta la integración de Neon en Vercel.
+ * Se resuelve en runtime (no al build) para no romper el build si falta la variable.
+ */
+export function getSql() {
+  const cs =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.DATABASE_URL_UNPOOLED ||
+    process.env.POSTGRES_URL_NON_POOLING;
+  if (!cs) {
+    throw new Error(
+      'Falta la variable de conexión a Neon (DATABASE_URL / POSTGRES_URL). ' +
+        'Revisá la integración de Neon en Vercel.'
+    );
+  }
+  return neon(cs);
+}
