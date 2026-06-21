@@ -76,9 +76,20 @@ sandbox primero (rama `feat/reservas`, preview), validar, y recién después mer
 Doble reserva (bloqueo de slot/concurrencia), zona horaria UY, expiración de no pagadas,
 política de cancelación/reembolso (MP no devuelve comisión), datos personales.
 
-## 5. Pendiente de Sebas/Ceci antes de la parte real
-- [ ] Validar el prototipo `/reservar` (incluida la sede) — **gatillo para arrancar Fase 2b.**
-- [ ] Cuenta de empresa en Mercado Pago (credenciales test y prod).
+## 5. Progreso Fase 2b y pendientes
+
+**Hecho (2026-06-21):** esquema de base de datos completo en `supabase/migrations/0001_init.sql`
+(sedes, disponibilidad por sede, bloqueos, reservas; RLS cerrado; índice anti-doble-reserva;
+seed de Montevideo y San José). Guía de armado en `supabase/README.md`.
+
+**Bloqueo encontrado:** el plan **free de Supabase está lleno** (2 proyectos activos:
+`mis-finanzas`, `puestos-comercial`). Para hostear la base hay que: (A) upgrade a Pro
+(~US$25/mes, ~US$35 total), (B) pausar `puestos-comercial`, o (C) Supabase local para dev.
+Org id: `bhldlhughrnjyzyfunhe`.
+
+**Pendiente de Sebas/Ceci para continuar:**
+- [ ] Elegir provisión de DB (A / B / C) → ahí aplico la migración y sigo con los endpoints.
+- [ ] Cuenta de empresa en Mercado Pago + credenciales TEST.
 - [ ] Definir canal de aviso (email / Google Calendar / WhatsApp).
 - [ ] Confirmar si el Club entra al flujo de pago o se vende aparte.
 - [ ] Decisión sobre fuentes (mantener o cambiar a Spectral+Hanken).
