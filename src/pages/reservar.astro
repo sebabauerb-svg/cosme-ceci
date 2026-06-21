@@ -196,38 +196,88 @@ const items = modalidades.map((m) => ({
   // Paso 2: disponibilidad real desde la API (excluye turnos ya tomados)
   async function cargarDisponibilidad(sedeSlug) {
     const dias = $('#dias');
-    dias.innerHTML = '<p class="cal__msg">Buscando horarios…</p>';
+    dias.innerHTML = '<p class="cal__msg">Buscando fechas…</p>';
     $('#horarios').innerHTML = '';
     $('#slots-label').hidden = true;
     try {
       const res = await fetch(`/api/disponibilidad?sede=${encodeURIComponent(sedeSlug)}`);
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || 'error');
-      renderDias(data.slots);
+      renderCalendario(data.slots);
     } catch (e) {
-      dias.innerHTML = '<p class="cal__msg">No pudimos cargar los horarios. Probá de nuevo.</p>';
+      dias.innerHTML = '<p class="cal__msg">No pudimos cargar las fechas. Probá de nuevo.</p>';
     }
   }
 
-  function renderDias(slots) {
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const WD = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  function renderCalendario(slots) {
     const cont = $('#dias');
     cont.innerHTML = '';
+    $('#horarios').innerHTML = '';
+    $('#slots-label').hidden = true;
     if (!slots.length) {
       cont.innerHTML = `<p class="cal__msg">No hay fechas disponibles para esta opción por ahora. <a href="https://wa.me/${whatsapp}" target="_blank" rel="noopener" style="color:var(--sage-deep);font-weight:600">Escribinos por WhatsApp</a> y coordinamos.</p>`;
       return;
     }
-    slots.forEach((d) => {
-      const b = document.createElement('button');
-      b.className = 'cal__day';
-      b.textContent = d.label;
-      b.addEventListener('click', () => {
-        $$('.cal__day').forEach((x) => x.classList.remove('is-sel'));
-        b.classList.add('is-sel');
-        state.fecha = d.fecha;
-        state.fechaLabel = d.label;
-        renderSlots(d.horas);
+    const byFecha = {};
+    slots.forEach((s) => (byFecha[s.fecha] = s));
+    const disp = new Set(slots.map((s) => s.fecha));
+
+    const [hy, hm] = new Date().toISOString().slice(0, 10).split('-').map(Number);
+    const [ly, lm] = slots[slots.length - 1].fecha.split('-').map(Number);
+    const meses = [];
+    let y = hy, m = hm;
+    for (let i = 0; i < 6; i++) {
+      meses.push({ y, m });
+      if (y === ly && m === lm) break;
+      m++; if (m > 12) { m = 1; y++; }
+    }
+
+    meses.forEach(({ y, m }) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'cal2';
+      const head = document.createElement('div');
+      head.className = 'cal2__head';
+      head.textContent = `${MESES[m - 1]} ${y}`;
+      wrap.appendChild(head);
+      const grid = document.createElement('div');
+      grid.className = 'cal2__grid';
+      WD.forEach((w) => {
+        const e = document.createElement('div');
+        e.className = 'cal2__wd';
+        e.textContent = w;
+        grid.appendChild(e);
       });
-      cont.appendChild(b);
+      const firstDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+      const offset = (firstDow + 6) % 7;
+      for (let i = 0; i < offset; i++) {
+        const e = document.createElement('div');
+        e.className = 'cal2__cell cal2__cell--empty';
+        grid.appendChild(e);
+      }
+      const ndays = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      for (let day = 1; day <= ndays; day++) {
+        const iso = `${y}-${pad2(m)}-${pad2(day)}`;
+        const on = disp.has(iso);
+        const cell = document.createElement(on ? 'button' : 'div');
+        cell.className = on ? 'cal2__cell cal2__cell--on' : 'cal2__cell cal2__cell--off';
+        cell.textContent = String(day);
+        if (on) {
+          cell.addEventListener('click', () => {
+            $$('.cal2__cell--sel').forEach((x) => x.classList.remove('cal2__cell--sel'));
+            cell.classList.add('cal2__cell--sel');
+            state.fecha = iso;
+            state.fechaLabel = byFecha[iso].label;
+            renderSlots(byFecha[iso].horas);
+          });
+        }
+        grid.appendChild(cell);
+      }
+      wrap.appendChild(grid);
+      cont.appendChild(wrap);
     });
   }
 
@@ -466,6 +516,26 @@ const items = modalidades.map((m) => ({
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  /* Calendario mensual */
+  .cal2 { max-width: 340px; margin: 0 auto 1.6rem; }
+  .cal2__head {
+    font-family: var(--font-serif); font-size: 1.1rem; text-transform: capitalize;
+    text-align: center; margin-bottom: 0.7rem; color: var(--ink);
+  }
+  .cal2__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .cal2__wd { text-align: center; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); padding-bottom: 2px; }
+  .cal2__cell {
+    aspect-ratio: 1; display: grid; place-items: center; font-size: 0.88rem;
+    border-radius: 9px; border: 1px solid transparent; font-family: inherit;
+  }
+  .cal2__cell--empty { border: 0; }
+  .cal2__cell--off { color: color-mix(in srgb, var(--ink-soft) 40%, var(--cream)); }
+  .cal2__cell--on {
+    background: var(--white); border-color: var(--sand); color: var(--ink); cursor: pointer; font-weight: 600;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+  }
+  .cal2__cell--on:hover { border-color: var(--sage); transform: translateY(-1px); }
+  .cal2__cell--sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
   .resumen__row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; }
   .resumen__row span { color: var(--ink-soft); }
   .resumen__row strong { color: var(--ink); text-align: right; }

@@ -12,7 +12,17 @@ const LUGARES = [
   { slug: 'san-jose', nombre: 'San José' },
   { slug: 'online', nombre: 'Online (Virtual / Skincare Inteligente)' },
 ];
-const HORAS = ['08:00','09:00','10:00','10:30','11:00','12:00','14:00','15:00','15:30','16:00','17:00','18:00','19:00'];
+// Intervalo de turnos por sede (minutos)
+const SEDE_INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
+function genHoras(step: number, start = '08:00', end = '19:00') {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const out: string[] = [];
+  for (let t = sh * 60 + sm; t <= eh * 60 + em; t += step) {
+    out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+  }
+  return out;
+}
 
 // Próximas ~8 semanas de fechas (sin domingos), agrupadas por mes
 function proximasFechas(n: number) {
@@ -123,9 +133,9 @@ if (authed) {
                   </div>
                 ))}
 
-                <p class="lbl">Horarios (se aplican a las fechas marcadas)</p>
+                <p class="lbl">Horarios — turnos cada {SEDE_INTERVALO[lugar.slug]} min (se aplican a las fechas marcadas)</p>
                 <div class="horas">
-                  {HORAS.map((h) => (
+                  {genHoras(SEDE_INTERVALO[lugar.slug]).map((h) => (
                     <label class="hora-chk">
                       <input type="checkbox" data-lugar={lugar.slug} data-hora={h} checked={config[lugar.slug].horas.has(h)} />
                       {h}
