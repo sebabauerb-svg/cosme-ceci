@@ -14,7 +14,7 @@ const LUGARES = [
 ];
 // Intervalo de turnos por sede (minutos)
 const SEDE_INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
-function genHoras(step: number, start = '08:00', end = '19:00') {
+function genHoras(step: number, start = '08:00', end = '20:30') {
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
   const out: string[] = [];
