@@ -213,7 +213,7 @@ const items = modalidades.map((m) => ({
     const cont = $('#dias');
     cont.innerHTML = '';
     if (!slots.length) {
-      cont.innerHTML = '<p class="cal__msg">No hay horarios disponibles por ahora.</p>';
+      cont.innerHTML = `<p class="cal__msg">No hay fechas disponibles para esta opción por ahora. <a href="https://wa.me/${whatsapp}" target="_blank" rel="noopener" style="color:var(--sage-deep);font-weight:600">Escribinos por WhatsApp</a> y coordinamos.</p>`;
       return;
     }
     slots.forEach((d) => {

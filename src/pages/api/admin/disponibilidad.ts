@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql } from '../../../lib/db';
+import { getSql, ensureFranjas } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 
 export const prerender = false;
@@ -17,8 +17,8 @@ function nombreSede(slug: string) {
   return null; // online
 }
 
-// POST /api/admin/disponibilidad  body: { lugar, slots: [{dia, hora}] }
-// Reemplaza toda la disponibilidad de ese lugar por la nueva selección.
+// POST /api/admin/disponibilidad  body: { lugar, fechas: ['YYYY-MM-DD'], horas: ['HH:MM'] }
+// Reemplaza las franjas FUTURAS de ese lugar por (fechas × horas).
 export const POST: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
 
@@ -30,13 +30,20 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   }
 
   const lugar: string = body?.lugar;
-  const slots: { dia: number; hora: string }[] = Array.isArray(body?.slots) ? body.slots : [];
+  const fechas: string[] = Array.isArray(body?.fechas) ? body.fechas : [];
+  const horas: string[] = Array.isArray(body?.horas) ? body.horas : [];
   if (!['montevideo', 'san-jose', 'online'].includes(lugar)) {
     return json({ ok: false, error: 'Lugar inválido' }, 400);
   }
 
+  const hoy = new Date().toISOString().slice(0, 10);
+  const fechasOk = fechas.filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= hoy);
+  const horasOk = horas.filter((h) => /^\d{2}:\d{2}$/.test(h));
+
   try {
     const sql = getSql();
+    await ensureFranjas(sql);
+
     let sedeId: string | null = null;
     const nombre = nombreSede(lugar);
     if (nombre) {
@@ -44,28 +51,23 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       sedeId = r[0]?.id ? String(r[0].id) : null;
     }
 
-    // Borrar lo existente para ese lugar
+    // Borrar las franjas futuras de ese lugar (no tocamos el pasado)
     if (sedeId) {
-      await sql`delete from disponibilidad where sede_id = ${sedeId}`;
+      await sql`delete from franjas where sede_id = ${sedeId} and fecha >= ${hoy}`;
     } else {
-      await sql`delete from disponibilidad where sede_id is null`;
+      await sql`delete from franjas where sede_id is null and fecha >= ${hoy}`;
     }
 
-    // Insertar la nueva selección
-    let insertadas = 0;
-    for (const s of slots) {
-      const dia = Number(s.dia);
-      const hora = String(s.hora);
-      if (dia < 0 || dia > 6 || !/^\d{2}:\d{2}$/.test(hora)) continue;
-      await sql`
-        insert into disponibilidad (sede_id, dia_semana, hora)
-        values (${sedeId}, ${dia}, ${hora})
-        on conflict (sede_id, dia_semana, hora) do nothing
-      `;
-      insertadas++;
+    // Insertar fechas × horas
+    let guardados = 0;
+    for (const f of fechasOk) {
+      for (const h of horasOk) {
+        await sql`insert into franjas (sede_id, fecha, hora) values (${sedeId}, ${f}, ${h})`;
+        guardados++;
+      }
     }
 
-    return json({ ok: true, lugar, guardados: insertadas });
+    return json({ ok: true, lugar, fechas: fechasOk.length, horas: horasOk.length, guardados });
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }

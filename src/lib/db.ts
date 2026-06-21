@@ -19,3 +19,16 @@ export function getSql() {
   }
   return neon(cs);
 }
+
+/** Crea la tabla de franjas por fecha si no existe (idempotente). */
+export async function ensureFranjas(sql: any) {
+  await sql`
+    create table if not exists franjas (
+      id uuid primary key default gen_random_uuid(),
+      sede_id uuid references sedes(id) on delete cascade,
+      fecha date not null,
+      hora time not null,
+      unique (sede_id, fecha, hora)
+    )
+  `;
+}

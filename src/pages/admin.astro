@@ -3,7 +3,7 @@ export const prerender = false;
 
 import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
-import { getSql } from '../lib/db';
+import { getSql, ensureFranjas } from '../lib/db';
 
 const authed = isAdmin(Astro.cookies);
 
@@ -12,37 +12,58 @@ const LUGARES = [
   { slug: 'san-jose', nombre: 'San José' },
   { slug: 'online', nombre: 'Online (Virtual / Skincare Inteligente)' },
 ];
-const DIAS = [
-  { n: 1, l: 'Lun' },
-  { n: 2, l: 'Mar' },
-  { n: 3, l: 'Mié' },
-  { n: 4, l: 'Jue' },
-  { n: 5, l: 'Vie' },
-  { n: 6, l: 'Sáb' },
-];
 const HORAS = ['08:00','09:00','10:00','10:30','11:00','12:00','14:00','15:00','15:30','16:00','17:00','18:00','19:00'];
 
-// Config y reservas (solo si está logueada)
-const config: Record<string, Set<string>> = { montevideo: new Set(), 'san-jose': new Set(), online: new Set() };
+// Próximas ~8 semanas de fechas (sin domingos), agrupadas por mes
+function proximasFechas(n: number) {
+  const out: { iso: string; label: string; mes: string }[] = [];
+  const d = new Date();
+  for (let i = 0; i < n; i++) {
+    d.setDate(d.getDate() + 1);
+    if (d.getUTCDay() === 0) continue;
+    out.push({
+      iso: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString('es-UY', { weekday: 'short', day: 'numeric', timeZone: 'UTC' }),
+      mes: d.toLocaleDateString('es-UY', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+    });
+  }
+  return out;
+}
+const fechas = proximasFechas(63);
+const meses: { mes: string; dias: typeof fechas }[] = [];
+for (const f of fechas) {
+  let g = meses.find((m) => m.mes === f.mes);
+  if (!g) { g = { mes: f.mes, dias: [] }; meses.push(g); }
+  g.dias.push(f);
+}
+
+const config: Record<string, { fechas: Set<string>; horas: Set<string> }> = {
+  montevideo: { fechas: new Set(), horas: new Set() },
+  'san-jose': { fechas: new Set(), horas: new Set() },
+  online: { fechas: new Set(), horas: new Set() },
+};
 let reservas: any[] = [];
 let dbError = '';
 
 if (authed) {
   try {
     const sql = getSql();
-    const conf = await sql`
-      select coalesce(s.nombre, 'Online') as lugar, d.dia_semana, to_char(d.hora,'HH24:MI') as hora
-      from disponibilidad d left join sedes s on s.id = d.sede_id
+    await ensureFranjas(sql);
+    const fr = await sql`
+      select coalesce(s.nombre, 'Online') as lugar, f.fecha::text as fecha, to_char(f.hora,'HH24:MI') as hora
+      from franjas f left join sedes s on s.id = f.sede_id
+      where f.fecha >= current_date
     `;
     const map: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose', Online: 'online' };
-    for (const r of conf as any[]) {
+    for (const r of fr as any[]) {
       const slug = map[r.lugar] ?? 'online';
-      config[slug].add(`${r.dia_semana}|${r.hora}`);
+      config[slug].fechas.add(r.fecha);
+      config[slug].horas.add(r.hora);
     }
     reservas = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
-             r.nombre, r.telefono, r.estado, r.created_at
+             r.nombre, r.telefono, r.estado
       from reservas r left join sedes s on s.id = r.sede_id
       order by r.created_at desc limit 50
     `) as any[];
@@ -75,39 +96,43 @@ if (authed) {
           {dbError && <p class="login__err">Error de base de datos: {dbError}</p>}
 
           <section class="card">
-            <h2>Horarios disponibles</h2>
-            <p class="muted">Marcá los horarios que atendés en cada lugar. Lo que dejes marcado es lo que verán las clientas al reservar.</p>
+            <h2>Tu disponibilidad</h2>
+            <p class="muted">Marcá <strong>las fechas</strong> que atendés en cada lugar y <strong>los horarios</strong>. Las clientas solo van a poder reservar en esas fechas y horas. (Ej: en San José, marcá solo los días que vas.)</p>
+
             {LUGARES.map((lugar) => (
               <div class="sede-block">
                 <div class="sede-block__top">
                   <h3>{lugar.nombre}</h3>
                   <button class="btn btn--primary btn--sm" data-guardar={lugar.slug}>Guardar {lugar.nombre}</button>
                 </div>
-                <div class="grid-wrap">
-                  <table class="grid">
-                    <thead>
-                      <tr><th>Hora</th>{DIAS.map((d) => <th>{d.l}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {HORAS.map((h) => (
-                        <tr>
-                          <td class="grid__hora">{h}</td>
-                          {DIAS.map((d) => (
-                            <td>
-                              <input
-                                type="checkbox"
-                                data-lugar={lugar.slug}
-                                data-dia={d.n}
-                                data-hora={h}
-                                checked={config[lugar.slug].has(`${d.n}|${h}`)}
-                              />
-                            </td>
-                          ))}
-                        </tr>
+
+                <p class="lbl">Fechas que atendés</p>
+                {meses.map((m) => (
+                  <div class="mes">
+                    <h4>{m.mes}</h4>
+                    <div class="chips">
+                      {m.dias.map((d) => (
+                        <button
+                          type="button"
+                          class:list={['chip', config[lugar.slug].fechas.has(d.iso) && 'is-on']}
+                          data-lugar={lugar.slug}
+                          data-fecha={d.iso}
+                        >{d.label}</button>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
+                ))}
+
+                <p class="lbl">Horarios (se aplican a las fechas marcadas)</p>
+                <div class="horas">
+                  {HORAS.map((h) => (
+                    <label class="hora-chk">
+                      <input type="checkbox" data-lugar={lugar.slug} data-hora={h} checked={config[lugar.slug].horas.has(h)} />
+                      {h}
+                    </label>
+                  ))}
                 </div>
+
                 <p class="sede-msg" data-msg={lugar.slug}></p>
               </div>
             ))}
@@ -147,7 +172,6 @@ if (authed) {
 </Base>
 
 <script>
-  // Login
   const lf = document.getElementById('login-form');
   lf?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -158,37 +182,45 @@ if (authed) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ password: pw }),
     });
-    if (res.ok) {
-      location.reload();
-    } else {
+    if (res.ok) location.reload();
+    else {
       const d = await res.json().catch(() => ({}));
       if (err) { err.textContent = d.error || 'No se pudo entrar.'; err.hidden = false; }
     }
   });
 
-  // Logout
   document.getElementById('logout')?.addEventListener('click', async () => {
     await fetch('/api/admin/login', { method: 'DELETE' });
     location.reload();
   });
 
-  // Guardar disponibilidad por lugar
+  // Toggle de fechas
+  document.querySelectorAll('.chip').forEach((c) =>
+    c.addEventListener('click', () => c.classList.toggle('is-on'))
+  );
+
+  // Guardar por lugar
   document.querySelectorAll('[data-guardar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const lugar = (btn as HTMLElement).dataset.guardar!;
-      const slots = [...document.querySelectorAll(`input[data-lugar="${lugar}"]:checked`)].map((c) => ({
-        dia: Number((c as HTMLElement).dataset.dia),
-        hora: (c as HTMLElement).dataset.hora,
-      }));
+      const fechas = [...document.querySelectorAll(`.chip.is-on[data-lugar="${lugar}"]`)].map(
+        (c) => (c as HTMLElement).dataset.fecha
+      );
+      const horas = [...document.querySelectorAll(`input[data-lugar="${lugar}"]:checked`)].map(
+        (c) => (c as HTMLElement).dataset.hora
+      );
       const msg = document.querySelector(`[data-msg="${lugar}"]`) as HTMLElement;
       if (msg) msg.textContent = 'Guardando…';
       const res = await fetch('/api/admin/disponibilidad', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lugar, slots }),
+        body: JSON.stringify({ lugar, fechas, horas }),
       });
       const d = await res.json().catch(() => ({}));
-      if (msg) msg.textContent = res.ok ? `✓ Guardado (${d.guardados} horarios)` : `Error: ${d.error || 'no se pudo'}`;
+      if (msg)
+        msg.textContent = res.ok
+          ? `✓ Guardado: ${d.fechas} fechas × ${d.horas} horarios`
+          : `Error: ${d.error || 'no se pudo'}`;
     });
   });
 </script>
@@ -198,10 +230,7 @@ if (authed) {
   .login { max-width: 380px; margin: 2rem auto; text-align: center; }
   .login h1 { margin-bottom: 0.6rem; }
   .login form { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 1.4rem; }
-  .login input {
-    font: inherit; padding: 0.7rem 0.9rem; border: 1px solid var(--sand);
-    border-radius: var(--radius-sm); background: var(--white);
-  }
+  .login input { font: inherit; padding: 0.7rem 0.9rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); }
   .login__err { color: var(--clay-deep); font-size: 0.9rem; margin-top: 0.8rem; }
 
   .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
@@ -214,15 +243,29 @@ if (authed) {
   .sede-block__top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
   .sede-block__top h3 { font-size: 1.1rem; }
   .btn--sm { padding: 0.45rem 1rem; font-size: 0.88rem; }
-  .grid-wrap { overflow-x: auto; margin-top: 0.8rem; }
-  .grid { border-collapse: collapse; font-size: 0.88rem; }
-  .grid th, .grid td { border: 1px solid var(--sand); padding: 0.4rem 0.6rem; text-align: center; }
-  .grid th { background: var(--cream-deep); font-weight: 600; }
-  .grid__hora { font-weight: 600; background: var(--cream-deep); white-space: nowrap; }
-  .grid input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--sage); cursor: pointer; }
-  .sede-msg { font-size: 0.85rem; color: var(--sage-deep); margin-top: 0.5rem; min-height: 1.2em; }
+  .lbl { font-weight: 600; font-size: 0.9rem; margin: 1.1rem 0 0.5rem; }
 
-  .grid--res th, .grid--res td { text-align: left; font-size: 0.85rem; }
+  .mes { margin-bottom: 0.8rem; }
+  .mes h4 { font-size: 0.82rem; text-transform: capitalize; color: var(--sage-deep); margin-bottom: 0.4rem; font-family: var(--font-sans); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .chip {
+    background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
+    padding: 0.4rem 0.8rem; font-size: 0.82rem; cursor: pointer; text-transform: capitalize;
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  }
+  .chip:hover { border-color: var(--sage); }
+  .chip.is-on { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+
+  .horas { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+  .hora-chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; }
+  .hora-chk input { width: 17px; height: 17px; accent-color: var(--sage); }
+
+  .sede-msg { font-size: 0.85rem; color: var(--sage-deep); margin-top: 0.6rem; min-height: 1.2em; }
+
+  .grid-wrap { overflow-x: auto; }
+  .grid { border-collapse: collapse; font-size: 0.85rem; width: 100%; }
+  .grid th, .grid td { border: 1px solid var(--sand); padding: 0.4rem 0.6rem; text-align: left; }
+  .grid th { background: var(--cream-deep); font-weight: 600; }
   .badge { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--sand); color: var(--ink); }
   .badge--confirmada { background: color-mix(in srgb, var(--sage) 35%, var(--cream)); color: var(--sage-deep); }
   .badge--cancelada, .badge--expirada { background: color-mix(in srgb, var(--clay) 30%, var(--cream)); color: var(--clay-deep); }
