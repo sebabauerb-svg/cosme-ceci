@@ -4,6 +4,7 @@ import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
+import { site } from '../data/site';
 
 // PROTOTIPO (sandbox): flujo de reserva visual. Sin backend ni pagos reales.
 const items = modalidades.map((m) => ({
@@ -20,8 +21,8 @@ const items = modalidades.map((m) => ({
   <Nav />
 
   <div class="demo">
-    🧪 <strong>Modo demostración</strong> — flujo de prueba para evaluar el diseño. No procesa pagos
-    ni guarda reservas reales.
+    🧪 <strong>Versión de prueba</strong> — al confirmar se abre un WhatsApp con tu reserva para Ceci.
+    El pago se coordina por ese mismo chat.
   </div>
 
   <main id="contenido" class="section booking">
@@ -104,16 +105,16 @@ const items = modalidades.map((m) => ({
       </section>
 
       <!-- Paso 4: Resumen + pago -->
-      <section class="step" data-step="4" hidden aria-label="Resumen y pago">
-        <h2 class="step__title">Confirmá y pagá</h2>
+      <section class="step" data-step="4" hidden aria-label="Confirmar reserva">
+        <h2 class="step__title">Confirmá tu reserva</h2>
         <div class="resumen" id="resumen"></div>
         <ul class="trust">
-          <li>Pago protegido por Mercado Pago</li>
-          <li>Tarjeta, débito o dinero en cuenta</li>
-          <li>¿Necesitás reprogramar? Escribime y lo vemos sin problema</li>
+          <li>Confirmás tu turno con Ceci por WhatsApp</li>
+          <li>Coordinás el pago de forma simple y segura</li>
+          <li>¿Necesitás reprogramar? Lo vemos sin problema</li>
         </ul>
-        <button class="btn pay" id="pagar">Pagar con Mercado Pago</button>
-        <p class="step__hint center">Pago 100% al reservar · demostración (no se cobra nada).</p>
+        <button class="btn btn--wa pay" id="confirmar">Confirmar por WhatsApp</button>
+        <p class="step__hint center">Te abrimos WhatsApp con tu reserva lista para enviarle a Ceci.</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -123,9 +124,9 @@ const items = modalidades.map((m) => ({
       <section class="step step--done" data-step="5" hidden aria-label="Reserva confirmada">
         <div class="done">
           <span class="done__check" aria-hidden="true">✓</span>
-          <h2>¡Reserva confirmada! <small>(demo)</small></h2>
+          <h2>¡Casi listo!</h2>
           <p id="done-text"></p>
-          <p class="step__hint">En la versión real, acá llegaría la confirmación por WhatsApp y el turno quedaría agendado automáticamente al validarse el pago.</p>
+          <p class="step__hint">Enviá el mensaje que abrimos en WhatsApp y Ceci te confirma el turno y te pasa cómo abonar. Si no se abrió solo, escribile directamente.</p>
           <a href="/reservar" class="btn btn--ghost">Hacer otra reserva</a>
         </div>
       </section>
@@ -136,7 +137,7 @@ const items = modalidades.map((m) => ({
   <WhatsappFloat />
 </Base>
 
-<script define:vars={{ items }}>
+<script define:vars={{ items, whatsapp: site.contacto.whatsapp }}>
   const state = { modalidad: null, fecha: null, hora: null, nombre: '', tel: '', email: '' };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -250,18 +251,24 @@ const items = modalidades.map((m) => ({
     $('#resumen').innerHTML = filas.join('');
   }
 
-  // Pago (mock)
-  $('#pagar').addEventListener('click', () => {
-    const btn = $('#pagar');
-    btn.disabled = true;
-    btn.textContent = 'Procesando… (demo)';
-    setTimeout(() => {
-      const m = state.modalidad;
-      $('#done-text').textContent = m.esMembresia
-        ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-        : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó para el ${state.fecha} a las ${state.hora} h.`;
-      goTo(5);
-    }, 900);
+  // Confirmar: abre WhatsApp con la reserva pre-cargada hacia Ceci
+  function waMensaje() {
+    const m = state.modalidad;
+    const l = ['Hola Ceci! Quiero reservar:', `• ${m.nombre}`];
+    if (state.lugar) l.push(`• Sede: ${state.lugar}`);
+    if (!m.esMembresia) l.push(`• Día y hora: ${state.fecha} · ${state.hora} h`);
+    l.push(`• A nombre de: ${state.nombre}`);
+    if (state.email) l.push(`• Email: ${state.email}`);
+    l.push('¿Coordinamos el pago y lo confirmamos?');
+    return l.join('\n');
+  }
+  $('#confirmar').addEventListener('click', () => {
+    window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`, '_blank', 'noopener');
+    const m = state.modalidad;
+    $('#done-text').textContent = m.esMembresia
+      ? `${state.nombre}, te abrimos WhatsApp para coordinar tu ${m.nombre} con Ceci.`
+      : `${state.nombre}, te abrimos WhatsApp con tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} del ${state.fecha} a las ${state.hora} h.`;
+    goTo(5);
   });
 
   // Volver
@@ -364,8 +371,7 @@ const items = modalidades.map((m) => ({
     background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
     padding: 1.4rem 1.6rem; margin-bottom: 1.4rem; max-width: 460px; margin-inline: auto;
   }
-  .pay { width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; background: #009ee3; color: #fff; }
-  .pay:hover { background: #0089c7; }
+  .pay { width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; }
   .pay:disabled { opacity: 0.7; cursor: default; }
 
   .done { text-align: center; padding: 2rem 0; }
