@@ -25,7 +25,7 @@ function proximosDias(n: number) {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
-      timeZone: 'America/Montevideo',
+      timeZone: 'UTC', // coincide con la fecha ISO (UTC) que guardamos
     });
     out.push({ iso, label });
   }
