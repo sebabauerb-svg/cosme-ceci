@@ -41,6 +41,12 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const sql = getSql();
 
+    // Liberar cupos de reservas pendientes vencidas (auto-expiración, sin cron)
+    await sql`
+      update reservas set estado = 'expirada'
+      where estado = 'pendiente_pago' and expira_at is not null and expira_at < now()
+    `;
+
     let sedeId: string | null = null;
     const nombreS = nombreSede(sede);
     if (nombreS) {

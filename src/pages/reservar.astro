@@ -280,16 +280,31 @@ const items = modalidades.map((m) => ({
     const cont = $('#horarios');
     cont.innerHTML = '';
     $('#slots-label').hidden = false;
-    horas.forEach((h) => {
-      const b = document.createElement('button');
-      b.className = 'cal__slot';
-      b.textContent = h;
-      b.addEventListener('click', () => {
-        state.hora = h;
-        goTo(3);
+    const grupo = (titulo, hs) => {
+      if (!hs.length) return;
+      const g = document.createElement('div');
+      g.className = 'slots-group';
+      const t = document.createElement('p');
+      t.className = 'slots-group__t';
+      t.textContent = titulo;
+      g.appendChild(t);
+      const row = document.createElement('div');
+      row.className = 'slots-row';
+      hs.forEach((h) => {
+        const b = document.createElement('button');
+        b.className = 'cal__slot';
+        b.textContent = h;
+        b.addEventListener('click', () => {
+          state.hora = h;
+          goTo(3);
+        });
+        row.appendChild(b);
       });
-      cont.appendChild(b);
-    });
+      g.appendChild(row);
+      cont.appendChild(g);
+    };
+    grupo('Mañana', horas.filter((h) => h < '13:00'));
+    grupo('Tarde', horas.filter((h) => h >= '13:00'));
   }
 
   // Paso 3: datos
@@ -531,6 +546,13 @@ const items = modalidades.map((m) => ({
   }
   .cal2__cell--on:hover { border-color: var(--sage); transform: translateY(-1px); }
   .cal2__cell--sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  /* Horarios agrupados (Mañana / Tarde) */
+  .slots-group { margin-bottom: 1rem; }
+  .slots-group__t {
+    font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--sage-deep); margin: 0 0 0.5rem;
+  }
+  .slots-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .resumen__row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; }
   .resumen__row span { color: var(--ink-soft); }
   .resumen__row strong { color: var(--ink); text-align: right; }

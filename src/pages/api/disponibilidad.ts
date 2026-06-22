@@ -54,7 +54,8 @@ export const GET: APIRoute = async ({ url }) => {
     const ocupadas = await sql`
       select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora
       from reservas
-      where estado in ('pendiente_pago', 'confirmada')
+      where (estado = 'confirmada'
+             or (estado = 'pendiente_pago' and (expira_at is null or expira_at > now())))
         and fecha >= ${hoy}
         and coalesce(sede_id::text, 'online') = ${sedeKey}
     `;
