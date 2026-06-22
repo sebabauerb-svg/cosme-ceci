@@ -17,28 +17,9 @@ function nombreSede(slug: string) {
   return null; // online
 }
 
-// Intervalo de turnos por sede (min) y corte Mañana/Tarde — debe coincidir con el panel
-const SEDE_INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
-const CORTE = '13:00';
-function genHoras(step: number, start = '08:00', end = '20:30') {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const out: string[] = [];
-  for (let t = sh * 60 + sm; t <= eh * 60 + em; t += step) {
-    out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
-  }
-  return out;
-}
-function horasDeBloque(slug: string, bloque: string): string[] {
-  const todas = genHoras(SEDE_INTERVALO[slug] ?? 30);
-  if (bloque === 'manana') return todas.filter((h) => h < CORTE);
-  if (bloque === 'tarde') return todas.filter((h) => h >= CORTE);
-  return todas; // 'dia'
-}
-
 // POST /api/admin/disponibilidad
-// body: { lugar, dias: [{ fecha:'YYYY-MM-DD', bloque:'manana'|'tarde'|'dia' }], llenas: ['YYYY-MM-DD'] }
-// Reemplaza la foto FUTURA de ese lugar: cada día abre los turnos de su bloque; los llenos van a bloqueos.
+// body: { lugar, dias: [{ fecha:'YYYY-MM-DD', horas:['HH:MM', ...] }], llenas: ['YYYY-MM-DD'] }
+// Reemplaza la foto FUTURA de ese lugar: cada día abre exactamente sus horas; los llenos van a bloqueos.
 export const POST: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
 
@@ -56,16 +37,18 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
   const hoy = new Date().toISOString().slice(0, 10);
   const esFecha = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= hoy;
+  const esHora = (h: string) => /^\d{2}:\d{2}$/.test(h);
 
   // Días llenos (bloqueos) — tienen prioridad sobre la disponibilidad
   const llenasOk: string[] = (Array.isArray(body?.llenas) ? body.llenas : []).filter(esFecha);
   const llenasSet = new Set(llenasOk);
 
-  // Días disponibles con su bloque
+  // Días disponibles, cada uno con su propio set de horas
   const diasIn: any[] = Array.isArray(body?.dias) ? body.dias : [];
-  const diasOk = diasIn.filter(
-    (d) => d && esFecha(d.fecha) && ['manana', 'tarde', 'dia'].includes(d.bloque) && !llenasSet.has(d.fecha)
-  );
+  const diasOk = diasIn
+    .filter((d) => d && esFecha(d.fecha) && Array.isArray(d.horas) && !llenasSet.has(d.fecha))
+    .map((d) => ({ fecha: d.fecha as string, horas: [...new Set((d.horas as any[]).filter((h) => esHora(h)))] as string[] }))
+    .filter((d) => d.horas.length > 0);
 
   try {
     const sql = getSql();
@@ -87,10 +70,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       await sql`delete from bloqueos where sede_id is null and fecha >= ${hoy}`;
     }
 
-    // Insertar turnos: cada día abre las horas de su bloque
+    // Insertar turnos: cada día abre exactamente sus horas
     let turnos = 0;
     for (const d of diasOk) {
-      for (const h of horasDeBloque(lugar, d.bloque)) {
+      for (const h of d.horas) {
         await sql`insert into franjas (sede_id, fecha, hora) values (${sedeId}, ${d.fecha}, ${h})`;
         turnos++;
       }

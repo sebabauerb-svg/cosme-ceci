@@ -12,8 +12,17 @@ const LUGARES = [
   { slug: 'san-jose', nombre: 'San José' },
   { slug: 'online', nombre: 'Online (Virtual / Skincare Inteligente)' },
 ];
-// Intervalo de turnos por sede (minutos) — se muestra como referencia
+// Intervalo de turnos por sede (minutos)
 const SEDE_INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
+function genHoras(step: number, start = '08:00', end = '20:30') {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const out: string[] = [];
+  for (let t = sh * 60 + sm; t <= eh * 60 + em; t += step) {
+    out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+  }
+  return out;
+}
 
 // Calendario de los próximos meses para que Ceci marque sus días
 const HOY_ISO = new Date().toISOString().slice(0, 10);
@@ -44,10 +53,10 @@ function calMeses(cant: number) {
 }
 const CAL = calMeses(3);
 
-// Corte Mañana / Tarde (debe coincidir con el del endpoint)
+// Corte Mañana / Tarde para los atajos (debe coincidir con el del cliente)
 const CORTE = '13:00';
-type Bloque = 'manana' | 'tarde' | 'dia';
-const config: Record<string, { dias: Record<string, Bloque>; llenas: Set<string> }> = {
+// Cada día guarda su propio set de horas (no todos los días tienen el mismo horario)
+const config: Record<string, { dias: Record<string, string[]>; llenas: Set<string> }> = {
   montevideo: { dias: {}, llenas: new Set() },
   'san-jose': { dias: {}, llenas: new Set() },
   online: { dias: {}, llenas: new Set() },
@@ -65,19 +74,13 @@ if (authed) {
       where f.fecha >= current_date
     `;
     const map: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose', Online: 'online' };
-    // Reconstruir el bloque (mañana/tarde/día) de cada fecha a partir de sus horas guardadas
-    const horasPorFecha: Record<string, Record<string, Set<string>>> = { montevideo: {}, 'san-jose': {}, online: {} };
+    // Horas guardadas de cada fecha (para precargar el calendario tal cual quedó)
     for (const r of fr as any[]) {
       const slug = map[r.lugar] ?? 'online';
-      (horasPorFecha[slug][r.fecha] ??= new Set()).add(r.hora);
+      (config[slug].dias[r.fecha] ??= []).push(r.hora);
     }
-    for (const slug of Object.keys(horasPorFecha)) {
-      for (const [fecha, horas] of Object.entries(horasPorFecha[slug])) {
-        const arr = [...horas];
-        const m = arr.some((h) => h < CORTE);
-        const t = arr.some((h) => h >= CORTE);
-        config[slug].dias[fecha] = m && t ? 'dia' : t ? 'tarde' : 'manana';
-      }
+    for (const slug of Object.keys(config)) {
+      for (const f of Object.keys(config[slug].dias)) config[slug].dias[f].sort();
     }
     const bl = await sql`
       select coalesce(s.nombre, 'Online') as lugar, b.fecha::text as fecha
@@ -125,22 +128,16 @@ if (authed) {
 
           <section class="card">
             <h2>Tu disponibilidad</h2>
-            <p class="muted">Elegí un <strong>pincel</strong> y tocá los días en cada lugar. Podés combinar mañana, tarde, todo el día y días llenos sin perder lo anterior. Las clientas solo verán los días y horarios que marques. <strong>Nada se guarda hasta que tocás “Confirmar”.</strong></p>
+            <p class="muted">Para cada lugar: <strong>tocá los días</strong> y elegí sus <strong>horarios</strong>. Cada día puede tener horarios distintos. Podés marcar días como <strong>llenos</strong>. Las clientas solo verán lo que marques. <strong>Nada se guarda hasta que tocás “Confirmar”.</strong></p>
 
             {LUGARES.map((lugar) => (
-              <div class="sede-block" data-sede={lugar.slug} data-brush="manana">
+              <div class="sede-block" data-sede={lugar.slug}>
                 <div class="sede-block__top">
                   <h3>{lugar.nombre} <span class="sede-int">· turnos cada {SEDE_INTERVALO[lugar.slug]} min</span></h3>
                   <span class="dirty-flag" data-dirty={lugar.slug} hidden>● Cambios sin confirmar</span>
                 </div>
 
-                <div class="brushes" role="group" aria-label="Pincel para marcar días">
-                  <button type="button" class="brush brush--manana is-active" data-brush="manana">Mañana</button>
-                  <button type="button" class="brush brush--tarde" data-brush="tarde">Tarde</button>
-                  <button type="button" class="brush brush--dia" data-brush="dia">Todo el día</button>
-                  <button type="button" class="brush brush--lleno" data-brush="lleno">Lleno</button>
-                  <button type="button" class="brush brush--borrar" data-brush="borrar">Borrar</button>
-                </div>
+                <p class="hint">1) Tocá los días que querés editar (se resaltan). &nbsp; 2) Abajo elegí los horarios y tocá <b>Aplicar</b>. &nbsp; Repetí con otros días si tienen otro horario.</p>
 
                 <div class="acals">
                   {CAL.map((mes) => (
@@ -151,17 +148,20 @@ if (authed) {
                         {mes.cells.map((c) => {
                           if (!c) return <div class="acal__cell acal__cell--empty"></div>;
                           if (!c.sel) return <div class="acal__cell acal__cell--past">{c.day}</div>;
-                          const saved = config[lugar.slug].llenas.has(c.iso)
-                            ? 'lleno'
-                            : (config[lugar.slug].dias[c.iso] ?? '');
+                          const horas = config[lugar.slug].dias[c.iso] ?? [];
+                          const lleno = config[lugar.slug].llenas.has(c.iso);
+                          const st = lleno ? 'lleno' : horas.length ? 'horas' : '';
+                          const hstr = horas.join(',');
                           return (
                             <button
                               type="button"
-                              class:list={['acal__cell', 'acal__cell--btn', saved && `is-${saved}`]}
+                              class:list={['acal__cell', 'acal__cell--btn', st && `is-${st}`]}
                               data-lugar={lugar.slug}
                               data-fecha={c.iso}
-                              data-saved={saved}
-                              data-state={saved}
+                              data-state={st}
+                              data-horas={hstr}
+                              data-saved-state={st}
+                              data-saved-horas={hstr}
                             >{c.day}</button>
                           );
                         })}
@@ -170,11 +170,35 @@ if (authed) {
                   ))}
                 </div>
 
+                <div class="editor" data-editor={lugar.slug}>
+                  <p class="editor__count" data-count={lugar.slug}>Tocá uno o más días para elegir sus horarios.</p>
+                  <div class="quick">
+                    <span class="quick__lbl">Atajos:</span>
+                    <button type="button" class="chip" data-quick="manana">Mañana</button>
+                    <button type="button" class="chip" data-quick="tarde">Tarde</button>
+                    <button type="button" class="chip" data-quick="dia">Todo el día</button>
+                    <button type="button" class="chip chip--ghost" data-quick="none">Ninguno</button>
+                  </div>
+                  <div class="horas">
+                    {genHoras(SEDE_INTERVALO[lugar.slug]).map((h) => (
+                      <label class="hora-chk">
+                        <input type="checkbox" data-h={h} /> {h}
+                      </label>
+                    ))}
+                  </div>
+                  <div class="editor__actions">
+                    <button type="button" class="btn btn--primary btn--sm" data-aplicar={lugar.slug}>Aplicar horarios</button>
+                    <button type="button" class="btn btn--ghost btn--sm" data-lleno={lugar.slug}>Marcar lleno</button>
+                    <button type="button" class="btn btn--ghost btn--sm" data-quitar={lugar.slug}>Quitar día</button>
+                    <button type="button" class="link-btn" data-deselect={lugar.slug}>Deseleccionar</button>
+                  </div>
+                </div>
+
                 <p class="resumen" data-resumen={lugar.slug}></p>
 
                 <div class="sede-actions">
                   <button class="btn btn--primary btn--sm" data-confirmar={lugar.slug}>Confirmar {lugar.nombre}</button>
-                  <button class="btn btn--ghost btn--sm" data-limpiar={lugar.slug}>Limpiar selección</button>
+                  <button class="btn btn--ghost btn--sm" data-descartar={lugar.slug}>Descartar cambios</button>
                   <span class="sede-msg" data-msg={lugar.slug}></span>
                 </div>
               </div>
@@ -238,91 +262,168 @@ if (authed) {
     location.reload();
   });
 
-  // ----- Disponibilidad: pinceles + confirmar todo -----
-  const ETIQ: Record<string, string> = { manana: 'Mañana', tarde: 'Tarde', dia: 'Todo el día', lleno: 'Llenos' };
-  // Cantidad de turnos que genera cada bloque, por sede (intervalo en min, corte 13:00)
+  // ----- Disponibilidad: seleccionar días + elegir horarios por día -----
+  const CORTE = '13:00';
   const INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
-  function nSlots(sede: string, bloque: string): number {
-    const step = INTERVALO[sede] ?? 30;
-    let manana = 0, tarde = 0;
-    for (let t = 8 * 60; t <= 20 * 60 + 30; t += step) (t < 13 * 60 ? manana++ : tarde++);
-    if (bloque === 'manana') return manana;
-    if (bloque === 'tarde') return tarde;
-    return manana + tarde; // dia
+  function genHoras(step: number): string[] {
+    const out: string[] = [];
+    for (let t = 8 * 60; t <= 20 * 60 + 30; t += step)
+      out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+    return out;
   }
   const fmtDia = (iso: string) => { const [, m, d] = iso.split('-'); return `${+d}/${+m}`; };
+  const cellsDe = (b: HTMLElement) => [...b.querySelectorAll('.acal__cell--btn')] as HTMLElement[];
+  const selDe = (b: HTMLElement) => cellsDe(b).filter((c) => c.classList.contains('is-sel'));
+  const horasDe = (c: HTMLElement) => (c.dataset.horas ? c.dataset.horas.split(',') : []);
 
-  function cellsDe(block: HTMLElement) {
-    return [...block.querySelectorAll('.acal__cell--btn')] as HTMLElement[];
-  }
-  function pintar(cell: HTMLElement, state: string) {
-    cell.classList.remove('is-manana', 'is-tarde', 'is-dia', 'is-lleno');
+  // Pone el estado de un día: '' (libre), 'horas' (con horarios) o 'lleno'
+  function setState(cell: HTMLElement, state: string, horas: string[] = []) {
+    cell.classList.remove('is-horas', 'is-lleno');
     cell.dataset.state = state;
+    cell.dataset.horas = state === 'horas' ? horas.join(',') : '';
     if (state) cell.classList.add('is-' + state);
   }
   function estaSucio(block: HTMLElement) {
-    return cellsDe(block).some((c) => (c.dataset.state || '') !== (c.dataset.saved || ''));
+    return cellsDe(block).some(
+      (c) => (c.dataset.state || '') !== (c.dataset.savedState || '') || (c.dataset.horas || '') !== (c.dataset.savedHoras || '')
+    );
   }
+  // Nombre lindo de un set de horas para el resumen
+  function etiquetaHoras(sede: string, horas: string[]) {
+    const all = genHoras(INTERVALO[sede] ?? 30);
+    const man = all.filter((h) => h < CORTE), tar = all.filter((h) => h >= CORTE);
+    const eq = (a: string[]) => a.length === horas.length && a.every((h, i) => h === horas[i]);
+    if (eq(all)) return 'Todo el día';
+    if (eq(man)) return 'Mañana';
+    if (eq(tar)) return 'Tarde';
+    return `${horas.length} horarios (${horas[0]}–${horas[horas.length - 1]})`;
+  }
+
   function refrescar(block: HTMLElement) {
     const sede = block.dataset.sede!;
-    const grupos: Record<string, string[]> = { manana: [], tarde: [], dia: [], lleno: [] };
-    for (const c of cellsDe(block)) { const s = c.dataset.state || ''; if (grupos[s]) grupos[s].push(c.dataset.fecha!); }
+    // Agrupar días disponibles por su set de horas (firma)
+    const grupos: Record<string, string[]> = {};
+    const llenos: string[] = [];
     let turnos = 0;
+    for (const c of cellsDe(block)) {
+      if (c.dataset.state === 'lleno') { llenos.push(c.dataset.fecha!); continue; }
+      if (c.dataset.state === 'horas') {
+        const sig = c.dataset.horas || '';
+        (grupos[sig] ??= []).push(c.dataset.fecha!);
+        turnos += horasDe(c).length;
+      }
+    }
     const partes: string[] = [];
-    for (const k of ['manana', 'tarde', 'dia', 'lleno']) {
-      const dias = grupos[k];
-      if (!dias.length) continue;
-      if (k !== 'lleno') turnos += dias.reduce((acc) => acc + nSlots(sede, k), 0);
-      const lista = dias.sort().map(fmtDia).join(', ');
-      partes.push(`<b>${ETIQ[k]}</b> (${dias.length}): ${lista}`);
+    for (const sig of Object.keys(grupos).sort()) {
+      const horas = sig.split(',');
+      const dias = grupos[sig].sort().map(fmtDia).join(', ');
+      partes.push(`<b>${etiquetaHoras(sede, horas)}</b> (${grupos[sig].length}): ${dias}`);
     }
+    if (llenos.length) partes.push(`<b class="res-lleno">Llenos</b> (${llenos.length}): ${llenos.sort().map(fmtDia).join(', ')}`);
+
     const res = block.querySelector(`[data-resumen="${sede}"]`) as HTMLElement;
-    if (res) {
-      res.innerHTML = partes.length
-        ? partes.join(' &nbsp;·&nbsp; ') + ` &nbsp;·&nbsp; <span class="resumen__tot">${turnos} turnos para reservar</span>`
-        : '<span class="resumen__vacio">Sin días marcados. Elegí un pincel y tocá los días.</span>';
-    }
+    if (res) res.innerHTML = partes.length
+      ? partes.join('<br>') + `<br><span class="resumen__tot">${turnos} turnos para reservar</span>`
+      : '<span class="resumen__vacio">Sin días marcados.</span>';
+
     const flag = block.querySelector(`[data-dirty="${sede}"]`) as HTMLElement;
     if (flag) flag.hidden = !estaSucio(block);
   }
 
+  function actualizarSeleccion(block: HTMLElement) {
+    const sede = block.dataset.sede!;
+    const sel = selDe(block);
+    const cnt = block.querySelector(`[data-count="${sede}"]`) as HTMLElement;
+    const checks = [...block.querySelectorAll(`.editor[data-editor="${sede}"] input[data-h]`)] as HTMLInputElement[];
+    if (cnt) cnt.textContent = sel.length
+      ? `${sel.length} día${sel.length > 1 ? 's' : ''} seleccionado${sel.length > 1 ? 's' : ''}: elegí horarios y tocá Aplicar.`
+      : 'Tocá uno o más días para elegir sus horarios.';
+    // Si hay un único día seleccionado con horarios, precargarlos para editarlos
+    if (sel.length === 1 && sel[0].dataset.state === 'horas') {
+      const hs = new Set(horasDe(sel[0]));
+      checks.forEach((ch) => (ch.checked = hs.has(ch.dataset.h!)));
+    } else if (sel.length === 0) {
+      checks.forEach((ch) => (ch.checked = false));
+    }
+  }
+
   document.querySelectorAll<HTMLElement>('.sede-block').forEach((block) => {
     const sede = block.dataset.sede!;
+    const msg = () => block.querySelector(`[data-msg="${sede}"]`) as HTMLElement;
+    const checks = () => [...block.querySelectorAll(`.editor[data-editor="${sede}"] input[data-h]`)] as HTMLInputElement[];
 
-    // Elegir pincel
-    block.querySelectorAll<HTMLElement>('.brush').forEach((b) =>
-      b.addEventListener('click', () => {
-        block.dataset.brush = b.dataset.brush;
-        block.querySelectorAll('.brush').forEach((x) => x.classList.toggle('is-active', x === b));
-      })
-    );
-
-    // Pintar días con el pincel activo
+    // Seleccionar/deseleccionar días
     cellsDe(block).forEach((cell) =>
       cell.addEventListener('click', () => {
-        const brush = block.dataset.brush || 'manana';
-        pintar(cell, brush === 'borrar' ? '' : brush);
-        refrescar(block);
+        cell.classList.toggle('is-sel');
+        actualizarSeleccion(block);
       })
     );
 
-    // Limpiar selección → vuelve a lo último confirmado (no toca la base)
-    block.querySelector(`[data-limpiar="${sede}"]`)?.addEventListener('click', () => {
-      cellsDe(block).forEach((c) => pintar(c, c.dataset.saved || ''));
-      const msg = block.querySelector(`[data-msg="${sede}"]`) as HTMLElement;
-      if (msg) msg.textContent = '';
-      refrescar(block);
+    // Atajos: tildan los horarios (no tocan los días)
+    block.querySelectorAll<HTMLElement>('.chip[data-quick]').forEach((chip) =>
+      chip.addEventListener('click', () => {
+        const all = genHoras(INTERVALO[sede] ?? 30);
+        const q = chip.dataset.quick;
+        checks().forEach((ch) => {
+          const h = ch.dataset.h!;
+          ch.checked = q === 'dia' ? true : q === 'manana' ? h < CORTE : q === 'tarde' ? h >= CORTE : false;
+        });
+      })
+    );
+
+    // Aplicar horarios a los días seleccionados
+    block.querySelector(`[data-aplicar="${sede}"]`)?.addEventListener('click', () => {
+      const sel = selDe(block);
+      if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días a editar.'; return; }
+      const horas = checks().filter((ch) => ch.checked).map((ch) => ch.dataset.h!);
+      if (!horas.length) { if (msg()) msg().textContent = 'Elegí al menos un horario (o usá “Quitar día”).'; return; }
+      sel.forEach((c) => { setState(c, 'horas', horas); c.classList.remove('is-sel'); });
+      if (msg()) msg().textContent = '';
+      actualizarSeleccion(block); refrescar(block);
+    });
+
+    // Marcar seleccionados como llenos
+    block.querySelector(`[data-lleno="${sede}"]`)?.addEventListener('click', () => {
+      const sel = selDe(block);
+      if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días.'; return; }
+      sel.forEach((c) => { setState(c, 'lleno'); c.classList.remove('is-sel'); });
+      actualizarSeleccion(block); refrescar(block);
+    });
+
+    // Quitar disponibilidad de los seleccionados (vuelven a libres)
+    block.querySelector(`[data-quitar="${sede}"]`)?.addEventListener('click', () => {
+      const sel = selDe(block);
+      if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días.'; return; }
+      sel.forEach((c) => { setState(c, ''); c.classList.remove('is-sel'); });
+      actualizarSeleccion(block); refrescar(block);
+    });
+
+    // Deseleccionar
+    block.querySelector(`[data-deselect="${sede}"]`)?.addEventListener('click', () => {
+      cellsDe(block).forEach((c) => c.classList.remove('is-sel'));
+      actualizarSeleccion(block);
+    });
+
+    // Descartar cambios → vuelve a lo último confirmado (no toca la base)
+    block.querySelector(`[data-descartar="${sede}"]`)?.addEventListener('click', () => {
+      cellsDe(block).forEach((c) => {
+        c.classList.remove('is-sel');
+        const st = c.dataset.savedState || '';
+        setState(c, st, st === 'horas' ? (c.dataset.savedHoras || '').split(',').filter(Boolean) : []);
+      });
+      if (msg()) msg().textContent = '';
+      actualizarSeleccion(block); refrescar(block);
     });
 
     // Confirmar → guarda la foto completa de la sede
     block.querySelector(`[data-confirmar="${sede}"]`)?.addEventListener('click', async () => {
       const cells = cellsDe(block);
       const dias = cells
-        .filter((c) => ['manana', 'tarde', 'dia'].includes(c.dataset.state || ''))
-        .map((c) => ({ fecha: c.dataset.fecha, bloque: c.dataset.state }));
+        .filter((c) => c.dataset.state === 'horas')
+        .map((c) => ({ fecha: c.dataset.fecha, horas: horasDe(c) }));
       const llenas = cells.filter((c) => c.dataset.state === 'lleno').map((c) => c.dataset.fecha);
-      const msg = block.querySelector(`[data-msg="${sede}"]`) as HTMLElement;
-      if (msg) msg.textContent = 'Guardando…';
+      if (msg()) msg().textContent = 'Guardando…';
       const res = await fetch('/api/admin/disponibilidad', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -330,14 +431,15 @@ if (authed) {
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok) {
-        cells.forEach((c) => (c.dataset.saved = c.dataset.state || ''));
+        cells.forEach((c) => { c.dataset.savedState = c.dataset.state || ''; c.dataset.savedHoras = c.dataset.horas || ''; });
         refrescar(block);
-        if (msg) msg.textContent = `✓ Confirmado: ${d.fechas} días · ${d.turnos} turnos${d.llenas ? ` · ${d.llenas} llenos` : ''}`;
-      } else if (msg) {
-        msg.textContent = `Error: ${d.error || 'no se pudo'}`;
+        if (msg()) msg().textContent = `✓ Confirmado: ${d.fechas} días · ${d.turnos} turnos${d.llenas ? ` · ${d.llenas} llenos` : ''}`;
+      } else if (msg()) {
+        msg().textContent = `Error: ${d.error || 'no se pudo'}`;
       }
     });
 
+    actualizarSeleccion(block);
     refrescar(block);
   });
 
@@ -374,15 +476,7 @@ if (authed) {
   .dirty-flag { font-size: 0.8rem; color: var(--clay-deep); font-weight: 600; }
   .btn--sm { padding: 0.45rem 1rem; font-size: 0.88rem; }
 
-  .brushes { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0.9rem; }
-  .brush { font: inherit; font-size: 0.84rem; font-weight: 600; padding: 0.4rem 0.85rem; border-radius: 999px; border: 1.5px solid var(--sand); background: var(--white); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; transition: border-color 0.12s, box-shadow 0.12s; }
-  .brush::before { content: ''; width: 11px; height: 11px; border-radius: 6px; background: var(--swatch, var(--sand)); }
-  .brush--manana { --swatch: color-mix(in srgb, var(--sage) 38%, var(--cream)); }
-  .brush--tarde { --swatch: var(--sage); }
-  .brush--dia { --swatch: var(--sage-deep); }
-  .brush--lleno { --swatch: #c0392b; }
-  .brush--borrar::before { border: 1px solid var(--sand); background: var(--white); }
-  .brush.is-active { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+  .hint { font-size: 0.84rem; color: var(--ink-soft); margin: 0.9rem 0; line-height: 1.6; }
 
   .acals { display: flex; flex-wrap: wrap; gap: 1.4rem; margin-top: 0.4rem; }
   .acal { width: 224px; }
@@ -394,14 +488,29 @@ if (authed) {
   .acal__cell--past { color: color-mix(in srgb, var(--ink-soft) 35%, var(--cream)); }
   .acal__cell--btn { background: var(--white); border-color: var(--sand); color: var(--ink); cursor: pointer; transition: background 0.1s, border-color 0.1s, color 0.1s; }
   .acal__cell--btn:hover { border-color: var(--sage); }
-  .acal__cell--btn.is-manana { background: color-mix(in srgb, var(--sage) 38%, var(--cream)); color: var(--sage-deep); border-color: color-mix(in srgb, var(--sage) 55%, var(--cream)); font-weight: 600; }
-  .acal__cell--btn.is-tarde { background: var(--sage); color: var(--cream); border-color: var(--sage); font-weight: 600; }
-  .acal__cell--btn.is-dia { background: var(--sage-deep); color: var(--cream); border-color: var(--sage-deep); font-weight: 600; }
+  .acal__cell--btn.is-horas { background: var(--sage); color: var(--cream); border-color: var(--sage); font-weight: 600; }
   .acal__cell--btn.is-lleno { background: #c0392b; color: #fff; border-color: #c0392b; font-weight: 600; }
+  .acal__cell--btn.is-sel { box-shadow: 0 0 0 2px var(--ink); border-color: var(--ink); }
 
-  .resumen { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.7; margin: 0.4rem 0 0.9rem; }
-  .resumen b { color: var(--ink); }
-  .resumen__tot { color: var(--sage-deep); font-weight: 600; }
+  .editor { margin: 1rem 0 0.4rem; padding: 0.9rem 1rem; background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm); }
+  .editor__count { font-size: 0.86rem; font-weight: 600; color: var(--ink); margin-bottom: 0.7rem; }
+  .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.7rem; }
+  .quick__lbl { font-size: 0.82rem; color: var(--ink-soft); margin-right: 0.2rem; }
+  .chip { font: inherit; font-size: 0.82rem; font-weight: 600; padding: 0.32rem 0.8rem; border-radius: 999px; border: 1.5px solid var(--sage); background: var(--white); color: var(--sage-deep); cursor: pointer; }
+  .chip:hover { background: color-mix(in srgb, var(--sage) 14%, var(--white)); }
+  .chip--ghost { border-color: var(--sand); color: var(--ink-soft); }
+  .horas { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-bottom: 0.9rem; }
+  .hora-chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.86rem; }
+  .hora-chk input { width: 16px; height: 16px; accent-color: var(--sage); }
+  .editor__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+  .link-btn { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.84rem; text-decoration: underline; }
+  .link-btn:hover { color: var(--ink); }
+
+  .resumen { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.7; margin: 0.6rem 0 0.9rem; }
+  .resumen b { color: var(--sage-deep); }
+  .resumen b.res-lleno { color: var(--clay-deep); }
+  .resumen__tot { color: var(--ink); font-weight: 600; }
+  .resumen__vacio { color: var(--ink-soft); }
 
   .sede-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; }
   .sede-msg { font-size: 0.85rem; color: var(--sage-deep); min-height: 1.2em; }
