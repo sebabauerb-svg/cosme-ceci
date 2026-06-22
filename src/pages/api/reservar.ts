@@ -1,7 +1,29 @@
 import type { APIRoute } from 'astro';
 import { getSql } from '../../lib/db';
+import { notificarReserva } from '../../lib/email';
 
 export const prerender = false;
+
+const NOMBRE_MODALIDAD: Record<string, string> = {
+  presencial: 'Consulta Presencial',
+  virtual: 'Consulta Virtual',
+  'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
+  club: 'Club de las Estaciones',
+};
+
+function labelFecha(iso?: string | null) {
+  if (!iso) return null;
+  try {
+    return new Date(iso + 'T12:00:00Z').toLocaleDateString('es-UY', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -63,6 +85,16 @@ export const POST: APIRoute = async ({ request }) => {
            ${nombre}, ${telefono}, ${email || null}, ${precioNum}, 'pendiente_pago', ${expira})
         returning id
       `;
+      // Aviso por email a Ceci y a la clienta (no bloquea la reserva)
+      await notificarReserva({
+        modalidad: NOMBRE_MODALIDAD[modalidad] ?? modalidad,
+        sede: nombreS,
+        fechaLabel: esMembresia ? null : labelFecha(fecha),
+        hora: esMembresia ? null : hora,
+        nombre,
+        telefono,
+        email,
+      });
       return json({ ok: true, id: ins[0].id });
     } catch (e: any) {
       // 23505 = unique_violation → el cupo ya fue tomado entre que eligió y confirmó
