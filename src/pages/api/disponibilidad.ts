@@ -68,7 +68,10 @@ export const GET: APIRoute = async ({ url }) => {
     `;
     const bloqueadas = new Set((blo as any[]).map((b) => b.fecha));
 
-    // Agrupar por fecha
+    // Fechas que Ceci configuró para esta sede
+    const configuradas = new Set((franjas as any[]).map((f) => f.fecha));
+
+    // Agrupar las horas libres por fecha
     const porFecha = new Map<string, string[]>();
     for (const f of franjas as any[]) {
       if (bloqueadas.has(f.fecha)) continue;
@@ -82,7 +85,11 @@ export const GET: APIRoute = async ({ url }) => {
       .map(([fecha, horas]) => ({ fecha, label: label(fecha), horas }))
       .filter((d) => d.horas.length > 0);
 
-    return json({ ok: true, sede, slots });
+    // Fechas configuradas pero sin cupo libre (llenas o bloqueadas)
+    const disponibles = new Set(slots.map((s) => s.fecha));
+    const llenas = [...configuradas].filter((f) => !disponibles.has(f)).sort();
+
+    return json({ ok: true, sede, slots, llenas });
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }

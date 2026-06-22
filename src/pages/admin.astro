@@ -24,28 +24,34 @@ function genHoras(step: number, start = '08:00', end = '20:30') {
   return out;
 }
 
-// Próximas ~8 semanas de fechas (sin domingos), agrupadas por mes
-function proximasFechas(n: number) {
-  const out: { iso: string; label: string; mes: string }[] = [];
-  const d = new Date();
-  for (let i = 0; i < n; i++) {
-    d.setDate(d.getDate() + 1);
-    if (d.getUTCDay() === 0) continue;
+// Calendario de los próximos meses para que Ceci marque sus días
+const HOY_ISO = new Date().toISOString().slice(0, 10);
+const WD = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+type Celda = { iso: string; day: number; sel: boolean } | null;
+function calMeses(cant: number) {
+  const out: { label: string; cells: Celda[] }[] = [];
+  const base = new Date();
+  let y = base.getUTCFullYear();
+  let mo = base.getUTCMonth();
+  for (let i = 0; i < cant; i++) {
+    const firstDow = new Date(Date.UTC(y, mo, 1)).getUTCDay();
+    const offset = (firstDow + 6) % 7;
+    const ndays = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    const cells: Celda[] = [];
+    for (let k = 0; k < offset; k++) cells.push(null);
+    for (let day = 1; day <= ndays; day++) {
+      const iso = `${y}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      cells.push({ iso, day, sel: iso >= HOY_ISO });
+    }
     out.push({
-      iso: d.toISOString().slice(0, 10),
-      label: d.toLocaleDateString('es-UY', { weekday: 'short', day: 'numeric', timeZone: 'UTC' }),
-      mes: d.toLocaleDateString('es-UY', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+      label: new Date(Date.UTC(y, mo, 1)).toLocaleDateString('es-UY', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+      cells,
     });
+    mo++; if (mo > 11) { mo = 0; y++; }
   }
   return out;
 }
-const fechas = proximasFechas(63);
-const meses: { mes: string; dias: typeof fechas }[] = [];
-for (const f of fechas) {
-  let g = meses.find((m) => m.mes === f.mes);
-  if (!g) { g = { mes: f.mes, dias: [] }; meses.push(g); }
-  g.dias.push(f);
-}
+const CAL = calMeses(3);
 
 const config: Record<string, { fechas: Set<string>; horas: Set<string> }> = {
   montevideo: { fechas: new Set(), horas: new Set() },
@@ -116,22 +122,31 @@ if (authed) {
                   <button class="btn btn--primary btn--sm" data-guardar={lugar.slug}>Guardar {lugar.nombre}</button>
                 </div>
 
-                <p class="lbl">Fechas que atendés</p>
-                {meses.map((m) => (
-                  <div class="mes">
-                    <h4>{m.mes}</h4>
-                    <div class="chips">
-                      {m.dias.map((d) => (
-                        <button
-                          type="button"
-                          class:list={['chip', config[lugar.slug].fechas.has(d.iso) && 'is-on']}
-                          data-lugar={lugar.slug}
-                          data-fecha={d.iso}
-                        >{d.label}</button>
-                      ))}
+                <p class="lbl">Fechas que atendés (tocá los días que vas)</p>
+                <div class="acals">
+                  {CAL.map((mes) => (
+                    <div class="acal">
+                      <div class="acal__head">{mes.label}</div>
+                      <div class="acal__grid">
+                        {WD.map((w) => <div class="acal__wd">{w}</div>)}
+                        {mes.cells.map((c) =>
+                          !c ? (
+                            <div class="acal__cell acal__cell--empty"></div>
+                          ) : c.sel ? (
+                            <button
+                              type="button"
+                              class:list={['acal__cell', 'acal__cell--btn', config[lugar.slug].fechas.has(c.iso) && 'is-on']}
+                              data-lugar={lugar.slug}
+                              data-fecha={c.iso}
+                            >{c.day}</button>
+                          ) : (
+                            <div class="acal__cell acal__cell--past">{c.day}</div>
+                          )
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
 
                 <p class="lbl">Horarios — turnos cada {SEDE_INTERVALO[lugar.slug]} min (se aplican a las fechas marcadas)</p>
                 <div class="horas">
@@ -205,8 +220,8 @@ if (authed) {
     location.reload();
   });
 
-  // Toggle de fechas
-  document.querySelectorAll('.chip').forEach((c) =>
+  // Toggle de fechas (multi-selección)
+  document.querySelectorAll('.acal__cell--btn').forEach((c) =>
     c.addEventListener('click', () => c.classList.toggle('is-on'))
   );
 
@@ -214,7 +229,7 @@ if (authed) {
   document.querySelectorAll('[data-guardar]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const lugar = (btn as HTMLElement).dataset.guardar!;
-      const fechas = [...document.querySelectorAll(`.chip.is-on[data-lugar="${lugar}"]`)].map(
+      const fechas = [...document.querySelectorAll(`.acal__cell--btn.is-on[data-lugar="${lugar}"]`)].map(
         (c) => (c as HTMLElement).dataset.fecha
       );
       const horas = [...document.querySelectorAll(`input[data-lugar="${lugar}"]:checked`)].map(
@@ -267,16 +282,17 @@ if (authed) {
   .btn--sm { padding: 0.45rem 1rem; font-size: 0.88rem; }
   .lbl { font-weight: 600; font-size: 0.9rem; margin: 1.1rem 0 0.5rem; }
 
-  .mes { margin-bottom: 0.8rem; }
-  .mes h4 { font-size: 0.82rem; text-transform: capitalize; color: var(--sage-deep); margin-bottom: 0.4rem; font-family: var(--font-sans); font-weight: 600; }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-  .chip {
-    background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
-    padding: 0.4rem 0.8rem; font-size: 0.82rem; cursor: pointer; text-transform: capitalize;
-    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
-  }
-  .chip:hover { border-color: var(--sage); }
-  .chip.is-on { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  .acals { display: flex; flex-wrap: wrap; gap: 1.4rem; margin-top: 0.4rem; }
+  .acal { width: 224px; }
+  .acal__head { font-family: var(--font-serif); font-size: 0.98rem; text-transform: capitalize; margin-bottom: 0.4rem; color: var(--ink); }
+  .acal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .acal__wd { text-align: center; font-size: 0.62rem; font-weight: 600; color: var(--ink-soft); }
+  .acal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.78rem; border-radius: 6px; border: 1px solid transparent; }
+  .acal__cell--empty { border: 0; }
+  .acal__cell--past { color: color-mix(in srgb, var(--ink-soft) 35%, var(--cream)); }
+  .acal__cell--btn { background: var(--white); border-color: var(--sand); color: var(--ink); cursor: pointer; transition: background 0.1s, border-color 0.1s, color 0.1s; }
+  .acal__cell--btn:hover { border-color: var(--sage); }
+  .acal__cell--btn.is-on { background: var(--sage); color: var(--cream); border-color: var(--sage); font-weight: 600; }
 
   .horas { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
   .hora-chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; }
