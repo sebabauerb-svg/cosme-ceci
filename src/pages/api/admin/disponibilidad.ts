@@ -67,7 +67,17 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       }
     }
 
-    return json({ ok: true, lugar, fechas: fechasOk.length, horas: horasOk.length, guardados });
+    // Días marcados "llenos" → bloqueos
+    const llenasOk = (Array.isArray(body?.llenas) ? body.llenas : []).filter(
+      (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= hoy
+    );
+    if (sedeId) await sql`delete from bloqueos where sede_id = ${sedeId} and fecha >= ${hoy}`;
+    else await sql`delete from bloqueos where sede_id is null and fecha >= ${hoy}`;
+    for (const f of llenasOk) {
+      await sql`insert into bloqueos (sede_id, fecha, motivo) values (${sedeId}, ${f}, 'lleno')`;
+    }
+
+    return json({ ok: true, lugar, fechas: fechasOk.length, horas: horasOk.length, llenas: llenasOk.length, guardados });
   } catch (e) {
     return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }

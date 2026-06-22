@@ -53,10 +53,10 @@ function calMeses(cant: number) {
 }
 const CAL = calMeses(3);
 
-const config: Record<string, { fechas: Set<string>; horas: Set<string> }> = {
-  montevideo: { fechas: new Set(), horas: new Set() },
-  'san-jose': { fechas: new Set(), horas: new Set() },
-  online: { fechas: new Set(), horas: new Set() },
+const config: Record<string, { fechas: Set<string>; horas: Set<string>; llenas: Set<string> }> = {
+  montevideo: { fechas: new Set(), horas: new Set(), llenas: new Set() },
+  'san-jose': { fechas: new Set(), horas: new Set(), llenas: new Set() },
+  online: { fechas: new Set(), horas: new Set(), llenas: new Set() },
 };
 let reservas: any[] = [];
 let dbError = '';
@@ -75,6 +75,15 @@ if (authed) {
       const slug = map[r.lugar] ?? 'online';
       config[slug].fechas.add(r.fecha);
       config[slug].horas.add(r.hora);
+    }
+    const bl = await sql`
+      select coalesce(s.nombre, 'Online') as lugar, b.fecha::text as fecha
+      from bloqueos b left join sedes s on s.id = b.sede_id
+      where b.fecha >= current_date
+    `;
+    for (const r of bl as any[]) {
+      const slug = map[r.lugar] ?? 'online';
+      config[slug].llenas.add(r.fecha);
     }
     reservas = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
@@ -122,7 +131,8 @@ if (authed) {
                   <button class="btn btn--primary btn--sm" data-guardar={lugar.slug}>Guardar {lugar.nombre}</button>
                 </div>
 
-                <p class="lbl">Fechas que atendés (tocá los días que vas)</p>
+                <p class="lbl">Fechas que atendés</p>
+                <p class="hint-cal">Tocá un día: 1 vez = <b style="color:var(--sage-deep)">disponible</b> · 2 veces = <b style="color:#a23226">lleno</b> · 3 veces = quitar.</p>
                 <div class="acals">
                   {CAL.map((mes) => (
                     <div class="acal">
@@ -135,7 +145,7 @@ if (authed) {
                           ) : c.sel ? (
                             <button
                               type="button"
-                              class:list={['acal__cell', 'acal__cell--btn', config[lugar.slug].fechas.has(c.iso) && 'is-on']}
+                              class:list={['acal__cell', 'acal__cell--btn', config[lugar.slug].fechas.has(c.iso) && 'is-on', config[lugar.slug].llenas.has(c.iso) && 'is-full']}
                               data-lugar={lugar.slug}
                               data-fecha={c.iso}
                             >{c.day}</button>
@@ -220,9 +230,13 @@ if (authed) {
     location.reload();
   });
 
-  // Toggle de fechas (multi-selección)
+  // Ciclo de estados por día: vacío → disponible → lleno → vacío
   document.querySelectorAll('.acal__cell--btn').forEach((c) =>
-    c.addEventListener('click', () => c.classList.toggle('is-on'))
+    c.addEventListener('click', () => {
+      if (c.classList.contains('is-on')) { c.classList.remove('is-on'); c.classList.add('is-full'); }
+      else if (c.classList.contains('is-full')) { c.classList.remove('is-full'); }
+      else { c.classList.add('is-on'); }
+    })
   );
 
   // Guardar por lugar
@@ -230,6 +244,9 @@ if (authed) {
     btn.addEventListener('click', async () => {
       const lugar = (btn as HTMLElement).dataset.guardar!;
       const fechas = [...document.querySelectorAll(`.acal__cell--btn.is-on[data-lugar="${lugar}"]`)].map(
+        (c) => (c as HTMLElement).dataset.fecha
+      );
+      const llenas = [...document.querySelectorAll(`.acal__cell--btn.is-full[data-lugar="${lugar}"]`)].map(
         (c) => (c as HTMLElement).dataset.fecha
       );
       const horas = [...document.querySelectorAll(`input[data-lugar="${lugar}"]:checked`)].map(
@@ -240,12 +257,12 @@ if (authed) {
       const res = await fetch('/api/admin/disponibilidad', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lugar, fechas, horas }),
+        body: JSON.stringify({ lugar, fechas, horas, llenas }),
       });
       const d = await res.json().catch(() => ({}));
       if (msg)
         msg.textContent = res.ok
-          ? `✓ Guardado: ${d.fechas} fechas × ${d.horas} horarios`
+          ? `✓ Guardado: ${d.fechas} fechas × ${d.horas} horarios${d.llenas ? ` · ${d.llenas} llenos` : ''}`
           : `Error: ${d.error || 'no se pudo'}`;
     });
   });
@@ -293,6 +310,8 @@ if (authed) {
   .acal__cell--btn { background: var(--white); border-color: var(--sand); color: var(--ink); cursor: pointer; transition: background 0.1s, border-color 0.1s, color 0.1s; }
   .acal__cell--btn:hover { border-color: var(--sage); }
   .acal__cell--btn.is-on { background: var(--sage); color: var(--cream); border-color: var(--sage); font-weight: 600; }
+  .acal__cell--btn.is-full { background: #c0392b; color: #fff; border-color: #c0392b; font-weight: 600; }
+  .hint-cal { font-size: 0.82rem; color: var(--ink-soft); margin: 0 0 0.7rem; }
 
   .horas { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
   .hora-chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; }

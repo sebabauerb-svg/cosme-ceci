@@ -85,9 +85,11 @@ export const GET: APIRoute = async ({ url }) => {
       .map(([fecha, horas]) => ({ fecha, label: label(fecha), horas }))
       .filter((d) => d.horas.length > 0);
 
-    // Fechas configuradas pero sin cupo libre (llenas o bloqueadas)
+    // Fechas "llenas": configuradas sin cupo libre + bloqueadas manualmente por Ceci
     const disponibles = new Set(slots.map((s) => s.fecha));
-    const llenas = [...configuradas].filter((f) => !disponibles.has(f)).sort();
+    const llenasSet = new Set([...configuradas].filter((f) => !disponibles.has(f)));
+    bloqueadas.forEach((f) => llenasSet.add(f));
+    const llenas = [...llenasSet].sort();
 
     return json({ ok: true, sede, slots, llenas });
   } catch (e) {

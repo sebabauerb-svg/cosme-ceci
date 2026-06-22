@@ -1,14 +1,16 @@
 # Handoff — Cecilia Gutiérrez · Cosmetología Médica
 
 > Documento para retomar el proyecto sin perder contexto. Estado, decisiones y plan.
-> Última actualización: 2026-06-21 (Fase 2b: reservas reales).
+> Última actualización: 2026-06-22. Reservas **EN PRODUCCIÓN**; mejoras extra en rama
+> `feat/mejoras-reservas` (lista para mergear). Mercado Pago API en gestión (token de Ceci).
 
 ## 1. Qué es
 Sitio de **Cecilia Gutiérrez · Cosmetología Médica** (Montevideo y San José, Uruguay). Astro
 estático + endpoints serverless. Deploy en Vercel.
 
-- **Producción (en vivo):** https://cgcosmetologiamedica.com — rama `main`.
-  Hoy es el sitio institucional con los CTA "Agendar" → **WhatsApp** (todavía NO el flujo de reservas).
+- **Producción (en vivo, CON reservas):** https://cgcosmetologiamedica.com — rama `main`.
+  El sistema de reservas YA está en producción. `ADMIN_PASSWORD` y `DATABASE_URL` están en
+  el entorno Production. Ceci entra a `/admin` **solo con la contraseña** (sin cuenta Vercel).
 - **Repo:** github.com/sebabauerb-svg/cosme-ceci (privado).
 - **Deploy:** automático (push a `main` → producción; push a `feat/reservas` → preview).
 - Datos editables sin código: `src/data/{site,modalidades,tratamientos,club,imagenes}.ts`.
@@ -65,16 +67,29 @@ calendario + los **horarios** (intervalos: San José/Online 30 min, Montevideo 4
   fechas puntuales). Intervalos por sede (30/45 min). Horarios hasta 20:30.
 - Fuentes Fraunces+Inter (pendiente opcional: cambiarlas por Spectral+Hanken).
 
-## 5. Pendiente / próximos pasos
-- [ ] **Go-live a producción:** confirmar `ADMIN_PASSWORD` y `DATABASE_URL` en **Production** →
-      quitar banner "versión de prueba" → merge `feat/reservas` → `main`. Limpiar reservas de prueba.
-- [ ] **Acceso admin de Ceci:** en el **preview** no entra (Vercel exige login de Vercel). En
-      **producción** entra **solo con la contraseña** (sin cuenta Vercel). → otra razón para ir a prod.
-- [ ] **Visual (pedido):** mostrar los **horarios** como calendario/grilla más amigable ("tipo calendario").
-- [ ] **Email automático** de confirmación (clienta + Ceci) vía Resend (gratis).
-- [ ] **Auto-expirar** reservas no pagadas (cron de Vercel; hoy el cupo queda tomado hasta gestión manual).
-- [ ] **MP API + webhook** para que el pago confirme solo (hoy es manual).
-- [ ] Visual: fuentes Spectral+Hanken (opcional).
+## 5. Estado actual y pendientes (2026-06-22)
+
+**EN PRODUCCIÓN (`main`):** reservas completas (calendario, bloqueo de cupo, link de pago MP,
+WhatsApp), panel `/admin` (login con contraseña), disponibilidad por fechas, intervalos por sede
+(SJ/online 30', Mvd 45'), horarios hasta 20:30, borrar reservas desde el panel.
+
+**Rama `feat/mejoras-reservas` (preview, lista para mergear a `main`):**
+- Auto-liberar cupos de reservas no pagadas (>30 min), sin cron (al leer y al reservar).
+- Horarios agrupados Mañana/Tarde en `/reservar`.
+- Panel: fechas en **calendario mensual** (multi-selección). Ciclo por día:
+  vacío → disponible (verde) → **lleno** (rojo) → vacío. Los "llenos" se guardan en `bloqueos`.
+- `/reservar`: días disponibles en **verde**, llenos en **rojo** + leyenda.
+- Email de confirmación (Resend): código listo (`src/lib/email.ts`), se activa con env vars.
+
+**Pendiente:**
+- [ ] Mergear `feat/mejoras-reservas` → `main` (cuando Sebas valide).
+- [ ] **Resend (email):** crear cuenta + API key + verificar dominio → env `RESEND_API_KEY`,
+      `CECI_NOTIF_EMAIL` (cosmetologiamedicacg@gmail.com), `RESEND_FROM`. Con eso se prende solo.
+- [ ] **Mercado Pago API (en gestión):** Sebas le pidió a Ceci el **Access Token**. Con
+      `MP_ACCESS_TOKEN`: crear preferencia por monto exacto + webhook que confirma la reserva sola
+      (hoy el pago es por link y la confirmación es manual).
+- [ ] Horarios distintos por fecha en una misma sede (hoy son uniformes por sede).
+- [ ] Fuentes Spectral+Hanken (opcional).
 
 ## 6. Cómo trabajar
 - Sandbox = rama `feat/reservas` + preview de Vercel (no toca producción). Verificar con `npm run build`.
