@@ -387,7 +387,13 @@ const items = modalidades.map((m) => ({
       }
       if (!res.ok || !data.ok) throw new Error(data.error || 'error');
 
-      // Reserva creada y cupo bloqueado: abrimos WhatsApp y mostramos el pago.
+      // Si hay pago online (MercadoPago), vamos directo al checkout con el monto exacto.
+      if (data.initPoint) {
+        window.location.href = data.initPoint;
+        return;
+      }
+
+      // Fallback (sin pago configurado): abrimos WhatsApp y mostramos el link manual.
       window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`, '_blank', 'noopener');
       $('#done-text').textContent = m.esMembresia
         ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
@@ -412,6 +418,28 @@ const items = modalidades.map((m) => ({
       goTo(cur === 3 && state.modalidad?.esMembresia ? 1 : cur - 1);
     })
   );
+
+  // Regreso desde MercadoPago (back_urls): mostramos el estado del pago.
+  const pagoEstado = new URLSearchParams(location.search).get('pago');
+  if (pagoEstado) {
+    const done = $('#done-text');
+    const check = $('.done__check');
+    const titulo = $('.done h2');
+    if (pagoEstado === 'ok') {
+      if (titulo) titulo.textContent = '¡Turno confirmado!';
+      if (done) done.textContent = 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
+    } else if (pagoEstado === 'pendiente') {
+      if (titulo) titulo.textContent = 'Pago en proceso';
+      if (check) check.textContent = '⏳';
+      if (done) done.textContent = 'Tu pago está pendiente de acreditación. Cuando se confirme te llega el aviso por email y el turno queda reservado.';
+    } else {
+      if (titulo) titulo.textContent = 'No se completó el pago';
+      if (check) { check.textContent = '!'; check.style.background = 'var(--clay)'; }
+      if (done) done.textContent = 'El pago no se completó, así que el turno no quedó confirmado. Podés intentarlo de nuevo cuando quieras.';
+    }
+    history.replaceState(null, '', '/reservar'); // limpiamos los parámetros de la URL
+    goTo(5);
+  }
 </script>
 
 <style>

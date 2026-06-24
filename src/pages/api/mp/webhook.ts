@@ -1,0 +1,115 @@
+import type { APIRoute } from 'astro';
+import { getSql } from '../../../lib/db';
+import { obtenerPago } from '../../../lib/mercadopago';
+import { notificarReservaConfirmada } from '../../../lib/email';
+
+export const prerender = false;
+
+const NOMBRE_MODALIDAD: Record<string, string> = {
+  presencial: 'Consulta Presencial',
+  virtual: 'Consulta Virtual',
+  'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
+  club: 'Club de las Estaciones',
+};
+
+function labelFecha(iso?: string | null) {
+  if (!iso) return null;
+  try {
+    return new Date(iso + 'T12:00:00Z').toLocaleDateString('es-UY', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+// POST /api/mp/webhook  → MercadoPago avisa de un pago.
+// No confiamos en el body: tomamos el id y CONSULTAMOS el pago real a la API.
+// Si está aprobado, confirmamos la reserva (queda 'confirmada' y el cupo ocupado).
+export const POST: APIRoute = async ({ request }) => {
+  try {
+    const url = new URL(request.url);
+    let topic = url.searchParams.get('type') || url.searchParams.get('topic');
+    let paymentId = url.searchParams.get('data.id') || url.searchParams.get('id');
+
+    if (!paymentId) {
+      const body = await request.json().catch(() => ({} as any));
+      topic = topic || body?.type || body?.action;
+      paymentId = body?.data?.id || body?.id || null;
+    }
+
+    // Solo nos interesan notificaciones de pago.
+    if (topic && !String(topic).includes('payment')) return new Response('ok', { status: 200 });
+    if (!paymentId) return new Response('ok', { status: 200 });
+
+    const pago = await obtenerPago(String(paymentId));
+    if (!pago) return new Response('ok', { status: 200 });
+
+    const reservaId: string | null = pago.external_reference ?? pago.metadata?.reserva_id ?? null;
+    const estado: string = pago.status; // approved | pending | in_process | rejected | ...
+    if (!reservaId) return new Response('ok', { status: 200 });
+
+    const sql = getSql();
+
+    if (estado === 'approved') {
+      // Confirmar solo si todavía no estaba confirmada (idempotente + un solo email).
+      let upd: any[];
+      try {
+        upd = await sql`
+          update reservas
+             set estado = 'confirmada', expira_at = null,
+                 mp_payment_id = ${String(paymentId)}, mp_estado = ${estado}
+           where id = ${reservaId} and estado in ('pendiente_pago', 'expirada')
+           returning id
+        `;
+      } catch (e: any) {
+        // 23505 = el cupo lo tomó otra reserva mientras tanto (pago tardío). No se puede confirmar.
+        if (e?.code === '23505' || String(e?.message ?? e).includes('reservas_slot_unico')) {
+          console.error('MP webhook: cupo ya ocupado, pago aprobado sin confirmar reserva', reservaId);
+          return new Response('ok', { status: 200 });
+        }
+        throw e;
+      }
+
+      if (upd.length) {
+        const r = (await sql`
+          select r.modalidad, coalesce(s.nombre, '') as sede,
+                 r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
+                 r.nombre, r.telefono, r.email
+          from reservas r left join sedes s on s.id = r.sede_id
+          where r.id = ${reservaId}
+        `) as any[];
+        const d = r[0];
+        if (d) {
+          await notificarReservaConfirmada({
+            modalidad: NOMBRE_MODALIDAD[d.modalidad] ?? d.modalidad,
+            sede: d.sede || null,
+            fechaLabel: labelFecha(d.fecha),
+            hora: d.hora,
+            nombre: d.nombre,
+            telefono: d.telefono,
+            email: d.email,
+          });
+        }
+      }
+    } else {
+      // Pendiente / rechazado: guardamos el estado, no tocamos el cupo (expira solo si no se paga).
+      await sql`
+        update reservas set mp_payment_id = ${String(paymentId)}, mp_estado = ${estado}
+        where id = ${reservaId} and estado = 'pendiente_pago'
+      `;
+    }
+
+    return new Response('ok', { status: 200 });
+  } catch (e) {
+    // 500 → MercadoPago reintenta la notificación más tarde.
+    console.error('MP webhook error:', e instanceof Error ? e.message : e);
+    return new Response('error', { status: 500 });
+  }
+};
+
+// MercadoPago a veces hace un GET de verificación al registrar la URL.
+export const GET: APIRoute = async () => new Response('ok', { status: 200 });

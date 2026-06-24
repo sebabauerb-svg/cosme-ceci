@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { getSql } from '../../lib/db';
 import { notificarReserva } from '../../lib/email';
+import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
 
 export const prerender = false;
 
@@ -85,6 +86,8 @@ export const POST: APIRoute = async ({ request }) => {
            ${nombre}, ${telefono}, ${email || null}, ${precioNum}, 'pendiente_pago', ${expira})
         returning id
       `;
+      const reservaId = String(ins[0].id);
+
       // Aviso por email a Ceci y a la clienta (no bloquea la reserva)
       await notificarReserva({
         modalidad: NOMBRE_MODALIDAD[modalidad] ?? modalidad,
@@ -95,7 +98,36 @@ export const POST: APIRoute = async ({ request }) => {
         telefono,
         email,
       });
-      return json({ ok: true, id: ins[0].id });
+
+      // Pago online con MercadoPago (si está configurado y hay monto).
+      // Si falla o no está configurado, devolvemos sin initPoint → la web cae al flujo manual.
+      let initPoint: string | null = null;
+      if (mpConfigurado() && precioNum) {
+        try {
+          const origin = new URL(request.url).origin;
+          const tituloItem = [
+            NOMBRE_MODALIDAD[modalidad] ?? modalidad,
+            nombreS,
+            esMembresia ? null : labelFecha(fecha),
+            esMembresia ? null : hora ? `${hora} h` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          const pref = await crearPreferencia({
+            titulo: tituloItem,
+            precio: precioNum,
+            reservaId,
+            origin,
+            email,
+          });
+          initPoint = pref.initPoint;
+          await sql`update reservas set mp_preference_id = ${pref.id} where id = ${reservaId}`;
+        } catch (e) {
+          console.error('MP preferencia:', e instanceof Error ? e.message : e);
+        }
+      }
+
+      return json({ ok: true, id: reservaId, initPoint });
     } catch (e: any) {
       // 23505 = unique_violation → el cupo ya fue tomado entre que eligió y confirmó
       if (e?.code === '23505' || String(e?.message ?? e).includes('reservas_slot_unico')) {
