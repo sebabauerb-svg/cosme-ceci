@@ -104,12 +104,12 @@ const items = modalidades.map((m) => ({
         <h2 class="step__title">Confirmá tu reserva</h2>
         <div class="resumen" id="resumen"></div>
         <ul class="trust">
-          <li>Confirmás tu turno con Ceci por WhatsApp</li>
-          <li>Coordinás el pago de forma simple y segura</li>
+          <li>Tu turno queda confirmado al completar el pago</li>
+          <li>Pagás de forma simple y segura con MercadoPago</li>
           <li>¿Necesitás reprogramar? Lo vemos sin problema</li>
         </ul>
-        <button class="btn btn--wa pay" id="confirmar">Confirmar por WhatsApp</button>
-        <p class="step__hint center">Te abrimos WhatsApp con tu reserva lista para enviarle a Ceci.</p>
+        <button class="btn btn--primary pay" id="confirmar">Proceder al pago</button>
+        <p class="step__hint center">Te llevamos al pago seguro con MercadoPago.</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -121,7 +121,7 @@ const items = modalidades.map((m) => ({
           <span class="done__check" aria-hidden="true">✓</span>
           <h2>¡Casi listo!</h2>
           <p id="done-text"></p>
-          <p class="step__hint">Para confirmar tu turno, aboná tu reserva y avisale a Ceci por WhatsApp (te abrimos el chat). El cupo queda reservado mientras tanto.</p>
+          <p class="step__hint" id="done-hint">Para confirmar tu turno, aboná tu reserva y avisale a Ceci por WhatsApp (te abrimos el chat). El cupo queda reservado mientras tanto.</p>
           <a id="pago-link" class="btn btn--primary pay" target="_blank" rel="noopener" hidden>Pagar mi reserva</a>
           <a href="/reservar" class="btn btn--ghost">Hacer otra reserva</a>
         </div>
@@ -425,6 +425,8 @@ const items = modalidades.map((m) => ({
     const done = $('#done-text');
     const check = $('.done__check');
     const titulo = $('.done h2');
+    const hint = $('#done-hint');
+    if (hint) hint.hidden = true; // el aviso de WhatsApp no aplica cuando hay pago online
     if (pagoEstado === 'ok') {
       if (titulo) titulo.textContent = '¡Turno confirmado!';
       if (done) done.textContent = 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
