@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { getSql } from '../../../lib/db';
 import { obtenerPago } from '../../../lib/mercadopago';
 import { notificarReservaConfirmada } from '../../../lib/email';
+import { crearEventoReserva } from '../../../lib/calendar';
 
 export const prerender = false;
 
@@ -84,8 +85,9 @@ export const POST: APIRoute = async ({ request }) => {
         `) as any[];
         const d = r[0];
         if (d) {
+          const nombreModalidad = NOMBRE_MODALIDAD[d.modalidad] ?? d.modalidad;
           await notificarReservaConfirmada({
-            modalidad: NOMBRE_MODALIDAD[d.modalidad] ?? d.modalidad,
+            modalidad: nombreModalidad,
             sede: d.sede || null,
             fechaLabel: labelFecha(d.fecha),
             hora: d.hora,
@@ -93,6 +95,26 @@ export const POST: APIRoute = async ({ request }) => {
             telefono: d.telefono,
             email: d.email,
           });
+
+          // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).
+          if (d.fecha && d.hora) {
+            const duracionMin = d.sede === 'Montevideo' ? 45 : 30;
+            await crearEventoReserva({
+              resumen: `${nombreModalidad} — ${d.nombre}`,
+              descripcion: [
+                `Servicio: ${nombreModalidad}`,
+                d.sede ? `Sede: ${d.sede}` : 'Online',
+                `Cliente: ${d.nombre}`,
+                `WhatsApp: ${d.telefono}`,
+                d.email ? `Email: ${d.email}` : '',
+              ]
+                .filter(Boolean)
+                .join('\n'),
+              fecha: d.fecha,
+              hora: d.hora,
+              duracionMin,
+            });
+          }
         }
       }
     } else {
