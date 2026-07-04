@@ -16,7 +16,12 @@ const fmt = (d: Date) =>
   d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' });
 ---
 
-<Base title={post.data.titulo} description={post.data.descripcion} path={`/blog/${post.id}`}>
+<Base
+  title={post.data.titulo}
+  description={post.data.descripcion}
+  path={`/blog/${post.id}`}
+  article={{ fecha: post.data.fecha, autora: post.data.autora }}
+>
   <Nav />
   <main class="post">
     <article class="container">

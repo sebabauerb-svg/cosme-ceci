@@ -1,0 +1,40 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import WhatsappFloat from '../components/WhatsappFloat.astro';
+import { whatsappLink } from '../data/site';
+---
+
+<Base title="Página no encontrada" description="La página que buscás no existe o cambió de lugar." path="/404" noindex>
+  <Nav />
+  <main id="contenido" class="section nf">
+    <div class="container nf__wrap">
+      <span class="eyebrow">Error 404</span>
+      <h1>No encontramos esta página</h1>
+      <p class="nf__lead">
+        Puede que el enlace haya cambiado o que la dirección esté mal escrita. Te dejamos el camino
+        de vuelta.
+      </p>
+      <div class="nf__actions">
+        <a href="/" class="btn btn--primary">Volver al inicio</a>
+        <a href="/reservar" class="btn btn--ghost">Reservar una consulta</a>
+      </div>
+      <p class="nf__help">
+        ¿Buscabas algo puntual? <a href={whatsappLink('Hola Ceci! Estaba en la web y no encontré lo que buscaba.')} target="_blank" rel="noopener">Escribinos por WhatsApp</a>.
+      </p>
+    </div>
+  </main>
+  <Footer />
+  <WhatsappFloat />
+</Base>
+
+<style>
+  .nf { padding-block: clamp(4rem, 10vw, 7rem); }
+  .nf__wrap { max-width: 560px; margin-inline: auto; text-align: center; }
+  .nf__wrap h1 { margin: 0.4rem 0 1rem; }
+  .nf__lead { color: var(--ink-soft); margin-bottom: 2rem; }
+  .nf__actions { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+  .nf__help { margin-top: 2rem; font-size: 0.92rem; color: var(--ink-soft); }
+  .nf__help a { color: var(--sage-deep); font-weight: 600; }
+</style>

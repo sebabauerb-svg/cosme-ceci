@@ -7,26 +7,49 @@ interface Props {
   description?: string;
   /** Ruta relativa para la URL canónica, ej: "/aviso-legal" */
   path?: string;
+  /** Imagen para compartir en redes (Open Graph). Ruta relativa a /public. */
+  image?: string;
+  /** Excluir del índice de Google (páginas transaccionales, ej: /reservar). */
+  noindex?: boolean;
+  /** Si es un artículo del blog: agrega el schema Article. */
+  article?: { fecha: Date; autora: string };
 }
+
+// Única fuente de verdad del dominio: `site` en astro.config.mjs. El fallback
+// solo actúa si Astro.site quedara sin definir (no debería). Mantener ambos igual.
+const SITE_FALLBACK = 'https://cgcosmetologiamedica.com';
 
 const {
   title,
   description = site.descripcion,
   path = '/',
+  image = '/hero.jpg',
+  noindex = false,
+  article,
 } = Astro.props;
 
 const marca = `${site.marca.nombre} · ${site.marca.subtitulo}`;
 const titulo = title ? `${title} · ${marca}` : `${marca}`;
-const canonical = new URL(path, Astro.site ?? 'https://cgcosmetologiamedica.uy').href;
+const base = Astro.site ?? SITE_FALLBACK;
+const canonical = new URL(path, base).href;
+const ogImage = new URL(image, base).href;
+const telefono = `+${site.contacto.whatsapp}`;
 
 // JSON-LD: negocio profesional local. Ayuda al SEO y a Google a entender el servicio.
-const jsonLd = {
+const jsonLd: Record<string, unknown> = {
   '@context': 'https://schema.org',
   '@type': 'HealthAndBeautyBusiness',
   name: marca,
   description: site.descripcion,
-  url: canonical,
+  url: new URL('/', base).href,
+  image: ogImage,
+  telephone: telefono,
+  priceRange: '$$',
   areaServed: ['Montevideo', 'San José', 'Uruguay'],
+  address: {
+    '@type': 'PostalAddress',
+    addressCountry: 'UY',
+  },
   knowsLanguage: 'es-UY',
   founder: {
     '@type': 'Person',
@@ -35,6 +58,21 @@ const jsonLd = {
   },
   ...(site.contacto.instagramUrl ? { sameAs: [site.contacto.instagramUrl] } : {}),
 };
+
+// Schema Article para las notas del blog.
+const articleLd = article
+  ? {
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      headline: title,
+      description,
+      datePublished: article.fecha.toISOString(),
+      author: { '@type': 'Person', name: article.autora },
+      publisher: { '@type': 'Organization', name: marca },
+      mainEntityOfPage: canonical,
+      image: ogImage,
+    }
+  : null;
 ---
 
 <!doctype html>
@@ -48,25 +86,27 @@ const jsonLd = {
     <title>{titulo}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
 
     <!-- Open Graph -->
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={article ? 'article' : 'website'} />
     <meta property="og:site_name" content={marca} />
     <meta property="og:title" content={titulo} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:locale" content="es_UY" />
+    <meta property="og:image" content={ogImage} />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={titulo} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
 
-    <!-- Tipografías -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Tipografías auto-hospedadas (variables) — preload para evitar FOUT -->
+    <link rel="preload" href="/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/fraunces-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
 
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    {articleLd && <script type="application/ld+json" set:html={JSON.stringify(articleLd)} />}
   </head>
   <body>
     <a href="#contenido" class="skip-link">Saltar al contenido</a>
