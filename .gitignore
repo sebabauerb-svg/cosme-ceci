@@ -12,6 +12,8 @@ pnpm-debug.log*
 # environment variables
 .env
 .env.production
+# credenciales Google service account (NUNCA commitear)
+cecicosme-*.json
 # macOS / Windows
 .DS_Store
 Thumbs.db

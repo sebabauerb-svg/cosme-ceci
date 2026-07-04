@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { getSql } from '../../lib/db';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
+import { precioOnline } from '../../lib/precios';
 
 export const prerender = false;
 
@@ -48,7 +49,7 @@ export const POST: APIRoute = async ({ request }) => {
     return json({ ok: false, error: 'Cuerpo inválido' }, 400);
   }
 
-  const { modalidad, sede, fecha, hora, nombre, telefono, email, precio } = body ?? {};
+  const { modalidad, sede, fecha, hora, nombre, telefono, email } = body ?? {};
   if (!modalidad || !nombre || !telefono) {
     return json({ ok: false, error: 'Faltan datos obligatorios' }, 400);
   }
@@ -58,7 +59,28 @@ export const POST: APIRoute = async ({ request }) => {
     return json({ ok: false, error: 'Falta fecha u hora' }, 400);
   }
 
-  const precioNum = precio ? parseInt(String(precio).replace(/[^\d]/g, ''), 10) || null : null;
+  // Validación de formato y límites. Neon usa placeholders (no hay SQL injection),
+  // pero validamos igual para no guardar datos corruptos ni fechas pasadas.
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const nombreT = str(nombre);
+  const telT = str(telefono);
+  const emailT = str(email);
+  if (!(modalidad in NOMBRE_MODALIDAD)) return json({ ok: false, error: 'Modalidad inválida' }, 400);
+  if (nombreT.length < 2 || nombreT.length > 120) return json({ ok: false, error: 'Nombre inválido' }, 400);
+  if (telT.length < 5 || telT.length > 40) return json({ ok: false, error: 'Teléfono inválido' }, 400);
+  if (emailT && (emailT.length > 160 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailT)))
+    return json({ ok: false, error: 'Email inválido' }, 400);
+  if (!esMembresia) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return json({ ok: false, error: 'Fecha inválida' }, 400);
+    if (!/^\d{2}:\d{2}$/.test(hora)) return json({ ok: false, error: 'Hora inválida' }, 400);
+    // Fecha de hoy en Uruguay (UTC-3): no permitimos reservar en el pasado.
+    const hoyUY = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    if (fecha < hoyUY) return json({ ok: false, error: 'La fecha ya pasó' }, 400);
+  }
+
+  // El monto lo fija el servidor según la modalidad. NUNCA se toma del cliente
+  // (el body podría venir manipulado con precio: 1). Ver src/lib/precios.ts.
+  const precioNum = precioOnline(modalidad);
   const expira = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min para pagar
 
   try {
@@ -83,7 +105,7 @@ export const POST: APIRoute = async ({ request }) => {
           (modalidad, sede_id, fecha, hora, nombre, telefono, email, precio_uyu, estado, expira_at)
         values
           (${modalidad}, ${sedeId}, ${esMembresia ? null : fecha}, ${esMembresia ? null : hora},
-           ${nombre}, ${telefono}, ${email || null}, ${precioNum}, 'pendiente_pago', ${expira})
+           ${nombreT}, ${telT}, ${emailT || null}, ${precioNum}, 'pendiente_pago', ${expira})
         returning id
       `;
       const reservaId = String(ins[0].id);
@@ -94,9 +116,9 @@ export const POST: APIRoute = async ({ request }) => {
         sede: nombreS,
         fechaLabel: esMembresia ? null : labelFecha(fecha),
         hora: esMembresia ? null : hora,
-        nombre,
-        telefono,
-        email,
+        nombre: nombreT,
+        telefono: telT,
+        email: emailT || null,
       });
 
       // Pago online con MercadoPago (si está configurado y hay monto).
@@ -118,7 +140,7 @@ export const POST: APIRoute = async ({ request }) => {
             precio: precioNum,
             reservaId,
             origin,
-            email,
+            email: emailT || null,
           });
           initPoint = pref.initPoint;
           await sql`update reservas set mp_preference_id = ${pref.id} where id = ${reservaId}`;
@@ -139,6 +161,9 @@ export const POST: APIRoute = async ({ request }) => {
       throw e;
     }
   } catch (e) {
-    return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
+    // Log completo del lado servidor; al cliente solo un mensaje genérico
+    // (no exponemos detalles de la base de datos ni del stack).
+    console.error('POST /api/reservar:', e instanceof Error ? e.message : e);
+    return json({ ok: false, error: 'No pudimos registrar la reserva. Probá de nuevo.' }, 500);
   }
 };

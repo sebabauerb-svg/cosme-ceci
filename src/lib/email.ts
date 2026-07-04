@@ -31,13 +31,20 @@ type Datos = {
   email?: string | null;
 };
 
+/** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
+const esc = (s: unknown) =>
+  String(s ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string
+  );
+
 function bloqueDetalle(d: Datos) {
   const filas = [
-    `<strong>Servicio:</strong> ${d.modalidad}`,
-    d.sede ? `<strong>Sede:</strong> ${d.sede}` : '',
-    d.fechaLabel ? `<strong>Cuándo:</strong> ${d.fechaLabel}${d.hora ? ' · ' + d.hora + ' h' : ''}` : '',
-    `<strong>A nombre de:</strong> ${d.nombre}`,
-    `<strong>WhatsApp:</strong> ${d.telefono}`,
+    `<strong>Servicio:</strong> ${esc(d.modalidad)}`,
+    d.sede ? `<strong>Sede:</strong> ${esc(d.sede)}` : '',
+    d.fechaLabel ? `<strong>Cuándo:</strong> ${esc(d.fechaLabel)}${d.hora ? ' · ' + esc(d.hora) + ' h' : ''}` : '',
+    `<strong>A nombre de:</strong> ${esc(d.nombre)}`,
+    `<strong>WhatsApp:</strong> ${esc(d.telefono)}`,
   ].filter(Boolean);
   return `<div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas.map((f) => `<p style="margin:4px 0">${f}</p>`).join('')}</div>`;
 }
@@ -63,7 +70,7 @@ export async function notificarReservaConfirmada(d: Datos) {
           d.email,
           '✅ Tu turno quedó confirmado — Cecilia Gutiérrez · Cosmetología Médica',
           `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Turno confirmado!</h2>
-           <p style="font-family:system-ui;color:#2a302b">${d.nombre}, recibimos tu pago y tu turno quedó confirmado:</p>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, recibimos tu pago y tu turno quedó confirmado:</p>
            ${detalle}
            <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Si necesitás reprogramar, escribinos por WhatsApp.</p>`
         )
@@ -96,7 +103,7 @@ export async function notificarReserva(d: Datos) {
           d.email,
           'Tu reserva con Cecilia Gutiérrez · Cosmetología Médica',
           `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Reserva recibida!</h2>
-           <p style="font-family:system-ui;color:#2a302b">${d.nombre}, registramos tu reserva:</p>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, registramos tu reserva:</p>
            ${detalle}
            <p style="font-family:system-ui;color:#55605a">Para confirmar el turno, coordiná el pago por WhatsApp. ¡Te esperamos!</p>`
         )

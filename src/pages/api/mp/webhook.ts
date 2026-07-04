@@ -1,6 +1,10 @@
 import type { APIRoute } from 'astro';
 import { getSql } from '../../../lib/db';
-import { obtenerPago } from '../../../lib/mercadopago';
+import {
+  obtenerPago,
+  verificarFirmaWebhook,
+  webhookSecretConfigurado,
+} from '../../../lib/mercadopago';
 import { notificarReservaConfirmada } from '../../../lib/email';
 import { crearEventoReserva } from '../../../lib/calendar';
 
@@ -33,8 +37,9 @@ function labelFecha(iso?: string | null) {
 export const POST: APIRoute = async ({ request }) => {
   try {
     const url = new URL(request.url);
+    const dataIdParam = url.searchParams.get('data.id');
     let topic = url.searchParams.get('type') || url.searchParams.get('topic');
-    let paymentId = url.searchParams.get('data.id') || url.searchParams.get('id');
+    let paymentId = dataIdParam || url.searchParams.get('id');
 
     if (!paymentId) {
       const body = await request.json().catch(() => ({} as any));
@@ -42,9 +47,26 @@ export const POST: APIRoute = async ({ request }) => {
       paymentId = body?.data?.id || body?.id || null;
     }
 
+    // Verificación de firma HMAC (si MP_WEBHOOK_SECRET está configurado).
+    // Evita que un tercero dispare el webhook con un paymentId cualquiera.
+    if (webhookSecretConfigurado()) {
+      const firmaOk = verificarFirmaWebhook({
+        xSignature: request.headers.get('x-signature'),
+        xRequestId: request.headers.get('x-request-id'),
+        dataId: dataIdParam || (paymentId ? String(paymentId) : null),
+      });
+      if (!firmaOk) {
+        console.error('MP webhook: firma inválida — descartado');
+        return new Response('firma inválida', { status: 401 });
+      }
+    } else {
+      console.warn('MP webhook: MP_WEBHOOK_SECRET sin configurar — firma NO verificada');
+    }
+
     // Solo nos interesan notificaciones de pago.
     if (topic && !String(topic).includes('payment')) return new Response('ok', { status: 200 });
     if (!paymentId) return new Response('ok', { status: 200 });
+    if (!/^\d+$/.test(String(paymentId))) return new Response('ok', { status: 200 }); // id no numérico
 
     const pago = await obtenerPago(String(paymentId));
     if (!pago) return new Response('ok', { status: 200 });
@@ -56,6 +78,19 @@ export const POST: APIRoute = async ({ request }) => {
     const sql = getSql();
 
     if (estado === 'approved') {
+      // Integridad de monto: el pago debe coincidir con el precio que registramos
+      // server-side. Defensa extra contra manipulación del monto.
+      const prev = (await sql`select precio_uyu from reservas where id = ${reservaId}`) as any[];
+      const precioEsperado = prev[0]?.precio_uyu != null ? Number(prev[0].precio_uyu) : null;
+      const montoPagado =
+        typeof pago.transaction_amount === 'number' ? Math.round(pago.transaction_amount) : null;
+      if (precioEsperado != null && montoPagado != null && montoPagado !== precioEsperado) {
+        console.error(
+          `MP webhook: monto no coincide (esperado ${precioEsperado}, pagado ${montoPagado}) reserva ${reservaId} — no se confirma`
+        );
+        return new Response('ok', { status: 200 });
+      }
+
       // Confirmar solo si todavía no estaba confirmada (idempotente + un solo email).
       let upd: any[];
       try {

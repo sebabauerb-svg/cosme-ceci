@@ -7,6 +7,8 @@
  * - obtenerPago: consulta el estado real de un pago (fuente de verdad del webhook).
  */
 
+import crypto from 'node:crypto';
+
 const MP_API = 'https://api.mercadopago.com';
 
 function accessToken(): string {
@@ -18,6 +20,51 @@ function accessToken(): string {
 /** ¿Está configurado MercadoPago? (para decidir si cobramos online o caemos al flujo manual) */
 export function mpConfigurado(): boolean {
   return !!process.env.MP_ACCESS_TOKEN;
+}
+
+/** ¿Hay secret para verificar la firma del webhook? */
+export function webhookSecretConfigurado(): boolean {
+  return !!process.env.MP_WEBHOOK_SECRET;
+}
+
+/**
+ * Verifica la firma HMAC del webhook de MercadoPago.
+ * Manifest: `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`
+ * firmado con HMAC-SHA256 usando MP_WEBHOOK_SECRET; se compara contra v1.
+ * Docs: https://www.mercadopago.com.uy/developers/es/docs/your-integrations/notifications/webhooks
+ *
+ * Devuelve true si el secret no está configurado (no bloqueamos hasta que Ceci
+ * lo cargue). El llamador decide si exigir la verificación.
+ */
+export function verificarFirmaWebhook(opts: {
+  xSignature: string | null;
+  xRequestId: string | null;
+  dataId: string | null;
+}): boolean {
+  const secret = process.env.MP_WEBHOOK_SECRET;
+  if (!secret) return true;
+  if (!opts.xSignature) return false;
+
+  let ts: string | null = null;
+  let v1: string | null = null;
+  for (const parte of opts.xSignature.split(',')) {
+    const idx = parte.indexOf('=');
+    if (idx < 0) continue;
+    const k = parte.slice(0, idx).trim();
+    const v = parte.slice(idx + 1).trim();
+    if (k === 'ts') ts = v;
+    else if (k === 'v1') v1 = v;
+  }
+  if (!ts || !v1) return false;
+
+  const id = (opts.dataId ?? '').toLowerCase(); // MP normaliza el data.id a minúsculas
+  const manifest = `id:${id};request-id:${opts.xRequestId ?? ''};ts:${ts};`;
+  const esperada = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+
+  const a = Buffer.from(v1);
+  const b = Buffer.from(esperada);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export async function crearPreferencia(opts: {
