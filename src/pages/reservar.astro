@@ -4,9 +4,10 @@ import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
-import { site } from '../data/site';
+import { site, whatsappLink } from '../data/site';
 
-// PROTOTIPO (sandbox): flujo de reserva visual. Sin backend ni pagos reales.
+const waReprogramar = whatsappLink('Hola Ceci! Necesito reprogramar mi turno reservado por la web.');
+
 const items = modalidades.map((m) => ({
   id: m.id,
   nombre: m.nombre,
@@ -17,7 +18,7 @@ const items = modalidades.map((m) => ({
 }));
 ---
 
-<Base title="Reservar (demo)" description="Flujo de reserva — versión de prueba." path="/reservar">
+<Base title="Reservá tu turno" description="Reservá tu consulta con Cecilia Gutiérrez: presencial en Montevideo y San José, o virtual. Pago simple y seguro con MercadoPago." path="/reservar" noindex>
   <Nav />
 
   <main id="contenido" class="section booking">
@@ -33,6 +34,8 @@ const items = modalidades.map((m) => ({
           <li data-ind="4">Pago</li>
         </ol>
       </header>
+
+      <div id="booking-alert" class="booking__alert" role="alert" hidden></div>
 
       <!-- Paso 1: Modalidad (renderizado en el servidor → estilos aplican) -->
       <section class="step is-active" data-step="1" aria-label="Elegí la modalidad">
@@ -55,7 +58,6 @@ const items = modalidades.map((m) => ({
       <!-- Paso 2: Fecha y hora -->
       <section class="step" data-step="2" hidden aria-label="Elegí fecha y hora">
         <h2 class="step__title">Elegí día y horario</h2>
-        <p class="step__hint">Disponibilidad de ejemplo. En la versión final saldrá de la agenda real de Ceci.</p>
 
         <!-- Sede: solo para Consulta Presencial -->
         <div class="sede" id="sede" hidden>
@@ -106,7 +108,7 @@ const items = modalidades.map((m) => ({
         <ul class="trust">
           <li>Tu turno queda confirmado al completar el pago</li>
           <li>Pagás de forma simple y segura con MercadoPago</li>
-          <li>¿Necesitás reprogramar? Lo vemos sin problema</li>
+          <li>¿Necesitás reprogramar? <a href={waReprogramar} target="_blank" rel="noopener">Escribinos por WhatsApp</a> y lo vemos sin problema</li>
         </ul>
         <button class="btn btn--primary pay" id="confirmar">Proceder al pago</button>
         <p class="step__hint center">Te llevamos al pago seguro con MercadoPago.</p>
@@ -138,7 +140,21 @@ const items = modalidades.map((m) => ({
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
+  // Banner de aviso en la paleta (en lugar de alert() nativo)
+  function showAlert(msg) {
+    const el = $('#booking-alert');
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function clearAlert() {
+    const el = $('#booking-alert');
+    if (el) el.hidden = true;
+  }
+
   function goTo(step) {
+    clearAlert();
     $$('.step').forEach((el) => {
       const active = Number(el.dataset.step) === step;
       el.toggleAttribute('hidden', !active);
@@ -159,7 +175,10 @@ const items = modalidades.map((m) => ({
       const m = items.find((i) => i.id === b.dataset.id);
       state.modalidad = m;
       state.lugar = null;
-      if (m.esMembresia) return goTo(3); // el Club no agenda turno
+      // El Club no agenda turno: ocultamos el paso "Fecha y hora" del indicador.
+      const stepFecha = $('.booking__steps li[data-ind="2"]');
+      if (stepFecha) stepFecha.hidden = m.esMembresia;
+      if (m.esMembresia) return goTo(3);
       const presencial = m.id === 'presencial';
       $('#sede').hidden = !presencial;
       $('#agenda').hidden = true;
@@ -265,9 +284,16 @@ const items = modalidades.map((m) => ({
         cell.className = 'cal2__cell ' + (on ? 'cal2__cell--on' : full ? 'cal2__cell--full' : 'cal2__cell--off');
         cell.textContent = String(day);
         if (on) {
+          cell.type = 'button';
+          cell.setAttribute('aria-pressed', 'false');
+          cell.setAttribute('aria-label', byFecha[iso].label || iso);
           cell.addEventListener('click', () => {
-            $$('.cal2__cell--sel').forEach((x) => x.classList.remove('cal2__cell--sel'));
+            $$('.cal2__cell--sel').forEach((x) => {
+              x.classList.remove('cal2__cell--sel');
+              x.setAttribute('aria-pressed', 'false');
+            });
             cell.classList.add('cal2__cell--sel');
+            cell.setAttribute('aria-pressed', 'true');
             state.fecha = iso;
             state.fechaLabel = byFecha[iso].label;
             renderSlots(byFecha[iso].horas);
@@ -301,9 +327,13 @@ const items = modalidades.map((m) => ({
       row.className = 'slots-row';
       hs.forEach((h) => {
         const b = document.createElement('button');
+        b.type = 'button';
         b.className = 'cal__slot';
         b.textContent = h;
+        b.setAttribute('aria-pressed', 'false');
         b.addEventListener('click', () => {
+          $$('.cal__slot').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+          b.setAttribute('aria-pressed', 'true');
           state.hora = h;
           goTo(3);
         });
@@ -373,16 +403,15 @@ const items = modalidades.map((m) => ({
           nombre: state.nombre,
           telefono: state.tel,
           email: state.email,
-          precio: m.precio,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 409) {
         btn.disabled = false;
         btn.textContent = orig;
-        alert('Ese horario se ocupó recién. Te muestro los disponibles para elegir otro.');
         cargarDisponibilidad(state.sedeSlug);
         goTo(2);
+        showAlert('Ese horario se ocupó recién. Elegí otro de los disponibles.');
         return;
       }
       if (!res.ok || !data.ok) throw new Error(data.error || 'error');
@@ -398,6 +427,17 @@ const items = modalidades.map((m) => ({
       $('#done-text').textContent = m.esMembresia
         ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
         : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
+      const hint = $('#done-hint');
+      if (hint) {
+        if (m.esMembresia) {
+          hint.textContent = 'Coordinamos la primera consulta al sumarte. Te abrimos el chat de WhatsApp para terminar de coordinar.';
+        } else {
+          const limite = new Date(Date.now() + 30 * 60 * 1000);
+          const hh = String(limite.getHours()).padStart(2, '0');
+          const mm = String(limite.getMinutes()).padStart(2, '0');
+          hint.textContent = `Tu cupo queda reservado 30 minutos: completá el pago antes de las ${hh}:${mm} para asegurarlo. Cualquier duda, te abrimos el chat de WhatsApp.`;
+        }
+      }
       const pagoLink = $('#pago-link');
       if (pago && pagoLink) {
         pagoLink.href = pago;
@@ -407,7 +447,7 @@ const items = modalidades.map((m) => ({
     } catch (e) {
       btn.disabled = false;
       btn.textContent = orig;
-      alert('No pudimos registrar la reserva. Probá de nuevo en un momento.');
+      showAlert('No pudimos registrar la reserva. Probá de nuevo en un momento.');
     }
   });
 
@@ -436,11 +476,24 @@ const items = modalidades.map((m) => ({
       if (done) done.textContent = 'Tu pago está pendiente de acreditación. Cuando se confirme te llega el aviso por email y el turno queda reservado.';
     } else {
       if (titulo) titulo.textContent = 'No se completó el pago';
-      if (check) { check.textContent = '!'; check.style.background = 'var(--clay)'; }
+      if (check) { check.textContent = '!'; check.classList.add('done__check--error'); }
       if (done) done.textContent = 'El pago no se completó, así que el turno no quedó confirmado. Podés intentarlo de nuevo cuando quieras.';
     }
     history.replaceState(null, '', '/reservar'); // limpiamos los parámetros de la URL
     goTo(5);
+  }
+
+  // Preselección desde la home (?modalidad=presencial|virtual|skincare-inteligente).
+  // Reusa el click del paso 1: muestra la sede/agenda o salta al paso del Club.
+  if (!pagoEstado) {
+    const pre = new URLSearchParams(location.search).get('modalidad');
+    if (pre) {
+      const btn = $$('.opt').find((b) => b.dataset.id === pre);
+      if (btn) {
+        btn.click();
+        history.replaceState(null, '', '/reservar'); // limpiamos el query
+      }
+    }
   }
 </script>
 
@@ -543,6 +596,18 @@ const items = modalidades.map((m) => ({
   .done__check {
     width: 64px; height: 64px; border-radius: 50%; background: var(--sage); color: var(--cream);
     display: grid; place-items: center; font-size: 2rem; margin: 0 auto 1.2rem;
+  }
+  .done__check--error { background: var(--clay); }
+
+  /* Banner de error/aviso, en la paleta (reemplaza los alert() nativos) */
+  .booking__alert {
+    background: color-mix(in srgb, var(--clay) 12%, var(--cream));
+    border: 1px solid color-mix(in srgb, var(--clay) 40%, var(--cream));
+    color: var(--clay-deep);
+    border-radius: var(--radius-sm);
+    padding: 0.85rem 1.1rem;
+    margin-bottom: 1.6rem;
+    font-size: 0.92rem;
   }
   .done h2 small { color: var(--ink-soft); font-size: 0.9rem; }
   .done p { margin-bottom: 1rem; }

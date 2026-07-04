@@ -30,13 +30,12 @@ export const site = {
     zonas: 'Montevideo y San José, Uruguay',
   },
 
-  // Contacto y canales (CONFIRMAR todos antes de publicar)
+  // Contacto y canales (confirmados por Ceci)
   contacto: {
     // Número en formato internacional, sin espacios ni símbolos (para WhatsApp).
-    // Tomado del cel del dossier: 098 19 20 50 → +598 98 192 050
-    whatsapp: '59898192050', // CONFIRMAR
-    whatsappDisplay: '098 19 20 50', // CONFIRMAR
-    email: '', // CONFIRMAR: completar si tiene mail de contacto
+    whatsapp: '59898192050',
+    whatsappDisplay: '098 19 20 50',
+    email: 'cosmetologiamedicacg@gmail.com',
     instagram: 'cgcosmetologiamedica',
     instagramUrl: 'https://instagram.com/cgcosmetologiamedica',
   },

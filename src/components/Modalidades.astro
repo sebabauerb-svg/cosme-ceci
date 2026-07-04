@@ -1,6 +1,5 @@
 ---
 import { modalidades } from '../data/modalidades';
-import { whatsappLink } from '../data/site';
 ---
 
 <section class="section section--alt" id="modalidades">
@@ -18,10 +17,9 @@ import { whatsappLink } from '../data/site';
     <div class="mod__grid">
       {modalidades.map((m) => {
         // El Club tiene su propia sección detallada más abajo: la tarjeta lleva ahí.
+        // El resto lleva al flujo de reserva con la modalidad ya preseleccionada.
         const esClub = m.id === 'club';
-        const href = esClub
-          ? '#club'
-          : whatsappLink(`Hola Ceci! Me interesa ${m.nombre}. ¿Cómo coordinamos?`);
+        const href = esClub ? '#club' : `/reservar?modalidad=${m.id}`;
         return (
           <article class={`card mod__card reveal ${m.destacado ? 'mod__card--feat' : ''}`}>
             <header class="mod__top">
@@ -38,11 +36,7 @@ import { whatsappLink } from '../data/site';
                 {m.precio && <span class="mod__monto">{m.precio}</span>}
                 {m.precioNota && <span class="mod__nota">{m.precioNota}</span>}
               </div>
-              <a
-                href={href}
-                class={`btn ${m.destacado ? 'btn--primary' : 'btn--ghost'}`}
-                {...(esClub ? {} : { target: '_blank', rel: 'noopener' })}
-              >
+              <a href={href} class={`btn ${m.destacado ? 'btn--primary' : 'btn--ghost'}`}>
                 {m.ctaTexto}
               </a>
             </div>
