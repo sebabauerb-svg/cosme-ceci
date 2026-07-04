@@ -43,9 +43,6 @@ const heroImg = imagenes.hero;
           <div class="hero__leaf"></div>
         </div>
       )}
-      <div class="hero__pill hero__pill--1" aria-hidden="true">Personalización</div>
-      <div class="hero__pill hero__pill--2" aria-hidden="true">Seguridad</div>
-      <div class="hero__pill hero__pill--3" aria-hidden="true">Resultados</div>
     </div>
   </div>
 </section>
@@ -121,21 +118,6 @@ const heroImg = imagenes.hero;
     box-shadow: var(--shadow);
   }
   .hero__photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 48%; }
-  .hero__pill {
-    position: absolute;
-    background: var(--white);
-    border: 1px solid var(--sand);
-    border-radius: 999px;
-    padding: 0.5rem 1rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--ink);
-    box-shadow: var(--shadow);
-  }
-  .hero__pill--1 { top: 12%; left: -8%; }
-  .hero__pill--2 { top: 46%; right: -6%; }
-  .hero__pill--3 { bottom: 12%; left: 2%; }
-
   @media (max-width: 860px) {
     .hero__inner { grid-template-columns: 1fr; }
     .hero__art { order: -1; max-width: 340px; margin-inline: auto; width: 100%; }

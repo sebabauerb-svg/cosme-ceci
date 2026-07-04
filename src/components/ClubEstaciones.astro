@@ -6,8 +6,8 @@ import { whatsappLink } from '../data/site';
 <section class="section club" id="club">
   <div class="container">
     <div class="club__head reveal">
-      <span class="eyebrow">{club.subtitulo}</span>
       <h2>{club.nombre}</h2>
+      <p class="club__sub">{club.subtitulo}</p>
       <p class="lead mx-auto text-center">{club.intro}</p>
       <a
         class="club__more"
@@ -61,10 +61,15 @@ import { whatsappLink } from '../data/site';
     background: var(--ink);
     color: var(--cream);
   }
-  .club :global(.eyebrow) { color: var(--clay); }
   .club h2 { color: var(--cream); }
   .club__head { text-align: center; max-width: 720px; margin-inline: auto; }
-  .club__head h2 { margin: 0.4rem 0 1rem; }
+  .club__head h2 { margin: 0 0 0.35rem; }
+  .club__sub {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    color: var(--clay);
+    margin-bottom: 1.1rem;
+  }
   .club__head :global(.lead) { color: var(--sand); }
   .club__more {
     display: inline-block;

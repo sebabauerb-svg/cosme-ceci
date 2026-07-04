@@ -10,7 +10,7 @@ import { whatsappLink } from '../data/site';
   <Nav />
   <main id="contenido" class="section nf">
     <div class="container nf__wrap">
-      <span class="eyebrow">Error 404</span>
+      <span class="nf__code" aria-hidden="true">404</span>
       <h1>No encontramos esta página</h1>
       <p class="nf__lead">
         Puede que el enlace haya cambiado o que la dirección esté mal escrita. Te dejamos el camino
@@ -32,6 +32,14 @@ import { whatsappLink } from '../data/site';
 <style>
   .nf { padding-block: clamp(4rem, 10vw, 7rem); }
   .nf__wrap { max-width: 560px; margin-inline: auto; text-align: center; }
+  .nf__code {
+    font-family: var(--font-serif);
+    font-size: clamp(4.5rem, 12vw, 7rem);
+    line-height: 1;
+    color: var(--sand);
+    display: block;
+    margin-bottom: 0.6rem;
+  }
   .nf__wrap h1 { margin: 0.4rem 0 1rem; }
   .nf__lead { color: var(--ink-soft); margin-bottom: 2rem; }
   .nf__actions { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
