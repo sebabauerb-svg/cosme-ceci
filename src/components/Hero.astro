@@ -32,7 +32,10 @@ const heroImg = imagenes.hero;
     <div class="hero__art hero__art--in">
       {heroImg.src ? (
         <div class="hero__photo">
-          <img src={heroImg.src} alt={heroImg.alt} width="1200" height="1600" decoding="async" />
+          <picture>
+            <source srcset={heroImg.src.replace(/\.jpg$/, '.webp')} type="image/webp" />
+            <img src={heroImg.src} alt={heroImg.alt} width="1200" height="1600" fetchpriority="high" loading="eager" decoding="async" />
+          </picture>
         </div>
       ) : (
         <div aria-hidden="true">

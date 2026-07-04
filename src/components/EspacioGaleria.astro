@@ -22,7 +22,10 @@ const medidas = ['≈ 1000 × 1250', '≈ 1000 × 800', '≈ 1000 × 800'];
       {slots.map((img, i) => (
         <figure class={`esp__cell esp__cell--${i}`}>
           {img.src ? (
-            <img src={img.src} alt={img.alt} loading="lazy" decoding="async" />
+            <picture>
+              <source srcset={img.src.replace(/\.jpg$/, '.webp')} type="image/webp" />
+              <img src={img.src} alt={img.alt} loading="lazy" decoding="async" />
+            </picture>
           ) : (
             <div class="media-ph">
               <span>Imagen del espacio</span>

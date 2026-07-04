@@ -6,14 +6,17 @@ const p = site.profesional;
 <section class="section section--alt" id="sobre-ceci">
   <div class="container sobre__inner">
     <div class="sobre__foto reveal">
-      <img
-        src="/ceci.jpg"
-        alt={`${p.nombre}, ${p.titulo}, en su espacio de trabajo`}
-        width="1200"
-        height="1599"
-        loading="lazy"
-        decoding="async"
-      />
+      <picture>
+        <source srcset="/ceci.webp" type="image/webp" />
+        <img
+          src="/ceci.jpg"
+          alt={`${p.nombre}, ${p.titulo}, en su espacio de trabajo`}
+          width="1200"
+          height="1599"
+          loading="lazy"
+          decoding="async"
+        />
+      </picture>
     </div>
 
     <div class="sobre__copy reveal">

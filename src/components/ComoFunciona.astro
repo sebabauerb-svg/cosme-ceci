@@ -24,23 +24,24 @@ const pasos = [
 ];
 ---
 
-<section class="section" id="forma-de-trabajar">
-  <div class="container">
-    <div class="cf__head reveal">
-      <h2>Primero entender tu piel. Después, tratarla.</h2>
-      <p class="lead">
+<section class="section cf" id="forma-de-trabajar">
+  <div class="container cf__inner">
+    <header class="cf__head reveal">
+      <h2 class="cf__title">Primero entender tu piel. Después, tratarla.</h2>
+      <p class="cf__lead">
         Porque no todas las pieles necesitan lo mismo, cada protocolo nace de una valoración
         profesional. Ahí está la diferencia.
       </p>
-    </div>
+      <a href="/reservar" class="btn btn--primary cf__cta">Agendá tu valoración</a>
+    </header>
 
-    <ol class="cf__steps">
+    <ol class="cf__steps stagger">
       {pasos.map((p) => (
         <li class="cf__step reveal">
-          <span class="cf__num">{p.n}</span>
-          <div>
-            <h3>{p.titulo}</h3>
-            <p>{p.texto}</p>
+          <span class="cf__num" aria-hidden="true">{p.n}</span>
+          <div class="cf__step-body">
+            <h3 class="cf__step-title">{p.titulo}</h3>
+            <p class="cf__step-text">{p.texto}</p>
           </div>
         </li>
       ))}
@@ -49,26 +50,75 @@ const pasos = [
 </section>
 
 <style>
-  .cf__head { max-width: 680px; }
-  .cf__head h2 { margin: 0.4rem 0 1rem; }
+  .cf {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .cf__inner {
+    display: grid;
+    grid-template-columns: 0.82fr 1.18fr;
+    gap: clamp(2.5rem, 6vw, 6rem);
+    align-items: start;
+  }
+
+  .cf__title {
+    color: var(--cream);
+    text-wrap: balance;
+    margin-bottom: 1.2rem;
+  }
+  .cf__lead {
+    color: var(--sand);
+    max-width: 40ch;
+    margin-bottom: 2rem;
+  }
+  .cf__cta { align-self: start; }
+
+  /* Columna izquierda fija mientras los pasos se recorren (solo desktop) */
+  @media (min-width: 921px) {
+    .cf__head {
+      position: sticky;
+      top: clamp(5rem, 12vh, 7rem);
+    }
+  }
+
   .cf__steps {
     list-style: none;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
-    margin-top: 3rem;
+    gap: 0;
   }
-  .cf__step { padding-top: 1.5rem; border-top: 2px solid var(--sand); }
+  .cf__step {
+    display: grid;
+    grid-template-columns: clamp(2.8rem, 6vw, 4rem) 1fr;
+    gap: clamp(1rem, 2.5vw, 1.8rem);
+    align-items: baseline;
+    padding-block: clamp(1.5rem, 3vw, 2.3rem);
+    border-top: 1px solid rgba(250, 246, 240, 0.15);
+  }
+  .cf__step:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
   .cf__num {
     font-family: var(--font-serif);
-    font-size: 2.4rem;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 500;
     color: var(--clay);
-    display: block;
-    margin-bottom: 0.6rem;
     line-height: 1;
+    letter-spacing: -0.01em;
   }
-  .cf__step h3 { margin-bottom: 0.5rem; }
-  @media (max-width: 760px) {
-    .cf__steps { grid-template-columns: 1fr; }
+  .cf__step-title {
+    color: var(--cream);
+    margin-bottom: 0.5rem;
+  }
+  .cf__step-text {
+    color: var(--sand);
+    max-width: 54ch;
+  }
+
+  @media (max-width: 920px) {
+    .cf__inner {
+      grid-template-columns: 1fr;
+      gap: clamp(2rem, 8vw, 2.8rem);
+    }
   }
 </style>

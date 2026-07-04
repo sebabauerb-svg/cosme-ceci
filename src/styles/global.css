@@ -36,9 +36,28 @@
   padding: 0;
 }
 
+/* Fuentes auto-hospedadas (variables: un archivo cubre todos los pesos) — sin Google Fonts */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/fonts/fraunces-latin-wght-normal.woff2') format('woff2');
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  /* Scrollbar discreta, en la paleta de marca (Firefox) */
+  scrollbar-width: thin;
+  scrollbar-color: var(--sand) transparent;
 }
 
 body {
@@ -51,6 +70,16 @@ body {
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
 }
+
+/* Scrollbar de marca (Chromium/WebKit) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--sand);
+  border-radius: 999px;
+  border: 2px solid var(--cream);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--sage); }
 
 h1, h2, h3, h4 {
   font-family: var(--font-serif);
