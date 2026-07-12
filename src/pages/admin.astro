@@ -3,48 +3,27 @@ export const prerender = false;
 
 import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
-import { getSql, ensureFranjas, ensureDuracionMin } from '../lib/db';
+import { getSql, ensureDuracionMin } from '../lib/db';
+import { ensureHorarioSemanal } from '../lib/agenda';
 
 const authed = isAdmin(Astro.cookies);
 
-const LUGARES = [
-  { slug: 'montevideo', nombre: 'Montevideo' },
-  { slug: 'san-jose', nombre: 'San José' },
-  { slug: 'online', nombre: 'Online (Virtual / Skincare Inteligente)' },
+const SEDES = [
+  { slug: 'montevideo', nombre: 'Montevideo', durDefault: 45 },
+  { slug: 'san-jose', nombre: 'San José', durDefault: 30 },
+  { slug: 'online', nombre: 'Online', durDefault: 30 },
 ];
-// Duración por defecto sugerida al abrir un rango nuevo (Ceci puede cambiarla)
-const SEDE_INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
-
-// Calendario de los próximos meses para que Ceci marque sus días.
-// "Hoy" en hora de Uruguay (UTC-3): el runtime corre en UTC y de 21:00 a 24:00
-// el panel correría un día.
-const HOY_ISO = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-const WD = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
-type Celda = { iso: string; day: number; sel: boolean } | null;
-function calMeses(cant: number) {
-  const out: { label: string; cells: Celda[] }[] = [];
-  const base = new Date(Date.now() - 3 * 3600 * 1000);
-  let y = base.getUTCFullYear();
-  let mo = base.getUTCMonth();
-  for (let i = 0; i < cant; i++) {
-    const firstDow = new Date(Date.UTC(y, mo, 1)).getUTCDay();
-    const offset = (firstDow + 6) % 7;
-    const ndays = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
-    const cells: Celda[] = [];
-    for (let k = 0; k < offset; k++) cells.push(null);
-    for (let day = 1; day <= ndays; day++) {
-      const iso = `${y}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      cells.push({ iso, day, sel: iso >= HOY_ISO });
-    }
-    out.push({
-      label: new Date(Date.UTC(y, mo, 1)).toLocaleDateString('es-UY', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
-      cells,
-    });
-    mo++; if (mo > 11) { mo = 0; y++; }
-  }
-  return out;
-}
-const CAL = calMeses(3);
+// Días de la semana. Convención: 0=domingo … 6=sábado (Date.getUTCDay).
+// Se muestran con el lunes primero.
+const DIAS = [
+  { n: 1, nombre: 'Lunes' },
+  { n: 2, nombre: 'Martes' },
+  { n: 3, nombre: 'Miércoles' },
+  { n: 4, nombre: 'Jueves' },
+  { n: 5, nombre: 'Viernes' },
+  { n: 6, nombre: 'Sábado' },
+  { n: 0, nombre: 'Domingo' },
+];
 
 // Fecha legible para la tabla de reservas (ej. "mié 15 jul")
 function fmtFechaTabla(iso?: string | null) {
@@ -61,47 +40,33 @@ function fmtFechaTabla(iso?: string | null) {
   }
 }
 
-// Cada día guarda su propio set de horas y su propia duración de consulta
-// (no todos los días tienen el mismo horario ni la misma duración)
-type DiaConfig = { horas: string[]; duracion: number };
-const config: Record<string, { dias: Record<string, DiaConfig>; llenas: Set<string> }> = {
-  montevideo: { dias: {}, llenas: new Set() },
-  'san-jose': { dias: {}, llenas: new Set() },
-  online: { dias: {}, llenas: new Set() },
-};
+let bloques: any[] = []; // { sede, dia, desde, hasta, duracion }
+let excepciones: string[] = []; // 'YYYY-MM-DD'
 let reservas: any[] = [];
 let dbError = '';
 
 if (authed) {
   try {
     const sql = getSql();
-    await ensureFranjas(sql);
+    await ensureHorarioSemanal(sql);
     await ensureDuracionMin(sql);
-    const fr = await sql`
-      select coalesce(s.nombre, 'Online') as lugar, f.fecha::text as fecha,
-             to_char(f.hora,'HH24:MI') as hora, f.duracion_min as duracion
-      from franjas f left join sedes s on s.id = f.sede_id
-      where f.fecha >= current_date
-      order by f.fecha, f.hora
-    `;
-    const map: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose', Online: 'online' };
-    // Horas guardadas de cada fecha (para precargar el calendario tal cual quedó).
-    // La duración se toma del primer turno del día (una franja se abre entera con
-    // un mismo rango+duración; si hubiera datos mezclados, prevalece el primero).
-    for (const r of fr as any[]) {
-      const slug = map[r.lugar] ?? 'online';
-      const dia = (config[slug].dias[r.fecha] ??= { horas: [], duracion: Number(r.duracion) || 30 });
-      dia.horas.push(r.hora);
-    }
-    const bl = await sql`
-      select coalesce(s.nombre, 'Online') as lugar, b.fecha::text as fecha
-      from bloqueos b left join sedes s on s.id = b.sede_id
-      where b.fecha >= current_date
-    `;
-    for (const r of bl as any[]) {
-      const slug = map[r.lugar] ?? 'online';
-      config[slug].llenas.add(r.fecha);
-    }
+    const nombreASlug: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose' };
+    const hs = (await sql`
+      select coalesce(s.nombre, 'Online') as sede, h.dia_semana as dia,
+             to_char(h.hora_desde, 'HH24:MI') as desde, to_char(h.hora_hasta, 'HH24:MI') as hasta,
+             h.duracion_min as duracion
+      from horario_semanal h left join sedes s on s.id = h.sede_id
+      order by h.dia_semana, h.hora_desde
+    `) as any[];
+    bloques = hs.map((r) => ({
+      sede: nombreASlug[r.sede] ?? 'online',
+      dia: Number(r.dia),
+      desde: r.desde,
+      hasta: r.hasta,
+      duracion: Number(r.duracion),
+    }));
+    const bl = (await sql`select fecha::text as fecha from bloqueos where fecha >= current_date order by fecha`) as any[];
+    excepciones = bl.map((r) => r.fecha);
     reservas = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
@@ -141,88 +106,29 @@ if (authed) {
 
           <section class="card">
             <div class="card__head">
-              <h2>Tu disponibilidad</h2>
-              <button type="button" id="reset-disp" class="link-btn link-btn--danger">Borrar toda la disponibilidad</button>
-            </div>
-            <p class="muted">Para cada lugar: <strong>tocá los días</strong> que querés abrir, elegí el <strong>rango horario</strong> y la <strong>duración</strong> de cada consulta, y tocá <strong>Aplicar</strong>: el sistema arma los turnos solo. Podés marcar días como <strong>llenos</strong>. Las clientas solo verán lo que marques. <strong>Nada se guarda hasta que tocás “Confirmar”.</strong></p>
-
-            {LUGARES.map((lugar) => (
-              <div class="sede-block" data-sede={lugar.slug}>
-                <div class="sede-block__top">
-                  <h3>{lugar.nombre}</h3>
-                  <span class="dirty-flag" data-dirty={lugar.slug} hidden>● Cambios sin confirmar</span>
-                </div>
-
-                <p class="hint">1) Tocá los días que querés editar (se resaltan). &nbsp; 2) Elegí desde/hasta y la duración de la consulta. &nbsp; 3) Tocá <b>Aplicar</b>. &nbsp; Repetí con otros días si tienen otro horario.</p>
-
-                <div class="acals">
-                  {CAL.map((mes) => (
-                    <div class="acal">
-                      <div class="acal__head">{mes.label}</div>
-                      <div class="acal__grid">
-                        {WD.map((w) => <div class="acal__wd">{w}</div>)}
-                        {mes.cells.map((c) => {
-                          if (!c) return <div class="acal__cell acal__cell--empty"></div>;
-                          if (!c.sel) return <div class="acal__cell acal__cell--past">{c.day}</div>;
-                          const dia = config[lugar.slug].dias[c.iso];
-                          const horas = dia?.horas ?? [];
-                          const duracion = dia?.duracion ?? SEDE_INTERVALO[lugar.slug];
-                          const lleno = config[lugar.slug].llenas.has(c.iso);
-                          const st = lleno ? 'lleno' : horas.length ? 'horas' : '';
-                          const hstr = horas.join(',');
-                          return (
-                            <button
-                              type="button"
-                              class:list={['acal__cell', 'acal__cell--btn', st && `is-${st}`]}
-                              data-lugar={lugar.slug}
-                              data-fecha={c.iso}
-                              data-state={st}
-                              data-horas={hstr}
-                              data-duracion={String(duracion)}
-                              data-saved-state={st}
-                              data-saved-horas={hstr}
-                              data-saved-duracion={String(duracion)}
-                            >{c.day}</button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div class="editor" data-editor={lugar.slug}>
-                  <p class="editor__count" data-count={lugar.slug}>Tocá uno o más días para elegir sus horarios.</p>
-                  <div class="rango">
-                    <label class="rango__f">Desde
-                      <input type="time" data-desde value="08:00" step="300" />
-                    </label>
-                    <label class="rango__f">Hasta
-                      <input type="time" data-hasta value="20:00" step="300" />
-                    </label>
-                    <label class="rango__f">Duración de la consulta
-                      <span class="rango__dur">
-                        <input type="number" data-duracion min="5" max="240" step="5" value={SEDE_INTERVALO[lugar.slug]} /> min
-                      </span>
-                    </label>
-                  </div>
-                  <p class="rango__preview" data-preview aria-live="polite"></p>
-                  <div class="editor__actions">
-                    <button type="button" class="btn btn--primary btn--sm" data-aplicar={lugar.slug}>Aplicar a los días elegidos</button>
-                    <button type="button" class="btn btn--ghost btn--sm" data-lleno={lugar.slug}>Marcar lleno</button>
-                    <button type="button" class="btn btn--ghost btn--sm" data-quitar={lugar.slug}>Quitar día</button>
-                    <button type="button" class="link-btn" data-deselect={lugar.slug}>Deseleccionar</button>
-                  </div>
-                </div>
-
-                <p class="resumen" data-resumen={lugar.slug}></p>
-
-                <div class="sede-actions">
-                  <button class="btn btn--primary btn--sm" data-confirmar={lugar.slug}>Confirmar {lugar.nombre}</button>
-                  <button class="btn btn--ghost btn--sm" data-descartar={lugar.slug}>Descartar cambios</button>
-                  <span class="sede-msg" data-msg={lugar.slug}></span>
-                </div>
+              <div>
+                <h2>Tu horario semanal</h2>
+                <p class="muted">Definí una vez qué días y horarios atendés en cada lugar. Los turnos se abren solos para las próximas 10 semanas. Marcá abajo los días que no atendés (feriados, viajes).</p>
               </div>
-            ))}
+              <button type="button" id="reset-todo" class="link-btn link-btn--danger">Borrar todo</button>
+            </div>
+
+            <div id="dias"></div>
+
+            <div class="exc">
+              <h3>Días que no atenderás</h3>
+              <p class="muted">Se cierran aunque estén en tu horario semanal.</p>
+              <div class="exc__row">
+                <input type="date" id="exc-fecha" />
+                <button type="button" class="btn btn--ghost btn--sm" id="exc-add">Agregar fecha</button>
+              </div>
+              <div id="exc-chips" class="exc__chips"></div>
+            </div>
+
+            <div class="guardar">
+              <button type="button" id="guardar" class="btn btn--primary">Guardar horario</button>
+              <span id="guardar-msg" class="guardar__msg"></span>
+            </div>
           </section>
 
           <section class="card">
@@ -266,12 +172,13 @@ if (authed) {
   </main>
 </Base>
 
-<script>
+<script define:vars={{ SEDES, DIAS, bloquesInit: bloques, excepcionesInit: excepciones }}>
+  // ---------- Login ----------
   const lf = document.getElementById('login-form');
   lf?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = document.getElementById('login-error');
-    const pw = (lf.querySelector('input[name="password"]') as HTMLInputElement).value;
+    const pw = lf.querySelector('input[name="password"]').value;
     const res = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -289,266 +196,220 @@ if (authed) {
     location.reload();
   });
 
-  // Borrar TODA la disponibilidad (las 3 sedes) — acción destructiva e
-  // irreversible: doble confirmación, la segunda escribiendo "BORRAR".
-  document.getElementById('reset-disp')?.addEventListener('click', async (ev) => {
-    const btn = ev.currentTarget as HTMLButtonElement;
-    if (!confirm('¿Borrar TODA la disponibilidad (Montevideo, San José y Online)? Los turnos que ya reservó alguien NO se tocan.')) return;
-    const texto = prompt('Para confirmar, escribí BORRAR (en mayúsculas):');
-    if (texto !== 'BORRAR') { alert('No coincide. No se borró nada.'); return; }
-    btn.disabled = true;
-    const orig = btn.textContent;
-    btn.textContent = 'Borrando…';
-    try {
-      const res = await fetch('/api/admin/disponibilidad', { method: 'DELETE' });
-      const d = await res.json().catch(() => ({}));
-      if (res.ok) {
-        alert(`Listo: se borraron ${d.franjasBorradas ?? 0} horarios y ${d.bloqueosBorrados ?? 0} días llenos.`);
-        location.reload();
-      } else {
-        alert(`Error: ${d.error || 'no se pudo borrar'}${d.detalle ? '\n\nDetalle: ' + d.detalle : ''}`);
-      }
-    } catch {
-      alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = orig;
+  const diasCont = document.getElementById('dias');
+  if (diasCont) {
+    // ---------- Estado ----------
+    let uid = 1;
+    // Cada bloque lleva un _id local para el render; el estado es la fuente de verdad.
+    const bloques = (bloquesInit || []).map((b) => ({ _id: uid++, ...b }));
+    let excepciones = [...(excepcionesInit || [])];
+    const durDefault = Object.fromEntries(SEDES.map((s) => [s.slug, s.durDefault]));
+    const nombreSede = Object.fromEntries(SEDES.map((s) => [s.slug, s.nombre]));
+
+    // Cantidad de turnos de un rango (misma lógica que el servidor).
+    function contarTurnos(desde, hasta, dur) {
+      if (!desde || !hasta || !dur || dur <= 0) return 0;
+      const [dh, dm] = desde.split(':').map(Number);
+      const [hh, hm] = hasta.split(':').map(Number);
+      const fin = hh * 60 + hm;
+      let n = 0;
+      for (let t = dh * 60 + dm; t + dur <= fin; t += dur) n++;
+      return n;
     }
-  });
 
-  // ----- Disponibilidad: seleccionar días + generar horarios por rango -----
-  // Genera los horarios de inicio entre "desde" y "hasta" separados por
-  // "duracion" minutos, exigiendo que cada consulta termine antes de "hasta"
-  // (ej. 8 a 10 con 30 min → 08:00, 08:30, 09:00, 09:30).
-  function rangoHoras(desde: string, hasta: string, duracion: number): string[] {
-    if (!desde || !hasta || !duracion || duracion <= 0) return [];
-    const [dh, dm] = desde.split(':').map(Number);
-    const [hh, hm] = hasta.split(':').map(Number);
-    const fin = hh * 60 + hm;
-    const out: string[] = [];
-    for (let t = dh * 60 + dm; t + duracion <= fin; t += duracion) {
-      out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+    function marcarSucio() {
+      const msg = document.getElementById('guardar-msg');
+      if (msg) { msg.textContent = 'Tenés cambios sin guardar.'; msg.className = 'guardar__msg guardar__msg--dirty'; }
     }
-    return out;
-  }
-  const fmtDia = (iso: string) => { const [, m, d] = iso.split('-'); return `${+d}/${+m}`; };
-  const cellsDe = (b: HTMLElement) => [...b.querySelectorAll('.acal__cell--btn')] as HTMLElement[];
-  const selDe = (b: HTMLElement) => cellsDe(b).filter((c) => c.classList.contains('is-sel'));
-  const horasDe = (c: HTMLElement) => (c.dataset.horas ? c.dataset.horas.split(',') : []);
 
-  // Pone el estado de un día: '' (libre), 'horas' (con horarios+duración) o 'lleno'
-  function setState(cell: HTMLElement, state: string, horas: string[] = [], duracion?: number) {
-    cell.classList.remove('is-horas', 'is-lleno');
-    cell.dataset.state = state;
-    cell.dataset.horas = state === 'horas' ? horas.join(',') : '';
-    if (state === 'horas' && duracion) cell.dataset.duracion = String(duracion);
-    if (state) cell.classList.add('is-' + state);
-  }
-  function estaSucio(block: HTMLElement) {
-    return cellsDe(block).some(
-      (c) =>
-        (c.dataset.state || '') !== (c.dataset.savedState || '') ||
-        (c.dataset.horas || '') !== (c.dataset.savedHoras || '') ||
-        (c.dataset.state === 'horas' && (c.dataset.duracion || '') !== (c.dataset.savedDuracion || ''))
-    );
-  }
-  function etiquetaHoras(horas: string[], duracion: string) {
-    return `${horas.length} turno${horas.length > 1 ? 's' : ''} de ${duracion} min (${horas[0]}–${horas[horas.length - 1]})`;
-  }
+    // ---------- Render de los días ----------
+    function render() {
+      diasCont.innerHTML = '';
+      for (const dia of DIAS) {
+        const delDia = bloques.filter((b) => b.dia === dia.n);
+        const card = document.createElement('div');
+        card.className = 'dia' + (delDia.length ? '' : ' dia--vacio');
 
-  function refrescar(block: HTMLElement) {
-    const sede = block.dataset.sede!;
-    // Agrupar días disponibles por su firma (horas + duración)
-    const grupos: Record<string, { horas: string[]; duracion: string; dias: string[] }> = {};
-    const llenos: string[] = [];
-    let turnos = 0;
-    for (const c of cellsDe(block)) {
-      if (c.dataset.state === 'lleno') { llenos.push(c.dataset.fecha!); continue; }
-      if (c.dataset.state === 'horas') {
-        const duracion = c.dataset.duracion || '30';
-        const sig = `${duracion}|${c.dataset.horas || ''}`;
-        (grupos[sig] ??= { horas: horasDe(c), duracion, dias: [] }).dias.push(c.dataset.fecha!);
-        turnos += horasDe(c).length;
+        const head = document.createElement('div');
+        head.className = 'dia__head';
+        head.innerHTML = `<span class="dia__nombre">${dia.nombre}</span>`;
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn--ghost btn--sm';
+        addBtn.textContent = '+ Agregar horario';
+        addBtn.addEventListener('click', () => {
+          bloques.push({ _id: uid++, sede: 'montevideo', dia: dia.n, desde: '08:00', hasta: '12:00', duracion: durDefault['montevideo'] });
+          marcarSucio();
+          render();
+        });
+        head.appendChild(addBtn);
+        card.appendChild(head);
+
+        if (!delDia.length) {
+          const vacio = document.createElement('p');
+          vacio.className = 'dia__sin';
+          vacio.textContent = 'Sin atención';
+          card.appendChild(vacio);
+        } else {
+          const cont = document.createElement('div');
+          cont.className = 'dia__bloques';
+          for (const b of delDia) cont.appendChild(filaBloque(b));
+          card.appendChild(cont);
+        }
+        diasCont.appendChild(card);
       }
     }
-    const partes: string[] = [];
-    for (const sig of Object.keys(grupos).sort()) {
-      const g = grupos[sig];
-      const dias = g.dias.sort().map(fmtDia).join(', ');
-      partes.push(`<b>${etiquetaHoras(g.horas, g.duracion)}</b> (${g.dias.length} día${g.dias.length > 1 ? 's' : ''}): ${dias}`);
-    }
-    if (llenos.length) partes.push(`<b class="res-lleno">Llenos</b> (${llenos.length}): ${llenos.sort().map(fmtDia).join(', ')}`);
 
-    const res = block.querySelector(`[data-resumen="${sede}"]`) as HTMLElement;
-    if (res) res.innerHTML = partes.length
-      ? partes.join('<br>') + `<br><span class="resumen__tot">${turnos} turnos para reservar</span>`
-      : '<span class="resumen__vacio">Sin días marcados.</span>';
+    function filaBloque(b) {
+      const fila = document.createElement('div');
+      fila.className = 'bloque';
 
-    const flag = block.querySelector(`[data-dirty="${sede}"]`) as HTMLElement;
-    if (flag) flag.hidden = !estaSucio(block);
-  }
-
-  function actualizarSeleccion(block: HTMLElement) {
-    const sede = block.dataset.sede!;
-    const sel = selDe(block);
-    const cnt = block.querySelector(`[data-count="${sede}"]`) as HTMLElement;
-    if (cnt) cnt.textContent = sel.length
-      ? `${sel.length} día${sel.length > 1 ? 's' : ''} seleccionado${sel.length > 1 ? 's' : ''}: elegí el rango y tocá Aplicar.`
-      : 'Tocá uno o más días para elegir sus horarios.';
-    // Si hay un único día seleccionado con horarios, precargamos su rango en
-    // los inputs para poder ajustarlo. Con varios días (o ninguno) el rango
-    // tipeado se deja como está: es lo que se va a aplicar a todos.
-    const desde = block.querySelector('[data-desde]') as HTMLInputElement;
-    const hasta = block.querySelector('[data-hasta]') as HTMLInputElement;
-    const dur = block.querySelector('[data-duracion]') as HTMLInputElement;
-    if (sel.length === 1 && sel[0].dataset.state === 'horas') {
-      const horas = horasDe(sel[0]);
-      const duracion = Number(sel[0].dataset.duracion) || 30;
-      if (desde && horas.length) desde.value = horas[0];
-      if (dur) dur.value = String(duracion);
-      if (hasta && horas.length) {
-        const [h, m] = horas[horas.length - 1].split(':').map(Number);
-        const finMin = h * 60 + m + duracion;
-        hasta.value = `${String(Math.floor(finMin / 60) % 24).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
+      const sel = document.createElement('select');
+      sel.className = 'bloque__sede';
+      for (const s of SEDES) {
+        const op = document.createElement('option');
+        op.value = s.slug; op.textContent = s.nombre;
+        if (s.slug === b.sede) op.selected = true;
+        sel.appendChild(op);
       }
-    }
-    actualizarPreview(block);
-  }
+      sel.addEventListener('change', () => { b.sede = sel.value; b.duracion = durDefault[b.sede] || b.duracion; marcarSucio(); render(); });
 
-  function actualizarPreview(block: HTMLElement) {
-    const desde = (block.querySelector('[data-desde]') as HTMLInputElement)?.value;
-    const hasta = (block.querySelector('[data-hasta]') as HTMLInputElement)?.value;
-    const duracion = Number((block.querySelector('[data-duracion]') as HTMLInputElement)?.value);
-    const prev = block.querySelector('[data-preview]') as HTMLElement;
-    if (!prev) return;
-    const horas = rangoHoras(desde, hasta, duracion);
-    if (!desde || !hasta || !duracion) {
-      prev.textContent = '';
-    } else if (!horas.length) {
-      prev.textContent = 'Ese rango no entra ni un turno: revisá desde/hasta/duración.';
-    } else {
-      prev.textContent = `Se van a crear ${horas.length} turno${horas.length > 1 ? 's' : ''}: ${horas.join(', ')}`;
-    }
-  }
+      const desde = document.createElement('input');
+      desde.type = 'time'; desde.step = '300'; desde.value = b.desde; desde.className = 'bloque__t';
+      const hasta = document.createElement('input');
+      hasta.type = 'time'; hasta.step = '300'; hasta.value = b.hasta; hasta.className = 'bloque__t';
+      const dur = document.createElement('input');
+      dur.type = 'number'; dur.min = '5'; dur.max = '240'; dur.step = '5'; dur.value = b.duracion; dur.className = 'bloque__dur';
 
-  document.querySelectorAll<HTMLElement>('.sede-block').forEach((block) => {
-    const sede = block.dataset.sede!;
-    const msg = () => block.querySelector(`[data-msg="${sede}"]`) as HTMLElement;
+      const count = document.createElement('span');
+      count.className = 'bloque__count';
+      const actualizarCount = () => {
+        const n = contarTurnos(desde.value, hasta.value, Number(dur.value));
+        count.textContent = n ? `${n} turno${n > 1 ? 's' : ''}` : '⚠ sin turnos';
+        count.classList.toggle('bloque__count--warn', !n);
+      };
+      desde.addEventListener('input', () => { b.desde = desde.value; actualizarCount(); marcarSucio(); });
+      hasta.addEventListener('input', () => { b.hasta = hasta.value; actualizarCount(); marcarSucio(); });
+      dur.addEventListener('input', () => { b.duracion = Number(dur.value); actualizarCount(); marcarSucio(); });
+      actualizarCount();
 
-    // Seleccionar/deseleccionar días
-    cellsDe(block).forEach((cell) =>
-      cell.addEventListener('click', () => {
-        cell.classList.toggle('is-sel');
-        actualizarSeleccion(block);
-      })
-    );
-
-    // Vista previa en vivo del rango
-    ['[data-desde]', '[data-hasta]', '[data-duracion]'].forEach((sel) => {
-      block.querySelector(sel)?.addEventListener('input', () => actualizarPreview(block));
-    });
-
-    // Aplicar el rango generado a los días seleccionados
-    block.querySelector(`[data-aplicar="${sede}"]`)?.addEventListener('click', () => {
-      const sel = selDe(block);
-      if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días a editar.'; return; }
-      const desde = (block.querySelector('[data-desde]') as HTMLInputElement)?.value;
-      const hasta = (block.querySelector('[data-hasta]') as HTMLInputElement)?.value;
-      const duracion = Number((block.querySelector('[data-duracion]') as HTMLInputElement)?.value);
-      const horas = rangoHoras(desde, hasta, duracion);
-      if (!horas.length) { if (msg()) msg().textContent = 'Ese rango no genera ningún turno: revisá desde/hasta/duración.'; return; }
-      sel.forEach((c) => { setState(c, 'horas', horas, duracion); c.classList.remove('is-sel'); });
-      if (msg()) msg().textContent = '';
-      actualizarSeleccion(block); refrescar(block);
-    });
-
-    // Marcar seleccionados como llenos
-    block.querySelector(`[data-lleno="${sede}"]`)?.addEventListener('click', () => {
-      const sel = selDe(block);
-      if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días.'; return; }
-      sel.forEach((c) => { setState(c, 'lleno'); c.classList.remove('is-sel'); });
-      actualizarSeleccion(block); refrescar(block);
-    });
-
-    // Quitar disponibilidad de los seleccionados (vuelven a libres)
-    block.querySelector(`[data-quitar="${sede}"]`)?.addEventListener('click', () => {
-      const sel = selDe(block);
-      if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días.'; return; }
-      sel.forEach((c) => { setState(c, ''); c.classList.remove('is-sel'); });
-      actualizarSeleccion(block); refrescar(block);
-    });
-
-    // Deseleccionar
-    block.querySelector(`[data-deselect="${sede}"]`)?.addEventListener('click', () => {
-      cellsDe(block).forEach((c) => c.classList.remove('is-sel'));
-      actualizarSeleccion(block);
-    });
-
-    // Descartar cambios → vuelve a lo último confirmado (no toca la base)
-    block.querySelector(`[data-descartar="${sede}"]`)?.addEventListener('click', () => {
-      cellsDe(block).forEach((c) => {
-        c.classList.remove('is-sel');
-        const st = c.dataset.savedState || '';
-        setState(c, st, st === 'horas' ? (c.dataset.savedHoras || '').split(',').filter(Boolean) : [], Number(c.dataset.savedDuracion) || undefined);
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'bloque__del'; del.title = 'Quitar'; del.textContent = '✕';
+      del.addEventListener('click', () => {
+        const i = bloques.indexOf(b);
+        if (i >= 0) bloques.splice(i, 1);
+        marcarSucio();
+        render();
       });
-      if (msg()) msg().textContent = '';
-      actualizarSeleccion(block); refrescar(block);
+
+      fila.append(sel, tag('span', 'bloque__sep', 'de'), desde, tag('span', 'bloque__sep', 'a'), hasta,
+        tag('span', 'bloque__sep', '·'), dur, tag('span', 'bloque__sep', 'min'), count, del);
+      return fila;
+    }
+
+    function tag(t, cls, txt) {
+      const el = document.createElement(t);
+      el.className = cls; el.textContent = txt;
+      return el;
+    }
+
+    // ---------- Excepciones ----------
+    function renderExc() {
+      const cont = document.getElementById('exc-chips');
+      cont.innerHTML = '';
+      if (!excepciones.length) {
+        cont.innerHTML = '<span class="exc__vacio">No hay días cerrados.</span>';
+        return;
+      }
+      for (const f of [...excepciones].sort()) {
+        const chip = document.createElement('span');
+        chip.className = 'exc__chip';
+        const [y, m, d] = f.split('-');
+        chip.textContent = `${+d}/${+m}/${y} `;
+        const x = document.createElement('button');
+        x.type = 'button'; x.textContent = '✕'; x.title = 'Quitar';
+        x.addEventListener('click', () => { excepciones = excepciones.filter((e) => e !== f); marcarSucio(); renderExc(); });
+        chip.appendChild(x);
+        cont.appendChild(chip);
+      }
+    }
+    document.getElementById('exc-add')?.addEventListener('click', () => {
+      const inp = document.getElementById('exc-fecha');
+      const f = inp.value;
+      if (!f) return;
+      if (!excepciones.includes(f)) { excepciones.push(f); marcarSucio(); renderExc(); }
+      inp.value = '';
     });
 
-    // Confirmar → guarda la foto completa de la sede
-    block.querySelector(`[data-confirmar="${sede}"]`)?.addEventListener('click', async (ev) => {
-      const btn = ev.currentTarget as HTMLButtonElement;
-      const cells = cellsDe(block);
-      const dias = cells
-        .filter((c) => c.dataset.state === 'horas')
-        .map((c) => ({ fecha: c.dataset.fecha, horas: horasDe(c), duracionMin: Number(c.dataset.duracion) || 30 }));
-      const llenas = cells.filter((c) => c.dataset.state === 'lleno').map((c) => c.dataset.fecha);
+    // ---------- Guardar ----------
+    document.getElementById('guardar')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      const msg = document.getElementById('guardar-msg');
+      // Validar que ningún bloque quede sin turnos
+      const invalido = bloques.find((b) => contarTurnos(b.desde, b.hasta, b.duracion) === 0);
+      if (invalido) {
+        if (msg) { msg.textContent = 'Revisá los horarios marcados con ⚠ (no generan turnos).'; msg.className = 'guardar__msg guardar__msg--dirty'; }
+        return;
+      }
       btn.disabled = true;
-      if (msg()) msg().textContent = 'Guardando…';
+      if (msg) { msg.textContent = 'Guardando…'; msg.className = 'guardar__msg'; }
       try {
-        const res = await fetch('/api/admin/disponibilidad', {
+        const res = await fetch('/api/admin/horario', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ lugar: sede, dias, llenas }),
+          body: JSON.stringify({
+            bloques: bloques.map((b) => ({ sede: b.sede, dia: b.dia, desde: b.desde, hasta: b.hasta, duracion: b.duracion })),
+            excepciones,
+          }),
         });
         const d = await res.json().catch(() => ({}));
         if (res.ok) {
-          cells.forEach((c) => {
-            c.dataset.savedState = c.dataset.state || '';
-            c.dataset.savedHoras = c.dataset.horas || '';
-            c.dataset.savedDuracion = c.dataset.duracion || '';
-          });
-          refrescar(block);
-          if (msg()) msg().textContent = `✓ Confirmado: ${d.fechas} días · ${d.turnos} turnos${d.llenas ? ` · ${d.llenas} llenos` : ''}`;
-        } else if (msg()) {
-          msg().textContent = `Error: ${d.error || 'no se pudo guardar'}. Tus cambios siguen acá: probá Confirmar de nuevo.`;
+          if (msg) { msg.textContent = '✓ Guardado. Tu agenda ya está publicada.'; msg.className = 'guardar__msg guardar__msg--ok'; }
+        } else if (msg) {
+          msg.textContent = `Error: ${d.error || 'no se pudo guardar'}${d.detalle ? ' — ' + d.detalle : ''}`;
+          msg.className = 'guardar__msg guardar__msg--dirty';
         }
       } catch {
-        if (msg()) msg().textContent = 'Sin conexión: no se guardó. Tus cambios siguen acá: probá Confirmar de nuevo.';
+        if (msg) { msg.textContent = 'Sin conexión: no se guardó. Probá de nuevo.'; msg.className = 'guardar__msg guardar__msg--dirty'; }
       } finally {
         btn.disabled = false;
       }
     });
 
-    actualizarSeleccion(block);
-    refrescar(block);
-  });
+    // ---------- Borrar todo ----------
+    document.getElementById('reset-todo')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      if (!confirm('¿Borrar TODO tu horario semanal y los días cerrados? Las reservas ya hechas no se tocan.')) return;
+      if (prompt('Para confirmar, escribí BORRAR (en mayúsculas):') !== 'BORRAR') { alert('No coincide. No se borró nada.'); return; }
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/admin/horario', { method: 'DELETE' });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok) { alert('Listo, se borró todo el horario.'); location.reload(); }
+        else alert(`Error: ${d.error || 'no se pudo borrar'}${d.detalle ? '\n\nDetalle: ' + d.detalle : ''}`);
+      } catch {
+        alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
-  // Borrar reserva
+    render();
+    renderExc();
+  }
+
+  // ---------- Borrar reserva ----------
   document.querySelectorAll('.del').forEach((b) => {
     b.addEventListener('click', async () => {
       if (!confirm('¿Borrar esta reserva? Se libera el cupo y se quita del calendario.')) return;
-      const btn = b as HTMLButtonElement;
+      const btn = b;
       const id = btn.dataset.id;
       const orig = btn.textContent;
       btn.disabled = true;
       btn.textContent = 'Borrando…';
       try {
         const res = await fetch(`/api/admin/reserva?id=${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          btn.closest('tr')?.remove();
-          return;
-        }
+        if (res.ok) { btn.closest('tr')?.remove(); return; }
         alert('No se pudo borrar. Probá de nuevo.');
       } catch {
         alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
@@ -570,56 +431,53 @@ if (authed) {
 
   .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
   .panel__head h1 { font-size: clamp(1.6rem, 3vw, 2rem); }
-  .muted { color: var(--ink-soft); font-size: 0.92rem; margin-bottom: 1rem; }
+  .muted { color: var(--ink-soft); font-size: 0.9rem; margin: 0.3rem 0 0; line-height: 1.6; }
   .card { margin-bottom: 2rem; }
-  .card h2 { font-size: 1.4rem; margin-bottom: 0.4rem; }
-  .card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
+  .card h2 { font-size: 1.4rem; margin-bottom: 0.2rem; }
+  .card__head { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 0.8rem; margin-bottom: 1.4rem; }
+  .card__head > div { max-width: 60ch; }
 
-  .sede-block { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--sand); }
-  .sede-block__top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .sede-block__top h3 { font-size: 1.1rem; }
-  .dirty-flag { font-size: 0.8rem; color: var(--clay-deep); font-weight: 600; }
-  .btn--sm { padding: 0.45rem 1rem; font-size: 0.88rem; }
+  /* Día */
+  .dia { background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius); padding: 0.85rem 1rem; margin-bottom: 0.7rem; }
+  .dia--vacio { background: transparent; border-style: dashed; }
+  .dia__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .dia__nombre { font-weight: 600; font-size: 1rem; color: var(--ink); }
+  .dia__sin { font-size: 0.85rem; color: var(--ink-soft); margin: 0.4rem 0 0; }
+  .dia__bloques { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.7rem; }
 
-  .hint { font-size: 0.84rem; color: var(--ink-soft); margin: 0.9rem 0; line-height: 1.6; }
+  /* Bloque horario */
+  .bloque { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; background: var(--cream-deep); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; }
+  .bloque__sede { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .bloque__t { font: inherit; padding: 0.35rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .bloque__dur { font: inherit; width: 4em; padding: 0.35rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .bloque__sep { font-size: 0.85rem; color: var(--ink-soft); }
+  .bloque__count { font-size: 0.8rem; color: var(--sage-deep); font-weight: 600; margin-left: auto; }
+  .bloque__count--warn { color: var(--clay-deep); }
+  .bloque__del { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.9rem; padding: 0.2rem 0.4rem; }
+  .bloque__del:hover { color: var(--clay-deep); }
 
-  .acals { display: flex; flex-wrap: wrap; gap: 1.4rem; margin-top: 0.4rem; }
-  .acal { width: 224px; }
-  .acal__head { font-family: var(--font-serif); font-size: 0.98rem; text-transform: capitalize; margin-bottom: 0.4rem; color: var(--ink); }
-  .acal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-  .acal__wd { text-align: center; font-size: 0.62rem; font-weight: 600; color: var(--ink-soft); }
-  .acal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.78rem; border-radius: 6px; border: 1px solid transparent; }
-  .acal__cell--empty { border: 0; }
-  .acal__cell--past { color: color-mix(in srgb, var(--ink-soft) 35%, var(--cream)); }
-  .acal__cell--btn { background: var(--white); border-color: var(--sand); color: var(--ink); cursor: pointer; transition: background 0.1s, border-color 0.1s, color 0.1s; }
-  .acal__cell--btn:hover { border-color: var(--sage); }
-  .acal__cell--btn.is-horas { background: var(--sage); color: var(--cream); border-color: var(--sage); font-weight: 600; }
-  .acal__cell--btn.is-lleno { background: #c0392b; color: #fff; border-color: #c0392b; font-weight: 600; }
-  .acal__cell--btn.is-sel { box-shadow: 0 0 0 2px var(--ink); border-color: var(--ink); }
+  /* Excepciones */
+  .exc { margin-top: 1.5rem; padding-top: 1.3rem; border-top: 1px solid var(--sand); }
+  .exc h3 { font-size: 1.05rem; margin-bottom: 0.1rem; }
+  .exc__row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+  .exc__row input { font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .exc__chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
+  .exc__chip { display: inline-flex; align-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--clay) 14%, var(--cream)); color: var(--clay-deep); font-size: 0.85rem; padding: 0.3rem 0.7rem; border-radius: 999px; }
+  .exc__chip button { background: none; border: 0; color: var(--clay-deep); cursor: pointer; font-size: 0.85rem; padding: 0; }
+  .exc__vacio { font-size: 0.85rem; color: var(--ink-soft); }
 
-  .editor { margin: 1rem 0 0.4rem; padding: 0.9rem 1rem; background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm); }
-  .editor__count { font-size: 0.86rem; font-weight: 600; color: var(--ink); margin-bottom: 0.7rem; }
-  .rango { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem 1.2rem; margin-bottom: 0.6rem; }
-  .rango__f { display: grid; gap: 0.3rem; font-size: 0.82rem; font-weight: 600; color: var(--ink); }
-  .rango__f input[type="time"] { font: inherit; padding: 0.4rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .rango__dur { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
-  .rango__dur input[type="number"] { font: inherit; width: 4.5em; padding: 0.4rem 0.5rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .rango__preview { font-size: 0.82rem; color: var(--sage-deep); min-height: 1.3em; margin: 0 0 0.8rem; }
-  .editor__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
-  .link-btn { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.84rem; text-decoration: underline; }
+  /* Guardar */
+  .guardar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1.6rem; }
+  .guardar__msg { font-size: 0.88rem; color: var(--ink-soft); }
+  .guardar__msg--ok { color: var(--sage-deep); font-weight: 600; }
+  .guardar__msg--dirty { color: var(--clay-deep); }
+
+  .btn--sm { padding: 0.4rem 0.85rem; font-size: 0.85rem; }
+  .link-btn { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.84rem; text-decoration: underline; white-space: nowrap; }
   .link-btn:hover { color: var(--ink); }
   .link-btn--danger { color: var(--clay-deep); }
-  .link-btn--danger:hover { color: #a23226; }
 
-  .resumen { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.7; margin: 0.6rem 0 0.9rem; }
-  .resumen b { color: var(--sage-deep); }
-  .resumen b.res-lleno { color: var(--clay-deep); }
-  .resumen__tot { color: var(--ink); font-weight: 600; }
-  .resumen__vacio { color: var(--ink-soft); }
-
-  .sede-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; }
-  .sede-msg { font-size: 0.85rem; color: var(--sage-deep); min-height: 1.2em; }
-
+  /* Tabla reservas */
   .grid-wrap { overflow-x: auto; }
   .grid { border-collapse: collapse; font-size: 0.85rem; width: 100%; }
   .grid th, .grid td { border: 1px solid var(--sand); padding: 0.4rem 0.6rem; text-align: left; }

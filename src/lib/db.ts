@@ -40,12 +40,32 @@ export async function ensureGoogleEventId(sql: any) {
 }
 
 /**
- * Duración de la consulta por turno (idempotente). Ceci define la duración al
- * abrir cada rango horario (ej. "30 min"); se guarda en franjas y se copia a
- * la reserva al momento de reservar, para que el evento de Calendar quede del
- * tamaño correcto sin depender de un valor fijo por sede.
+ * Duración de la consulta en la reserva (idempotente). Se copia desde el
+ * horario semanal al reservar, para que el evento de Calendar quede del tamaño
+ * correcto sin depender de un valor fijo por sede.
  */
 export async function ensureDuracionMin(sql: any) {
-  await sql`alter table franjas add column if not exists duracion_min integer not null default 30`;
   await sql`alter table reservas add column if not exists duracion_min integer`;
+}
+
+/**
+ * Horario SEMANAL recurrente (idempotente). Ceci define su "semana típica" una
+ * vez: por día de la semana y sede, un rango horario y la duración de la
+ * consulta. Los turnos concretos se generan hacia adelante desde acá (ver
+ * src/lib/agenda.ts). Reemplaza el modelo viejo de "franjas por fecha".
+ *   dia_semana: 0=domingo … 6=sábado (Date.getUTCDay)
+ *   sede_id NULL = modalidades online (virtual / skincare)
+ */
+export async function ensureHorarioSemanal(sql: any) {
+  await sql`
+    create table if not exists horario_semanal (
+      id uuid primary key default gen_random_uuid(),
+      sede_id uuid references sedes(id) on delete cascade,
+      dia_semana smallint not null check (dia_semana between 0 and 6),
+      hora_desde time not null,
+      hora_hasta time not null,
+      duracion_min integer not null default 30,
+      created_at timestamptz not null default now()
+    )
+  `;
 }
