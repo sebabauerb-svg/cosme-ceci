@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { isAdmin } from '../../../lib/admin';
-import { crearEventoReserva, calendarConfigurado } from '../../../lib/calendar';
+import { crearEventoReserva, calendarConfigurado, diagCalendario } from '../../../lib/calendar';
 
 export const prerender = false;
 
@@ -39,6 +39,7 @@ export const GET: APIRoute = async ({ cookies }) => {
           ok: false,
           error: r.error,
           ...info,
+          diagnostico: await diagCalendario(),
           pista:
             'Un 404 casi siempre = el calendar_id_objetivo no existe o la cuenta_de_servicio no tiene acceso. En Google Calendar de Ceci, compartí ese calendario con la cuenta de servicio (permiso "Hacer cambios en los eventos") y confirmá que el calendar id coincida.',
         }

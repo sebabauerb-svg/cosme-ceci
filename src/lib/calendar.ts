@@ -103,6 +103,43 @@ export async function crearEventoReserva(opts: {
   }
 }
 
+/**
+ * Diagnóstico: ¿la cuenta de servicio ve el calendario objetivo? Lista los
+ * calendarios a los que tiene acceso. Sirve para depurar el 404 al crear eventos.
+ */
+export async function diagCalendario(): Promise<Record<string, unknown>> {
+  const creds = getCreds();
+  if (!creds) return { error: 'Google Calendar no está configurado' };
+  try {
+    const token = await accessToken(creds.email, creds.key);
+    const calRes = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(creds.calendarId)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    let visibles: string[] = [];
+    if (listRes.ok) {
+      const d: any = await listRes.json();
+      visibles = (d.items || []).map((c: any) => `${c.id} — ${c.accessRole}`);
+    }
+    return {
+      autenticacion: 'OK — la cuenta de servicio se autenticó con Google',
+      acceso_al_calendario_objetivo:
+        calRes.status === 200
+          ? 'OK — la cuenta de servicio VE el calendario'
+          : calRes.status === 404
+            ? 'NO — la cuenta de servicio NO tiene acceso (falta compartir el calendario con ella)'
+            : `status ${calRes.status}`,
+      calendarios_que_ve_la_cuenta_de_servicio:
+        visibles.length ? visibles : '(ninguno — el calendario aún no fue compartido con la cuenta de servicio)',
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /** Borra un evento del calendario de Ceci (cancelación de turno). Nunca lanza. */
 export async function borrarEventoReserva(eventId: string): Promise<{ ok: boolean; error?: string }> {
   const creds = getCreds();
