@@ -231,6 +231,13 @@ if (authed) {
     }
     function marcarSucio() { sucio = true; setMsg('Tenés cambios sin guardar.', 'dirty'); }
     function setMsg(txt: string, cls = '') { const m = $('guardar-msg'); m.textContent = txt; m.className = 'guardar__msg' + (cls ? ' guardar__msg--' + cls : ''); }
+    // Si la sesión expiró (12 h), los fetch devuelven 401: avisar claro y ofrecer recargar.
+    function sesionExpirada(res: Response): boolean {
+      if (res.status !== 401) return false;
+      setMsg('Tu sesión expiró. Recargá la página e ingresá de nuevo.', 'dirty');
+      if (confirm('Tu sesión expiró. ¿Recargar para ingresar de nuevo?')) location.reload();
+      return true;
+    }
 
     // ---------- Cargar sede ----------
     async function cargarSede(s: string) {
@@ -239,6 +246,7 @@ if (authed) {
       ($('f-dur') as HTMLInputElement).value = String(durSede[s]);
       try {
         const res = await fetch(`/api/admin/horario?sede=${s}`);
+        if (sesionExpirada(res)) return;
         const d = await res.json();
         dias = new Map();
         reservasMap = new Map();
@@ -384,6 +392,7 @@ if (authed) {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ sede, fecha: sel, hora, nombre: nombre.trim() }),
       });
+      if (sesionExpirada(res)) return;
       const d = await res.json().catch(() => ({}));
       if (res.ok) { reservasMap.set(`${sel} ${hora}`, { nombre: nombre.trim(), modalidad: 'manual' }); renderCal(); renderDia(); }
       else alert(d.error || 'No se pudo marcar el turno.');
@@ -395,28 +404,36 @@ if (authed) {
       else alert('No se pudo liberar el turno.');
     }
 
-    // ---------- Atajo repetir ----------
+    // ---------- Atajo repetir (toggle: si ya está aplicado, lo quita) ----------
+    let ultimoAtajo: { firma: string; fechas: string[] } | null = null;
     $('atajo-btn').addEventListener('click', () => {
       const { desde, hasta, dur } = franjaActual();
       const horas = rangoHoras(desde, hasta, dur);
       if (!horas.length) { setMsg('Ese horario no genera turnos: revisá desde/hasta/duración.', 'dirty'); return; }
       const dow = Number(($('atajo-dia') as HTMLInputElement).value); // 0=dom
       const n = Math.max(1, Math.min(26, Number(($('atajo-n') as HTMLInputElement).value)));
-      // Primer día >= hoy con ese día de la semana
+      const firma = `${dow}|${n}|${desde}|${hasta}|${dur}`;
+
+      // Fechas objetivo: los próximos N días con ese día de la semana.
       let cur = new Date(hoyUY + 'T12:00:00Z');
       while (cur.getUTCDay() !== dow) cur = new Date(cur.getTime() + 86400000);
-      let agregados = 0;
-      for (let i = 0; i < n; i++) {
-        const iso = cur.toISOString().slice(0, 10);
-        const dia = dias.get(iso) ?? { horas: new Set<string>(), duracion: dur };
-        horas.forEach((h) => dia.horas.add(h));
-        dia.duracion = dur;
-        dias.set(iso, dia);
-        agregados++;
-        cur = new Date(cur.getTime() + 7 * 86400000);
+      const fechas: string[] = [];
+      for (let i = 0; i < n; i++) { fechas.push(cur.toISOString().slice(0, 10)); cur = new Date(cur.getTime() + 7 * 86400000); }
+
+      // ¿Ya está aplicado exactamente esto? Entonces este click lo DESHACE.
+      const yaAplicado = ultimoAtajo?.firma === firma &&
+        fechas.every((f) => { const d = dias.get(f); return d && horas.every((h) => d.horas.has(h)); });
+
+      if (yaAplicado) {
+        for (const f of fechas) { const d = dias.get(f); if (d) { horas.forEach((h) => d.horas.delete(h)); if (!d.horas.size) dias.delete(f); } }
+        ultimoAtajo = null;
+        setMsg(`Quitado de ${fechas.length} días. Tocá "Repetir" otra vez para volver a agregarlo.`, 'dirty');
+      } else {
+        for (const f of fechas) { const d = dias.get(f) ?? { horas: new Set<string>(), duracion: dur }; horas.forEach((h) => d.horas.add(h)); d.duracion = dur; dias.set(f, d); }
+        ultimoAtajo = { firma, fechas };
+        setMsg(`Agregado a ${fechas.length} días. Tocá "Repetir" otra vez para deshacerlo, o Guardar para publicar.`, 'dirty');
       }
-      marcarSucio(); renderCal(); renderDia();
-      setMsg(`Agregado a ${agregados} días. Revisá y tocá Guardar.`, 'dirty');
+      sucio = true; renderCal(); renderDia();
     });
 
     // ---------- Guardar ----------
@@ -428,6 +445,7 @@ if (authed) {
         const res = await fetch('/api/admin/horario', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
         });
+        if (sesionExpirada(res)) { btn.disabled = false; return; }
         const d = await res.json().catch(() => ({}));
         if (res.ok) { sucio = false; setMsg(`✓ Guardado (${d.turnos} turnos en ${d.dias} días). Ya está publicado.`, 'ok'); }
         else setMsg(`Error: ${d.error || 'no se pudo'}${d.detalle ? ' — ' + d.detalle : ''}`, 'dirty');
@@ -513,14 +531,18 @@ if (authed) {
   .cal__nav:hover { border-color: var(--sage); }
   .cal__wd { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
   .cal__wd span { text-align: center; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); }
-  .cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .cal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.85rem; border-radius: 8px; border: 1px solid transparent; font-family: inherit; color: var(--ink); }
+  .cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+  .cal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.9rem; border-radius: 9px; border: 1px solid transparent; font-family: inherit; }
   .cal__cell--empty { border: 0; }
-  .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 38%, var(--cream)); }
-  button.cal__cell { background: var(--white); border-color: var(--sand); cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s; }
-  button.cal__cell:hover { border-color: var(--sage); }
-  .cal__cell--on { background: color-mix(in srgb, var(--sage) 22%, var(--cream)) !important; border-color: color-mix(in srgb, var(--sage) 45%, var(--cream)) !important; color: var(--sage-deep) !important; font-weight: 600; }
-  .cal__cell--res { box-shadow: inset 0 -4px 0 -1px var(--clay); }
+  /* Días pasados: apagados, sin caja, muy tenues. */
+  .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 22%, var(--cream)); }
+  /* Días futuros disponibles: nítidos, con caja clara e interactiva. */
+  button.cal__cell { background: var(--white); border-color: color-mix(in srgb, var(--sand) 80%, var(--ink-soft)); color: var(--ink); font-weight: 500; cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.1s; }
+  button.cal__cell:hover { border-color: var(--sage); background: color-mix(in srgb, var(--sage) 8%, var(--white)); transform: translateY(-1px); }
+  .cal__cell--on { background: var(--sage) !important; border-color: var(--sage) !important; color: var(--cream) !important; font-weight: 600; }
+  .cal__cell--on:hover { background: var(--sage-deep) !important; }
+  .cal__cell--res { position: relative; }
+  .cal__cell--res::after { content: ''; position: absolute; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--clay); }
   .cal__cell--sel { box-shadow: 0 0 0 2px var(--ink); }
   .cal__leg { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-top: 0.7rem; font-size: 0.75rem; color: var(--ink-soft); }
   .cal__leg span { display: inline-flex; align-items: center; gap: 0.35rem; }
@@ -533,16 +555,16 @@ if (authed) {
   .disp__dia { background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 1rem 1.1rem; min-height: 160px; }
   .dia-vacio { font-size: 0.9rem; color: var(--ink-soft); line-height: 1.6; margin: 0 0 0.8rem; }
   .dia-panel__head { text-transform: capitalize; font-size: 1.02rem; margin-bottom: 0.8rem; color: var(--ink); }
-  .turnos { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.9rem; }
-  .turno { display: flex; align-items: center; gap: 0.5rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.4rem 0.6rem; }
-  .turno--res { background: color-mix(in srgb, var(--clay) 12%, var(--cream)); border-color: color-mix(in srgb, var(--clay) 30%, var(--cream)); }
-  .turno__h { font-weight: 600; font-size: 0.9rem; color: var(--ink); min-width: 3.2em; }
-  .turno__nom { font-size: 0.85rem; color: var(--clay-deep); flex: 1; }
-  .turno__marc { margin-left: auto; font: inherit; font-size: 0.78rem; background: none; border: 1px solid var(--sand); border-radius: 999px; padding: 0.2rem 0.7rem; cursor: pointer; color: var(--sage-deep); }
-  .turno__marc:hover { border-color: var(--sage); }
-  .turno__x { font: inherit; font-size: 0.78rem; background: none; border: 0; cursor: pointer; color: var(--ink-soft); }
-  .turno__x:hover { color: var(--clay-deep); }
-  .dia-panel__acc { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .turnos { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+  .turno { display: flex; align-items: center; gap: 0.6rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; }
+  .turno--res { background: color-mix(in srgb, var(--clay) 10%, var(--white)); border-color: color-mix(in srgb, var(--clay) 28%, var(--cream)); }
+  .turno__h { font-weight: 600; font-size: 0.92rem; color: var(--ink); min-width: 3em; font-variant-numeric: tabular-nums; }
+  .turno__nom { font-size: 0.85rem; color: var(--clay-deep); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turno__marc { margin-left: auto; font: inherit; font-weight: 600; font-size: 0.76rem; background: none; border: 1px solid color-mix(in srgb, var(--sage) 50%, var(--sand)); border-radius: 999px; padding: 0.28rem 0.85rem; cursor: pointer; color: var(--sage-deep); transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
+  .turno__marc:hover { background: color-mix(in srgb, var(--sage) 12%, var(--white)); border-color: var(--sage); }
+  .turno__x { font: inherit; font-size: 0.9rem; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--ink-soft); padding: 0.2rem 0.3rem; border-radius: var(--radius-sm); }
+  .turno__x:hover { color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 10%, var(--white)); }
+  .dia-panel__acc { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--sand); }
 
   /* Guardar */
   .guardar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1.6rem; }
