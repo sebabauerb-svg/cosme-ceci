@@ -140,7 +140,10 @@ if (authed) {
           {dbError && <p class="login__err">Error de base de datos: {dbError}</p>}
 
           <section class="card">
-            <h2>Tu disponibilidad</h2>
+            <div class="card__head">
+              <h2>Tu disponibilidad</h2>
+              <button type="button" id="reset-disp" class="link-btn link-btn--danger">Borrar toda la disponibilidad</button>
+            </div>
             <p class="muted">Para cada lugar: <strong>tocá los días</strong> que querés abrir, elegí el <strong>rango horario</strong> y la <strong>duración</strong> de cada consulta, y tocá <strong>Aplicar</strong>: el sistema arma los turnos solo. Podés marcar días como <strong>llenos</strong>. Las clientas solo verán lo que marques. <strong>Nada se guarda hasta que tocás “Confirmar”.</strong></p>
 
             {LUGARES.map((lugar) => (
@@ -284,6 +287,33 @@ if (authed) {
   document.getElementById('logout')?.addEventListener('click', async () => {
     await fetch('/api/admin/login', { method: 'DELETE' });
     location.reload();
+  });
+
+  // Borrar TODA la disponibilidad (las 3 sedes) — acción destructiva e
+  // irreversible: doble confirmación, la segunda escribiendo "BORRAR".
+  document.getElementById('reset-disp')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget as HTMLButtonElement;
+    if (!confirm('¿Borrar TODA la disponibilidad (Montevideo, San José y Online)? Los turnos que ya reservó alguien NO se tocan.')) return;
+    const texto = prompt('Para confirmar, escribí BORRAR (en mayúsculas):');
+    if (texto !== 'BORRAR') { alert('No coincide. No se borró nada.'); return; }
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Borrando…';
+    try {
+      const res = await fetch('/api/admin/disponibilidad', { method: 'DELETE' });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        alert(`Listo: se borraron ${d.franjasBorradas ?? 0} horarios y ${d.bloqueosBorrados ?? 0} días llenos.`);
+        location.reload();
+      } else {
+        alert(`Error: ${d.error || 'no se pudo borrar'}`);
+      }
+    } catch {
+      alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
   });
 
   // ----- Disponibilidad: seleccionar días + generar horarios por rango -----
@@ -543,6 +573,7 @@ if (authed) {
   .muted { color: var(--ink-soft); font-size: 0.92rem; margin-bottom: 1rem; }
   .card { margin-bottom: 2rem; }
   .card h2 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+  .card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
 
   .sede-block { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--sand); }
   .sede-block__top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
@@ -577,6 +608,8 @@ if (authed) {
   .editor__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
   .link-btn { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.84rem; text-decoration: underline; }
   .link-btn:hover { color: var(--ink); }
+  .link-btn--danger { color: var(--clay-deep); }
+  .link-btn--danger:hover { color: #a23226; }
 
   .resumen { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.7; margin: 0.6rem 0 0.9rem; }
   .resumen b { color: var(--sage-deep); }

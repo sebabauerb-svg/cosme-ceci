@@ -105,3 +105,21 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     return json({ ok: false, error: 'No se pudo guardar la disponibilidad. Probá de nuevo.' }, 500);
   }
 };
+
+// DELETE /api/admin/disponibilidad  → borra TODA la disponibilidad (las 3 sedes:
+// franjas y días llenos). No toca reservas ya hechas. Para arrancar de cero.
+export const DELETE: APIRoute = async ({ cookies }) => {
+  if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
+  try {
+    const sql = getSql();
+    await ensureFranjas(sql);
+    const [f, b] = await sql.transaction([
+      sql`delete from franjas returning id`,
+      sql`delete from bloqueos returning id`,
+    ]);
+    return json({ ok: true, franjasBorradas: (f as any[]).length, bloqueosBorrados: (b as any[]).length });
+  } catch (e) {
+    console.error('DELETE /api/admin/disponibilidad:', e instanceof Error ? e.message : e);
+    return json({ ok: false, error: 'No se pudo borrar la disponibilidad. Probá de nuevo.' }, 500);
+  }
+};
