@@ -703,3 +703,55 @@ if (authed) {
   .tel-link { color: var(--sage-deep); text-decoration: underline; white-space: nowrap; }
   .tel-link:hover { color: var(--ink); }
 </style>
+
+<!-- Estilos de elementos creados por JavaScript (calendario, agenda, turnos):
+     un <style> scoped de Astro NO alcanza a los elementos que crea el script,
+     así que estas reglas van globales (solo se cargan en /admin). -->
+<style is:global>
+  .cal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.9rem; font-variant-numeric: tabular-nums; border: 0; background: none; color: var(--ink); border-radius: 10px; position: relative; font-family: inherit; }
+  .cal__cell--empty { visibility: hidden; }
+  .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 45%, var(--cream)); background: color-mix(in srgb, var(--sand) 28%, var(--cream)); }
+  button.cal__cell { cursor: pointer; font-weight: 500; transition: background 0.15s ease, color 0.15s ease; }
+  button.cal__cell:hover { background: color-mix(in srgb, var(--sage) 14%, var(--white)); color: var(--sage-deep); }
+  button.cal__cell:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+  .cal__cell--on { background: var(--sage); color: var(--cream); font-weight: 600; }
+  .cal__cell--on:hover { background: var(--sage-deep); color: var(--cream); }
+  .cal__cell--sel { box-shadow: inset 0 0 0 2px var(--ink); }
+  .cal__cell--on.cal__cell--sel { box-shadow: inset 0 0 0 2px var(--cream); }
+  .cal__cell--res::after { content: ''; position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: var(--clay); }
+  .cal__cell--on.cal__cell--res::after { background: var(--cream); }
+
+  .dia-vacio { font-size: 0.9rem; color: var(--ink-soft); line-height: 1.6; margin: 0 0 0.9rem; }
+  .dia-panel__head { text-transform: capitalize; font-family: var(--font-serif); font-size: 1.1rem; font-weight: 500; margin-bottom: 0.9rem; color: var(--ink); }
+  .turnos { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+  .turno { display: flex; align-items: center; gap: 0.55rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.45rem 0.5rem 0.45rem 0.75rem; transition: border-color 0.15s ease; }
+  .turno:hover { border-color: color-mix(in srgb, var(--sage) 40%, var(--sand)); }
+  .turno--res { background: color-mix(in srgb, var(--clay) 8%, var(--white)); border-color: color-mix(in srgb, var(--clay) 26%, var(--cream)); }
+  .turno__h { font-weight: 600; font-size: 0.92rem; color: var(--ink); min-width: 3em; font-variant-numeric: tabular-nums; }
+  .turno__nom { font-size: 0.85rem; color: var(--clay-deep); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turno__marc { margin-left: auto; font: inherit; font-weight: 600; font-size: 0.76rem; background: color-mix(in srgb, var(--sage) 12%, var(--white)); border: 1px solid color-mix(in srgb, var(--sage) 32%, var(--white)); border-radius: 999px; padding: 0.3rem 0.85rem; cursor: pointer; color: var(--sage-deep); transition: background 0.15s ease, border-color 0.15s ease; white-space: nowrap; }
+  .turno__marc:hover { background: color-mix(in srgb, var(--sage) 22%, var(--white)); border-color: var(--sage); }
+  .turno__marc:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+  .turno__lib { margin-left: auto; font: inherit; font-weight: 600; font-size: 0.76rem; background: none; border: 1px solid color-mix(in srgb, var(--clay) 40%, var(--white)); border-radius: 999px; padding: 0.3rem 0.85rem; cursor: pointer; color: var(--clay-deep); transition: background 0.15s ease; white-space: nowrap; }
+  .turno__lib:hover { background: color-mix(in srgb, var(--clay) 12%, var(--white)); }
+  .turno__x { flex: none; display: grid; place-items: center; width: 26px; height: 26px; font-size: 0.85rem; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--ink-soft); border-radius: 50%; transition: background 0.15s ease, color 0.15s ease; }
+  .turno__x:hover { color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 12%, var(--white)); }
+  .turno__x:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+  .dia-panel__acc { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--sand); }
+
+  .ag-dia { padding: 0.9rem 0; border-bottom: 1px solid var(--sand); }
+  .ag-dia:last-child { border-bottom: 0; padding-bottom: 0; }
+  .ag-dia:first-child { padding-top: 0.2rem; }
+  .ag-dia__fecha { text-transform: capitalize; font-weight: 600; font-size: 0.92rem; color: var(--ink); margin-bottom: 0.6rem; }
+  .ag-sede { display: grid; grid-template-columns: 92px 1fr; align-items: start; gap: 0.5rem 0.8rem; margin-bottom: 0.5rem; }
+  .ag-sede:last-child { margin-bottom: 0; }
+  .ag-sede.ag--mv { --c: var(--sage); }
+  .ag-sede.ag--sj { --c: var(--clay); }
+  .ag-sede.ag--on { --c: #6d8299; }
+  .ag-sede__nom { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); padding-top: 0.35rem; }
+  .ag-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .ag-chip { font-size: 0.78rem; font-variant-numeric: tabular-nums; padding: 0.25rem 0.6rem; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, var(--white)); color: color-mix(in srgb, var(--c) 62%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 24%, var(--white)); }
+  .ag-chip--res { background: var(--c); color: var(--white); border-color: var(--c); font-weight: 600; }
+
+  @media (max-width: 560px) { .ag-sede { grid-template-columns: 1fr; gap: 0.2rem; } }
+</style>
