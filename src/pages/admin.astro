@@ -3,7 +3,7 @@ export const prerender = false;
 
 import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
-import { getSql, ensureFranjas, ensureDuracionMin } from '../lib/db';
+import { getSql, ensureFranjas, ensureDuracionMin, ensureConfirmacion } from '../lib/db';
 
 const authed = isAdmin(Astro.cookies);
 
@@ -41,10 +41,11 @@ if (authed) {
     const sql = getSql();
     await ensureFranjas(sql);
     await ensureDuracionMin(sql);
+    await ensureConfirmacion(sql);
     reservas = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
-             r.nombre, r.telefono, r.estado
+             r.nombre, r.telefono, r.estado, r.monto_cobrado, r.pagado
       from reservas r left join sedes s on s.id = r.sede_id
       order by r.created_at desc limit 60
     `) as any[];
@@ -156,6 +157,16 @@ if (authed) {
           <section class="card">
             <div class="card__head">
               <div>
+                <h2>Reservas a confirmar</h2>
+                <p class="muted">Reservas hechas por la web sin pagar. Confirmalas (el turno queda firme) o rechazalas (libera el cupo). Podés anotar el monto y si ya pagó.</p>
+              </div>
+            </div>
+            <div id="por-confirmar"><p class="ag-vacia">Cargando…</p></div>
+          </section>
+
+          <section class="card">
+            <div class="card__head">
+              <div>
                 <h2>Agenda de las próximas semanas</h2>
                 <p class="muted">Todo lo que tenés abierto y reservado, junto.</p>
               </div>
@@ -176,7 +187,7 @@ if (authed) {
               <div class="grid-wrap">
                 <table class="grid grid--res">
                   <thead>
-                    <tr><th>Servicio</th><th>Sede</th><th>Día</th><th>Hora</th><th>Nombre</th><th>WhatsApp</th><th>Estado</th><th></th></tr>
+                    <tr><th>Servicio</th><th>Sede</th><th>Día</th><th>Hora</th><th>Nombre</th><th>WhatsApp</th><th>Estado</th><th>Pago</th><th></th></tr>
                   </thead>
                   <tbody>
                     {reservas.map((r) => (
@@ -190,6 +201,9 @@ if (authed) {
                           <a class="tel-link" href={`https://wa.me/598${String(r.telefono).replace(/\D/g, '').replace(/^(598|0)/, '')}`} target="_blank" rel="noopener">{r.telefono}</a>
                         ) : '—'}</td>
                         <td><span class={`badge badge--${r.estado}`}>{r.estado}</span></td>
+                        <td>{r.estado === 'confirmada' ? (
+                          <button class="pago-tog" data-id={r.id} data-pagado={r.pagado ? '1' : '0'} data-monto={r.monto_cobrado != null ? String(Math.round(Number(r.monto_cobrado))) : ''}>{r.pagado ? '✓ cobrado' : 'pendiente'}</button>
+                        ) : '—'}</td>
                         <td><button class="del" data-id={r.id}>Borrar</button></td>
                       </tr>
                     ))}
@@ -612,6 +626,106 @@ if (authed) {
     } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar la agenda.</p>'; }
   })();
 
+  // ---------- Reservas a confirmar (web sin pago, esperan validación de Ceci) ----------
+  (async function cargarPorConfirmar() {
+    const cont = document.getElementById('por-confirmar');
+    if (!cont) return;
+    const CLS: Record<string, string> = { Montevideo: 'mv', 'San José': 'sj', Online: 'on' };
+
+    const fmtHold = (expira: string | null) => {
+      if (!expira) return '';
+      const ms = new Date(expira).getTime() - Date.now();
+      if (ms <= 0) return 'venció';
+      const min = Math.round(ms / 60000);
+      if (min < 60) return `vence en ${min} min`;
+      const h = Math.floor(min / 60), mm = min % 60;
+      return `vence en ${h} h${mm ? ' ' + mm + ' min' : ''}`;
+    };
+    const fmtCuando = (fecha: string | null, hora: string | null) => {
+      if (!fecha) return 'Membresía · a coordinar';
+      const t = new Date(fecha + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+      return hora ? `${t} · ${hora} h` : t;
+    };
+    const vaciarSiCorresponde = () => {
+      if (!cont.querySelector('.pc-item')) cont.innerHTML = '<p class="ag-vacia">No hay reservas a confirmar por ahora.</p>';
+    };
+
+    function item(r: any) {
+      const el = document.createElement('div'); el.className = 'pc-item pc--' + (CLS[r.sede] || 'on');
+
+      const head = document.createElement('div'); head.className = 'pc-item__head';
+      const sede = document.createElement('span'); sede.className = 'pc-item__sede'; sede.textContent = r.sede;
+      const hold = document.createElement('span'); hold.className = 'pc-item__hold'; hold.textContent = fmtHold(r.expira_at);
+      head.appendChild(sede); head.appendChild(hold);
+
+      const nom = document.createElement('div'); nom.className = 'pc-item__nom'; nom.textContent = r.nombre;
+      const cuando = document.createElement('div'); cuando.className = 'pc-item__cuando';
+      cuando.textContent = `${r.modalidad === 'manual' ? 'Reserva manual' : r.modalidad} · ${fmtCuando(r.fecha, r.hora)}`;
+
+      const tel = document.createElement('div'); tel.className = 'pc-item__tel';
+      if (r.telefono && r.telefono !== '—') {
+        const a = document.createElement('a'); a.className = 'tel-link'; a.target = '_blank'; a.rel = 'noopener';
+        a.href = `https://wa.me/598${String(r.telefono).replace(/\D/g, '').replace(/^(598|0)/, '')}`;
+        a.textContent = r.telefono; tel.appendChild(a);
+      }
+
+      const ctr = document.createElement('div'); ctr.className = 'pc-ctrls';
+      const montoWrap = document.createElement('label'); montoWrap.className = 'pc-monto'; montoWrap.append('$ ');
+      const monto = document.createElement('input'); monto.type = 'number'; monto.min = '0'; monto.step = '1'; monto.placeholder = 'monto';
+      if (r.precio_uyu != null) monto.value = String(Math.round(Number(r.precio_uyu)));
+      montoWrap.appendChild(monto);
+      const pagoWrap = document.createElement('label'); pagoWrap.className = 'pc-pago';
+      const pago = document.createElement('input'); pago.type = 'checkbox';
+      pagoWrap.appendChild(pago); pagoWrap.append(' Ya pagó');
+      const conf = document.createElement('button'); conf.className = 'btn btn--primary btn--sm'; conf.textContent = 'Confirmar';
+      const rech = document.createElement('button'); rech.className = 'pc-rech'; rech.textContent = 'Rechazar';
+
+      conf.addEventListener('click', async () => {
+        conf.disabled = true; rech.disabled = true; conf.textContent = 'Confirmando…';
+        try {
+          const res = await fetch('/api/admin/reserva-confirmar', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: r.id, monto_cobrado: monto.value === '' ? null : Number(monto.value), pagado: pago.checked }),
+          });
+          if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
+          const d = await res.json().catch(() => ({}));
+          if (res.ok && d.ok) { el.remove(); vaciarSiCorresponde(); }
+          else { conf.disabled = false; rech.disabled = false; conf.textContent = 'Confirmar'; alert(d.error || 'No se pudo confirmar.'); }
+        } catch { conf.disabled = false; rech.disabled = false; conf.textContent = 'Confirmar'; alert('Sin conexión: probá de nuevo.'); }
+      });
+      rech.addEventListener('click', async () => {
+        if (!confirm('¿Rechazar esta reserva? Se libera el cupo para que lo tome otra persona.')) return;
+        conf.disabled = true; rech.disabled = true;
+        try {
+          const res = await fetch('/api/admin/reserva-rechazar', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: r.id }),
+          });
+          if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
+          const d = await res.json().catch(() => ({}));
+          if (res.ok && d.ok) { el.remove(); vaciarSiCorresponde(); }
+          else { conf.disabled = false; rech.disabled = false; alert(d.error || 'No se pudo rechazar.'); }
+        } catch { conf.disabled = false; rech.disabled = false; alert('Sin conexión: probá de nuevo.'); }
+      });
+
+      ctr.appendChild(montoWrap); ctr.appendChild(pagoWrap); ctr.appendChild(conf); ctr.appendChild(rech);
+      el.appendChild(head); el.appendChild(nom); el.appendChild(cuando);
+      if (tel.childNodes.length) el.appendChild(tel);
+      el.appendChild(ctr);
+      return el;
+    }
+
+    try {
+      const res = await fetch('/api/admin/por-confirmar');
+      if (res.status === 401) { cont.innerHTML = '<p class="ag-vacia">Ingresá de nuevo para ver esto.</p>'; return; }
+      const d = await res.json();
+      if (!d.ok) { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; return; }
+      const rs = d.reservas || [];
+      if (!rs.length) { cont.innerHTML = '<p class="ag-vacia">No hay reservas a confirmar por ahora.</p>'; return; }
+      cont.innerHTML = '';
+      for (const r of rs) cont.appendChild(item(r));
+    } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; }
+  })();
+
   // ---------- Borrar reserva (tabla) ----------
   document.querySelectorAll('.del').forEach((b) => {
     b.addEventListener('click', async () => {
@@ -625,6 +739,37 @@ if (authed) {
         alert('No se pudo borrar. Probá de nuevo.');
       } catch { alert('Sin conexión: no se pudo borrar.'); }
       btn.disabled = false; btn.textContent = orig;
+    });
+  });
+
+  // ---------- Marcar cobrado / pendiente en una reserva confirmada (seguimiento) ----------
+  document.querySelectorAll<HTMLButtonElement>('.pago-tog').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pagadoActual = btn.dataset.pagado === '1';
+      const nuevo = !pagadoActual;
+      let monto: number | null = btn.dataset.monto ? Number(btn.dataset.monto) : null;
+      if (!Number.isFinite(monto as number)) monto = null;
+      // Al pasar a "cobrado" sin monto anotado, ofrecemos registrarlo.
+      if (nuevo && monto == null) {
+        const v = prompt('¿Monto cobrado? (opcional, en $)');
+        if (v && v.trim() && Number.isFinite(Number(v))) monto = Math.round(Number(v));
+      }
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch('/api/admin/reserva-pago', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: btn.dataset.id, pagado: nuevo, monto_cobrado: monto }),
+        });
+        if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); btn.disabled = false; btn.textContent = orig; return; }
+        const d = await res.json().catch(() => ({}));
+        if (res.ok && d.ok) {
+          btn.dataset.pagado = nuevo ? '1' : '0';
+          btn.dataset.monto = monto != null ? String(monto) : '';
+          btn.textContent = nuevo ? '✓ cobrado' : 'pendiente';
+        } else { btn.textContent = orig; alert(d.error || 'No se pudo actualizar el cobro.'); }
+      } catch { btn.textContent = orig; alert('Sin conexión: probá de nuevo.'); }
+      btn.disabled = false;
     });
   });
 </script>
@@ -770,6 +915,9 @@ if (authed) {
   .badge--cancelada, .badge--expirada { background: color-mix(in srgb, var(--clay) 30%, var(--cream)); color: var(--clay-deep); }
   .del { background: none; border: 0; color: var(--clay-deep); cursor: pointer; font-size: 0.82rem; text-decoration: underline; }
   .del:hover { color: var(--ink); }
+  .pago-tog { font: inherit; font-size: 0.74rem; border-radius: 999px; padding: 0.12rem 0.6rem; cursor: pointer; border: 1px solid var(--sand); background: var(--cream-deep); color: var(--ink-soft); white-space: nowrap; }
+  .pago-tog[data-pagado="1"] { background: color-mix(in srgb, var(--sage) 22%, var(--cream)); border-color: color-mix(in srgb, var(--sage) 40%, var(--cream)); color: var(--sage-deep); font-weight: 600; }
+  .pago-tog:hover { border-color: var(--sage); }
   .tel-link { color: var(--sage-deep); text-decoration: underline; white-space: nowrap; }
   .tel-link:hover { color: var(--ink); }
 </style>
@@ -833,6 +981,26 @@ if (authed) {
   .ag-nav__btn:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
   .ag-nav__btn:disabled { opacity: 0.32; cursor: not-allowed; }
   .ag-vacia { text-align: center; color: var(--ink-soft); font-size: 0.9rem; line-height: 1.6; padding: 0.8rem 0; margin: 0; }
+
+  /* Reservas a confirmar (panel) */
+  .pc-item { border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.85rem 1rem; margin-bottom: 0.7rem; background: var(--white); }
+  .pc-item.pc--mv { --c: var(--sage); }
+  .pc-item.pc--sj { --c: var(--clay); }
+  .pc-item.pc--on { --c: #6d8299; }
+  .pc-item__head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+  .pc-item__sede { font-size: 0.66rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); }
+  .pc-item__hold { font-size: 0.72rem; color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 12%, var(--white)); border: 1px solid color-mix(in srgb, var(--clay) 24%, var(--white)); border-radius: 999px; padding: 0.12rem 0.6rem; white-space: nowrap; }
+  .pc-item__nom { font-weight: 600; color: var(--ink); }
+  .pc-item__cuando { font-size: 0.85rem; color: var(--ink-soft); text-transform: capitalize; margin-top: 0.1rem; }
+  .pc-item__tel { font-size: 0.82rem; margin-top: 0.25rem; }
+  .pc-ctrls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px solid var(--sand); }
+  .pc-monto { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.85rem; color: var(--ink-soft); }
+  .pc-monto input { width: 5.5em; font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .pc-pago { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--ink); cursor: pointer; }
+  .pc-ctrls .btn--primary { margin-left: auto; }
+  .pc-rech { font: inherit; font-size: 0.82rem; background: none; border: 0; color: var(--clay-deep); cursor: pointer; text-decoration: underline; padding: 0.3rem 0.4rem; }
+  .pc-rech:hover { color: var(--ink); }
+  .pc-rech:disabled, .pc-item .btn:disabled { opacity: 0.6; cursor: default; }
 
   @media (max-width: 560px) { .ag-sede { grid-template-columns: 1fr; gap: 0.2rem; } }
 </style>

@@ -106,13 +106,15 @@ const items = modalidades.map((m) => ({
         <h2 class="step__title">Confirmá tu reserva</h2>
         <div class="resumen" id="resumen"></div>
         <ul class="trust">
-          <li>Tu turno queda confirmado al completar el pago</li>
-          <li>Pagás de forma simple y segura con MercadoPago</li>
+          <li>Pagando con MercadoPago tu turno queda confirmado al instante</li>
+          <li>O reservás y coordinás con Ceci: te guardamos el cupo 2 h</li>
           <li>¿Necesitás reprogramar? <a href={waReprogramar} target="_blank" rel="noopener">Escribinos por WhatsApp</a> y lo vemos sin problema</li>
         </ul>
-        <button class="btn btn--primary pay" id="confirmar">Proceder al pago</button>
-        <p class="step__hint center">Te llevamos al pago seguro con MercadoPago.</p>
-        <a id="wa-share" class="btn btn--ghost pay" target="_blank" rel="noopener">Avisar a Ceci por WhatsApp (opcional)</a>
+        <button class="btn btn--primary pay" id="confirmar">Pagar ahora con MercadoPago</button>
+        <p class="step__hint center" id="hint-mp">Pago seguro con MercadoPago. Tu turno queda confirmado al instante.</p>
+        <div class="pay-sep" id="pay-sep"><span>o</span></div>
+        <button class="btn btn--ghost pay" id="coordinar">Reservar y coordinar con Ceci</button>
+        <p class="step__hint center" id="hint-coord">Te guardamos el cupo 2 h y Ceci confirma tu turno. Le avisás por WhatsApp.</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -389,10 +391,16 @@ const items = modalidades.map((m) => ({
     filas.push(`<div class="resumen__row resumen__row--total"><span>Total a pagar</span><strong>${m.precio}</strong></div>`);
     $('#resumen').innerHTML = filas.join('');
 
-    // Botón opcional "Avisar a Ceci por WhatsApp": solo para compartir el turno,
-    // no reemplaza el pago online (que confirma la reserva automáticamente).
-    const waShare = $('#wa-share');
-    if (waShare) waShare.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensajeCompartir())}`;
+    // El Club (membresía anual) no tiene pago online: solo el camino de coordinar.
+    const esMemb = !!m.esMembresia;
+    const mpBtn = $('#confirmar'), mpHint = $('#hint-mp'), sep = $('#pay-sep');
+    if (mpBtn) mpBtn.hidden = esMemb;
+    if (mpHint) mpHint.hidden = esMemb;
+    if (sep) sep.hidden = esMemb;
+    const coordHint = $('#hint-coord');
+    if (coordHint) coordHint.textContent = esMemb
+      ? 'Registramos tu interés y Ceci coordina con vos. Le avisás por WhatsApp.'
+      : 'Te guardamos el cupo 2 h y Ceci confirma tu turno. Le avisás por WhatsApp.';
   }
 
   function waMensajeCompartir() {
@@ -419,9 +427,24 @@ const items = modalidades.map((m) => ({
     return l.join('\n');
   }
 
-  // Confirmar: registra la reserva (BLOQUEA el cupo), abre WhatsApp y muestra el pago
-  $('#confirmar').addEventListener('click', async () => {
-    const btn = $('#confirmar');
+  // Mensaje para cuando el pago YA se acreditó (al volver de MercadoPago).
+  // Los datos vienen de sessionStorage porque el redirect de MP borra el estado.
+  function waMensajePagado() {
+    let info = {};
+    try { info = JSON.parse(sessionStorage.getItem('reservaPago') || '{}'); } catch { /* modo privado */ }
+    const l = ['Hola Ceci! PAGO CONFIRMADO ✅ vía MercadoPago:'];
+    if (info.modalidad) l.push(`• ${info.modalidad}`);
+    if (info.lugar) l.push(`• Sede: ${info.lugar}`);
+    if (info.fechaLabel && !info.esMembresia) l.push(`• Día y hora: ${info.fechaLabel} · ${info.hora} h`);
+    if (info.nombre) l.push(`• A nombre de: ${info.nombre}`);
+    l.push('¡Nos vemos!');
+    return l.join('\n');
+  }
+
+  // Registra la reserva y BLOQUEA el cupo. via='pagar' (MercadoPago) o
+  // via='coordinar' (sin pago, queda a confirmar por Ceci). Devuelve los datos
+  // de la reserva, o null si hubo un problema (ya deja el botón/alertas listos).
+  async function enviarReserva(via, btn) {
     const orig = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Reservando…';
@@ -438,58 +461,80 @@ const items = modalidades.map((m) => ({
           nombre: state.nombre,
           telefono: state.tel,
           email: state.email,
+          via,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 409) {
-        btn.disabled = false;
-        btn.textContent = orig;
+        btn.disabled = false; btn.textContent = orig;
         cargarDisponibilidad(state.sedeSlug);
         goTo(2);
         showAlert('Ese horario se ocupó recién. Elegí otro de los disponibles.');
-        return;
+        return null;
+      }
+      if (res.status === 429) {
+        btn.disabled = false; btn.textContent = orig;
+        showAlert(data.error || 'Hay muchas reservas sin confirmar ahora. Probá de nuevo en un rato.');
+        return null;
       }
       if (!res.ok || !data.ok) throw new Error(data.error || 'error');
-
-      // Si hay pago online (MercadoPago), vamos directo al checkout con el monto exacto.
-      if (data.initPoint) {
-        window.location.href = data.initPoint;
-        return;
-      }
-
-      // Fallback (sin pago configurado): botón de WhatsApp + link de pago manual.
-      // (No usamos window.open acá: al correr después del await, los bloqueadores
-      // de popups móviles lo frenan en silencio.)
-      const waLink = $('#wa-link');
-      if (waLink) {
-        waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`;
-        waLink.hidden = false;
-      }
-      $('#done-text').textContent = m.esMembresia
-        ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-        : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
-      const hint = $('#done-hint');
-      if (hint) {
-        if (m.esMembresia) {
-          hint.textContent = 'Coordinamos la primera consulta al sumarte. Avisale a Ceci por WhatsApp con el botón de abajo.';
-        } else {
-          const limite = new Date(Date.now() + 30 * 60 * 1000);
-          const hh = String(limite.getHours()).padStart(2, '0');
-          const mm = String(limite.getMinutes()).padStart(2, '0');
-          hint.textContent = `Tu cupo queda reservado 30 minutos: completá el pago antes de las ${hh}:${mm} para asegurarlo. Cualquier duda, escribile a Ceci con el botón de WhatsApp.`;
-        }
-      }
-      const pagoLink = $('#pago-link');
-      if (pago && pagoLink) {
-        pagoLink.href = pago;
-        pagoLink.hidden = false;
-      }
-      goTo(5);
+      return data;
     } catch (e) {
-      btn.disabled = false;
-      btn.textContent = orig;
+      btn.disabled = false; btn.textContent = orig;
       showAlert('No pudimos registrar la reserva. Probá de nuevo en un momento.');
+      return null;
     }
+  }
+
+  // Camino PAGAR: al confirmar, vamos directo al checkout de MercadoPago.
+  $('#confirmar').addEventListener('click', async () => {
+    const m = state.modalidad;
+    const data = await enviarReserva('pagar', $('#confirmar'));
+    if (!data) return;
+    // Guardamos el detalle para armar el mensaje "PAGO CONFIRMADO" al volver de MP.
+    try {
+      sessionStorage.setItem('reservaPago', JSON.stringify({
+        rid: data.id, nombre: state.nombre, modalidad: m.nombre,
+        lugar: state.lugar, fechaLabel: state.fechaLabel, hora: state.hora, esMembresia: !!m.esMembresia,
+      }));
+    } catch { /* sessionStorage puede fallar en modo privado */ }
+    if (data.initPoint) { window.location.href = data.initPoint; return; }
+
+    // Fallback (MercadoPago sin configurar): link de pago manual + WhatsApp.
+    const waLink = $('#wa-link');
+    if (waLink) { waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`; waLink.hidden = false; }
+    $('#done-text').textContent = m.esMembresia
+      ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
+      : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
+    const hint = $('#done-hint');
+    if (hint) hint.textContent = m.esMembresia
+      ? 'Coordinamos la primera consulta al sumarte. Avisale a Ceci por WhatsApp con el botón de abajo.'
+      : 'Tu cupo queda reservado. Coordiná el pago con Ceci por WhatsApp para confirmarlo.';
+    const pagoLink = $('#pago-link');
+    if (pago && pagoLink) { pagoLink.href = pago; pagoLink.hidden = false; }
+    goTo(5);
+  });
+
+  // Camino COORDINAR: reserva sin pagar → queda a confirmar por Ceci (cupo 2 h).
+  $('#coordinar').addEventListener('click', async () => {
+    const m = state.modalidad;
+    const data = await enviarReserva('coordinar', $('#coordinar'));
+    if (!data) return;
+    const waLink = $('#wa-link');
+    if (waLink) {
+      waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensajeCompartir())}`;
+      waLink.textContent = 'Avisar a Ceci por WhatsApp';
+      waLink.hidden = false;
+    }
+    $('#pago-link').hidden = true;
+    $('#done-text').textContent = m.esMembresia
+      ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
+      : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó pre-reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
+    const hint = $('#done-hint');
+    if (hint) hint.textContent = m.esMembresia
+      ? 'Ceci coordina con vos a la brevedad. Avisale por WhatsApp con el botón de abajo.'
+      : 'Te guardamos el cupo 2 horas. Ceci confirma tu turno a la brevedad; avisale por WhatsApp con el botón de abajo.';
+    goTo(5);
   });
 
   // Volver
@@ -536,6 +581,12 @@ const items = modalidades.map((m) => ({
               if (d.ok && d.estado === 'confirmada') {
                 if (titulo) titulo.textContent = '¡Turno confirmado!';
                 if (done) done.textContent = 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
+                const waLink = $('#wa-link');
+                if (waLink) {
+                  waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensajePagado())}`;
+                  waLink.textContent = 'Avisar a Ceci: pago confirmado';
+                  waLink.hidden = false;
+                }
                 return;
               }
             } catch { /* reintenta */ }
@@ -670,6 +721,10 @@ const items = modalidades.map((m) => ({
   }
   .pay { width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; }
   .pay:disabled { opacity: 0.7; cursor: default; }
+  /* Separador "o" entre pagar ahora y coordinar con Ceci */
+  .pay-sep { display: flex; align-items: center; gap: 0.8rem; max-width: 460px; margin: 0.5rem auto; color: var(--ink-soft); font-size: 0.8rem; }
+  .pay-sep[hidden] { display: none; }
+  .pay-sep::before, .pay-sep::after { content: ''; flex: 1; height: 1px; background: var(--sand); }
 
   .done { text-align: center; padding: 2rem 0; }
   .done__check {
