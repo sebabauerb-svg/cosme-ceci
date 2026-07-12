@@ -13,6 +13,12 @@ const SEDES = [
   { slug: 'online', nombre: 'Online', dur: 30 },
 ];
 
+// Horas para los selectores (formato 24 h, cada 15 min, 06:00–23:00).
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const HORAS_SEL: string[] = [];
+for (let t = 6 * 60; t <= 23 * 60; t += 15) HORAS_SEL.push(`${pad2(Math.floor(t / 60))}:${pad2(t % 60)}`);
+const DURACIONES = [15, 20, 30, 45, 60, 90];
+
 function fmtFechaTabla(iso?: string | null) {
   if (!iso) return '—';
   try {
@@ -88,12 +94,17 @@ if (authed) {
                 <div class="franja">
                   <span class="franja__lbl">Horario a abrir</span>
                   <div class="franja__ctrl">
-                    <input type="time" id="f-desde" value="08:00" step="300" aria-label="Desde" />
+                    <select id="f-desde" aria-label="Desde">
+                      {HORAS_SEL.map((h) => <option value={h} selected={h === '08:00'}>{h}</option>)}
+                    </select>
                     <span class="franja__sep">a</span>
-                    <input type="time" id="f-hasta" value="12:00" step="300" aria-label="Hasta" />
+                    <select id="f-hasta" aria-label="Hasta">
+                      {HORAS_SEL.map((h) => <option value={h} selected={h === '12:00'}>{h}</option>)}
+                    </select>
                     <span class="franja__sep">· cada</span>
-                    <input type="number" id="f-dur" min="5" max="240" step="5" value="45" aria-label="Duración en minutos" />
-                    <span class="franja__sep">min</span>
+                    <select id="f-dur" aria-label="Duración de la consulta">
+                      {DURACIONES.map((d) => <option value={d} selected={d === 45}>{d} min</option>)}
+                    </select>
                     <span class="franja__prev" id="f-prev"></span>
                   </div>
                 </div>
@@ -140,6 +151,21 @@ if (authed) {
               <button type="button" id="guardar" class="btn btn--primary">Guardar</button>
               <span id="guardar-msg" class="guardar__msg"></span>
             </div>
+          </section>
+
+          <section class="card">
+            <div class="card__head">
+              <div>
+                <h2>Agenda de las próximas semanas</h2>
+                <p class="muted">Todo lo que tenés abierto y reservado, junto.</p>
+              </div>
+              <div class="ag-leg">
+                <span class="ag-leg__i"><i class="ag-dot ag--mv"></i> Montevideo</span>
+                <span class="ag-leg__i"><i class="ag-dot ag--on"></i> Online</span>
+                <span class="ag-leg__i"><i class="ag-dot ag--sj"></i> San José</span>
+              </div>
+            </div>
+            <div id="agenda"><p class="muted">Cargando…</p></div>
           </section>
 
           <section class="card">
@@ -341,7 +367,7 @@ if (authed) {
           n.textContent = res.modalidad === 'manual' ? res.nombre : `${res.nombre} (web)`;
           t.appendChild(n);
           if (res.modalidad === 'manual') {
-            const lib = document.createElement('button'); lib.className = 'turno__x'; lib.textContent = 'Liberar';
+            const lib = document.createElement('button'); lib.className = 'turno__lib'; lib.textContent = 'Liberar';
             lib.addEventListener('click', () => liberar(hora));
             t.appendChild(lib);
           }
@@ -349,8 +375,7 @@ if (authed) {
           const marc = document.createElement('button'); marc.className = 'turno__marc'; marc.textContent = 'Marcar reservado';
           marc.addEventListener('click', () => marcarReservado(hora));
           t.appendChild(marc);
-          const quitar = document.createElement('button'); quitar.className = 'turno__x'; quitar.textContent = '✕';
-          quitar.title = 'Quitar este turno';
+          const quitar = document.createElement('button'); quitar.className = 'turno__x'; quitar.setAttribute('aria-label', 'Quitar este turno'); quitar.title = 'Quitar este turno'; quitar.textContent = '✕';
           quitar.addEventListener('click', () => { dia.horas.delete(hora); if (!dia.horas.size) dias.delete(sel!); marcarSucio(); renderCal(); renderDia(); });
           t.appendChild(quitar);
         }
@@ -469,6 +494,54 @@ if (authed) {
     cargarSede('montevideo');
   }
 
+  // ---------- Agenda consolidada (todas las sedes) ----------
+  (async function cargarAgenda() {
+    const cont = document.getElementById('agenda');
+    if (!cont) return;
+    const CLS: Record<string, string> = { Montevideo: 'mv', 'San José': 'sj', Online: 'on' };
+    try {
+      const res = await fetch('/api/admin/resumen');
+      if (res.status === 401) { cont.innerHTML = '<p class="muted">Ingresá de nuevo para ver la agenda.</p>'; return; }
+      const d = await res.json();
+      if (!d.ok) { cont.innerHTML = '<p class="muted">No se pudo cargar la agenda.</p>'; return; }
+
+      // Consolidar: fecha → sede → Map<hora, {reservado, nombre}>
+      const porFecha = new Map<string, Map<string, Map<string, any>>>();
+      const getSede = (fecha: string, sede: string) => {
+        let f = porFecha.get(fecha); if (!f) { f = new Map(); porFecha.set(fecha, f); }
+        let s = f.get(sede); if (!s) { s = new Map(); f.set(sede, s); }
+        return s;
+      };
+      for (const fr of d.franjas) { const s = getSede(fr.fecha, fr.sede); if (!s.has(fr.hora)) s.set(fr.hora, { reservado: false }); }
+      for (const r of d.reservas) getSede(r.fecha, r.sede).set(r.hora, { reservado: true, nombre: r.nombre });
+
+      const fechas = [...porFecha.keys()].sort();
+      if (!fechas.length) { cont.innerHTML = '<p class="muted">No hay turnos abiertos ni reservas todavía. Cargalos arriba en “Tu disponibilidad”.</p>'; return; }
+      cont.innerHTML = '';
+      for (const fecha of fechas) {
+        const titulo = new Date(fecha + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+        const bloque = document.createElement('div'); bloque.className = 'ag-dia';
+        const h = document.createElement('div'); h.className = 'ag-dia__fecha'; h.textContent = titulo; bloque.appendChild(h);
+        const sedes = porFecha.get(fecha)!;
+        for (const sedeNombre of ['Montevideo', 'San José', 'Online']) {
+          const turnos = sedes.get(sedeNombre); if (!turnos) continue;
+          const row = document.createElement('div'); row.className = 'ag-sede ag--' + CLS[sedeNombre];
+          const lbl = document.createElement('span'); lbl.className = 'ag-sede__nom'; lbl.textContent = sedeNombre; row.appendChild(lbl);
+          const chips = document.createElement('div'); chips.className = 'ag-chips';
+          for (const hora of [...turnos.keys()].sort()) {
+            const t = turnos.get(hora);
+            const c = document.createElement('span'); c.className = 'ag-chip' + (t.reservado ? ' ag-chip--res' : '');
+            c.textContent = t.reservado ? `${hora} · ${t.nombre}` : hora;
+            chips.appendChild(c);
+          }
+          row.appendChild(chips);
+          bloque.appendChild(row);
+        }
+        cont.appendChild(bloque);
+      }
+    } catch { cont.innerHTML = '<p class="muted">No se pudo cargar la agenda.</p>'; }
+  })();
+
   // ---------- Borrar reserva (tabla) ----------
   document.querySelectorAll('.del').forEach((b) => {
     b.addEventListener('click', async () => {
@@ -517,9 +590,8 @@ if (authed) {
   .franja { background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius); padding: 0.95rem 1.1rem; }
   .franja__lbl { display: block; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.7rem; }
   .franja__ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.55rem; }
-  .franja input[type="time"], .franja input[type="number"] { font: inherit; font-variant-numeric: tabular-nums; padding: 0.45rem 0.55rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .franja input[type="number"] { width: 3.6em; }
-  .franja input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }
+  .franja select { font: inherit; font-variant-numeric: tabular-nums; padding: 0.45rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); cursor: pointer; }
+  .franja select:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }
   .franja__sep { font-size: 0.9rem; color: var(--ink-soft); }
   .franja__prev { margin-left: auto; font-size: 0.78rem; font-weight: 600; color: var(--sage-deep); background: color-mix(in srgb, var(--sage) 14%, var(--white)); padding: 0.3rem 0.7rem; border-radius: 999px; white-space: nowrap; }
   .franja__prev--warn { color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 14%, var(--white)); }
@@ -543,8 +615,8 @@ if (authed) {
   .cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
   .cal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.9rem; font-variant-numeric: tabular-nums; border: 0; background: none; color: var(--ink); border-radius: 10px; position: relative; }
   .cal__cell--empty { visibility: hidden; }
-  /* Días pasados: apagados, no interactivos. */
-  .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 32%, var(--cream)); }
+  /* Días pasados: caja gris muy tenue, no interactivos. */
+  .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 45%, var(--cream)); background: color-mix(in srgb, var(--sand) 28%, var(--cream)); }
   /* Días futuros disponibles: número nítido, hover suave. */
   button.cal__cell { cursor: pointer; font-weight: 500; transition: background 0.15s ease, color 0.15s ease; }
   button.cal__cell:hover { background: color-mix(in srgb, var(--sage) 14%, var(--white)); color: var(--sage-deep); }
@@ -571,14 +643,22 @@ if (authed) {
   .dia-vacio { font-size: 0.9rem; color: var(--ink-soft); line-height: 1.6; margin: 0 0 0.9rem; }
   .dia-panel__head { text-transform: capitalize; font-family: var(--font-serif); font-size: 1.1rem; font-weight: 500; margin-bottom: 0.9rem; color: var(--ink); }
   .turnos { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
-  .turno { display: flex; align-items: center; gap: 0.6rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; }
-  .turno--res { background: color-mix(in srgb, var(--clay) 10%, var(--white)); border-color: color-mix(in srgb, var(--clay) 28%, var(--cream)); }
+  .turno { display: flex; align-items: center; gap: 0.55rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.45rem 0.5rem 0.45rem 0.75rem; transition: border-color 0.15s ease; }
+  .turno:hover { border-color: color-mix(in srgb, var(--sage) 40%, var(--sand)); }
+  .turno--res { background: color-mix(in srgb, var(--clay) 8%, var(--white)); border-color: color-mix(in srgb, var(--clay) 26%, var(--cream)); }
   .turno__h { font-weight: 600; font-size: 0.92rem; color: var(--ink); min-width: 3em; font-variant-numeric: tabular-nums; }
   .turno__nom { font-size: 0.85rem; color: var(--clay-deep); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .turno__marc { margin-left: auto; font: inherit; font-weight: 600; font-size: 0.76rem; background: none; border: 1px solid color-mix(in srgb, var(--sage) 50%, var(--sand)); border-radius: 999px; padding: 0.28rem 0.85rem; cursor: pointer; color: var(--sage-deep); transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
-  .turno__marc:hover { background: color-mix(in srgb, var(--sage) 12%, var(--white)); border-color: var(--sage); }
-  .turno__x { font: inherit; font-size: 0.9rem; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--ink-soft); padding: 0.2rem 0.3rem; border-radius: var(--radius-sm); }
-  .turno__x:hover { color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 10%, var(--white)); }
+  /* Marcar reservado: pill salvia suave */
+  .turno__marc { margin-left: auto; font: inherit; font-weight: 600; font-size: 0.76rem; background: color-mix(in srgb, var(--sage) 12%, var(--white)); border: 1px solid color-mix(in srgb, var(--sage) 32%, var(--white)); border-radius: 999px; padding: 0.3rem 0.85rem; cursor: pointer; color: var(--sage-deep); transition: background 0.15s ease, border-color 0.15s ease; white-space: nowrap; }
+  .turno__marc:hover { background: color-mix(in srgb, var(--sage) 22%, var(--white)); border-color: var(--sage); }
+  .turno__marc:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+  /* Liberar: pill arcilla suave */
+  .turno__lib { margin-left: auto; font: inherit; font-weight: 600; font-size: 0.76rem; background: none; border: 1px solid color-mix(in srgb, var(--clay) 40%, var(--white)); border-radius: 999px; padding: 0.3rem 0.85rem; cursor: pointer; color: var(--clay-deep); transition: background 0.15s ease; white-space: nowrap; }
+  .turno__lib:hover { background: color-mix(in srgb, var(--clay) 12%, var(--white)); }
+  /* Quitar turno: ✕ circular sutil */
+  .turno__x { flex: none; display: grid; place-items: center; width: 26px; height: 26px; font-size: 0.85rem; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--ink-soft); border-radius: 50%; transition: background 0.15s ease, color 0.15s ease; }
+  .turno__x:hover { color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 12%, var(--white)); }
+  .turno__x:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
   .dia-panel__acc { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--sand); }
 
   /* Guardar */
@@ -588,6 +668,27 @@ if (authed) {
   .guardar__msg--dirty { color: var(--clay-deep); }
 
   .btn--sm { padding: 0.4rem 0.85rem; font-size: 0.85rem; }
+
+  /* Agenda consolidada */
+  .ag-leg { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: center; font-size: 0.8rem; color: var(--ink-soft); }
+  .ag-leg__i { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .ag-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+  .ag-dot.ag--mv { background: var(--sage); }
+  .ag-dot.ag--sj { background: var(--clay); }
+  .ag-dot.ag--on { background: #6d8299; }
+  .ag-dia { padding: 0.85rem 0; border-bottom: 1px solid var(--sand); }
+  .ag-dia:last-child { border-bottom: 0; padding-bottom: 0; }
+  .ag-dia:first-child { padding-top: 0.2rem; }
+  .ag-dia__fecha { text-transform: capitalize; font-weight: 600; font-size: 0.9rem; color: var(--ink); margin-bottom: 0.55rem; }
+  .ag-sede { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.7rem; margin-bottom: 0.5rem; }
+  .ag-sede:last-child { margin-bottom: 0; }
+  .ag-sede.ag--mv { --c: var(--sage); }
+  .ag-sede.ag--sj { --c: var(--clay); }
+  .ag-sede.ag--on { --c: #6d8299; }
+  .ag-sede__nom { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); min-width: 84px; padding-top: 0.15rem; }
+  .ag-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .ag-chip { font-size: 0.78rem; font-variant-numeric: tabular-nums; padding: 0.22rem 0.6rem; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, var(--white)); color: color-mix(in srgb, var(--c) 55%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 24%, var(--white)); }
+  .ag-chip--res { background: var(--c); color: var(--white); border-color: var(--c); font-weight: 600; }
 
   /* Tabla reservas */
   .grid-wrap { overflow-x: auto; }
