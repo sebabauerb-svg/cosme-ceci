@@ -226,6 +226,7 @@ definitivas. Si hay nuevas, pasarlas (idealmente livianas; si no, el dev las opt
 | `RESEND_API_KEY` | 2.3 | Resend → API Keys |
 | `RESEND_FROM` | 2.3 | dirección del dominio verificado |
 | `CECI_NOTIF_EMAIL` | 2.3 | email de Ceci para avisos |
+| `PUBLIC_SITE_URL` | 2.2 | `https://cgcosmetologiamedica.com` (dominio canónico: lo usa MercadoPago para el webhook y los retornos del pago; sin esto, un deploy alternativo puede generar links de pago que no confirman solos) |
 
 > Opcional: `ADMIN_SESSION_SECRET` (si no se define, la sesión admin se firma derivando de
 > `ADMIN_PASSWORD` y funciona igual).

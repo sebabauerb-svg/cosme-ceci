@@ -62,6 +62,10 @@ export const POST: APIRoute = async ({ request, cookies, clientAddress }) => {
 
   if (!passwordOk(body?.password)) {
     registrarFallo(ip);
+    // Delay incremental por fallo: encarece la fuerza bruta incluso cuando el
+    // contador in-memory se reinicia entre instancias serverless.
+    const n = intentos.get(ip)?.n ?? 1;
+    await new Promise((r) => setTimeout(r, Math.min(n * 400, 2000)));
     return json({ ok: false, error: 'Contraseña incorrecta.' }, 401);
   }
 

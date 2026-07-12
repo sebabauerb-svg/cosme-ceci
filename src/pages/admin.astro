@@ -24,13 +24,15 @@ function genHoras(step: number, start = '08:00', end = '20:30') {
   return out;
 }
 
-// Calendario de los próximos meses para que Ceci marque sus días
-const HOY_ISO = new Date().toISOString().slice(0, 10);
+// Calendario de los próximos meses para que Ceci marque sus días.
+// "Hoy" en hora de Uruguay (UTC-3): el runtime corre en UTC y de 21:00 a 24:00
+// el panel correría un día.
+const HOY_ISO = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 const WD = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 type Celda = { iso: string; day: number; sel: boolean } | null;
 function calMeses(cant: number) {
   const out: { label: string; cells: Celda[] }[] = [];
-  const base = new Date();
+  const base = new Date(Date.now() - 3 * 3600 * 1000);
   let y = base.getUTCFullYear();
   let mo = base.getUTCMonth();
   for (let i = 0; i < cant; i++) {
@@ -52,6 +54,21 @@ function calMeses(cant: number) {
   return out;
 }
 const CAL = calMeses(3);
+
+// Fecha legible para la tabla de reservas (ej. "mié 15 jul")
+function fmtFechaTabla(iso?: string | null) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso + 'T12:00:00Z').toLocaleDateString('es-UY', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'UTC',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 // Corte Mañana / Tarde para los atajos (debe coincidir con el del cliente)
 const CORTE = '13:00';
@@ -112,7 +129,9 @@ if (authed) {
           <h1>Panel de Ceci</h1>
           <p>Ingresá tu contraseña para administrar horarios y ver reservas.</p>
           <form id="login-form">
-            <input type="password" name="password" placeholder="Contraseña" autocomplete="current-password" required />
+            <label class="login__label">Contraseña
+              <input type="password" name="password" autocomplete="current-password" required />
+            </label>
             <button type="submit" class="btn btn--primary">Entrar</button>
           </form>
           <p id="login-error" class="login__err" hidden></p>
@@ -220,10 +239,17 @@ if (authed) {
                       <tr>
                         <td>{r.modalidad}</td>
                         <td>{r.sede}</td>
-                        <td>{r.fecha ?? '—'}</td>
+                        <td>{fmtFechaTabla(r.fecha)}</td>
                         <td>{r.hora ?? '—'}</td>
                         <td>{r.nombre}</td>
-                        <td>{r.telefono}</td>
+                        <td>{r.telefono ? (
+                          <a
+                            class="tel-link"
+                            href={`https://wa.me/598${String(r.telefono).replace(/\D/g, '').replace(/^(598|0)/, '')}`}
+                            target="_blank"
+                            rel="noopener"
+                          >{r.telefono}</a>
+                        ) : '—'}</td>
                         <td><span class={`badge badge--${r.estado}`}>{r.estado}</span></td>
                         <td><button class="del" data-id={r.id}>Borrar</button></td>
                       </tr>
@@ -338,11 +364,13 @@ if (authed) {
     if (cnt) cnt.textContent = sel.length
       ? `${sel.length} día${sel.length > 1 ? 's' : ''} seleccionado${sel.length > 1 ? 's' : ''}: elegí horarios y tocá Aplicar.`
       : 'Tocá uno o más días para elegir sus horarios.';
-    // Si hay un único día seleccionado con horarios, precargarlos para editarlos
+    // Si hay un único día seleccionado con horarios, precargarlos para editarlos.
+    // Con varios días (u ninguno) se limpian: si quedaran las horas del día
+    // anterior, "Aplicar" las copiaría a toda la selección sin que se note.
     if (sel.length === 1 && sel[0].dataset.state === 'horas') {
       const hs = new Set(horasDe(sel[0]));
       checks.forEach((ch) => (ch.checked = hs.has(ch.dataset.h!)));
-    } else if (sel.length === 0) {
+    } else {
       checks.forEach((ch) => (ch.checked = false));
     }
   }
@@ -417,25 +445,33 @@ if (authed) {
     });
 
     // Confirmar → guarda la foto completa de la sede
-    block.querySelector(`[data-confirmar="${sede}"]`)?.addEventListener('click', async () => {
+    block.querySelector(`[data-confirmar="${sede}"]`)?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
       const cells = cellsDe(block);
       const dias = cells
         .filter((c) => c.dataset.state === 'horas')
         .map((c) => ({ fecha: c.dataset.fecha, horas: horasDe(c) }));
       const llenas = cells.filter((c) => c.dataset.state === 'lleno').map((c) => c.dataset.fecha);
+      btn.disabled = true;
       if (msg()) msg().textContent = 'Guardando…';
-      const res = await fetch('/api/admin/disponibilidad', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lugar: sede, dias, llenas }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (res.ok) {
-        cells.forEach((c) => { c.dataset.savedState = c.dataset.state || ''; c.dataset.savedHoras = c.dataset.horas || ''; });
-        refrescar(block);
-        if (msg()) msg().textContent = `✓ Confirmado: ${d.fechas} días · ${d.turnos} turnos${d.llenas ? ` · ${d.llenas} llenos` : ''}`;
-      } else if (msg()) {
-        msg().textContent = `Error: ${d.error || 'no se pudo'}`;
+      try {
+        const res = await fetch('/api/admin/disponibilidad', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ lugar: sede, dias, llenas }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok) {
+          cells.forEach((c) => { c.dataset.savedState = c.dataset.state || ''; c.dataset.savedHoras = c.dataset.horas || ''; });
+          refrescar(block);
+          if (msg()) msg().textContent = `✓ Confirmado: ${d.fechas} días · ${d.turnos} turnos${d.llenas ? ` · ${d.llenas} llenos` : ''}`;
+        } else if (msg()) {
+          msg().textContent = `Error: ${d.error || 'no se pudo guardar'}. Tus cambios siguen acá: probá Confirmar de nuevo.`;
+        }
+      } catch {
+        if (msg()) msg().textContent = 'Sin conexión: no se guardó. Tus cambios siguen acá: probá Confirmar de nuevo.';
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -446,11 +482,24 @@ if (authed) {
   // Borrar reserva
   document.querySelectorAll('.del').forEach((b) => {
     b.addEventListener('click', async () => {
-      if (!confirm('¿Borrar esta reserva? Se libera el cupo.')) return;
-      const id = (b as HTMLElement).dataset.id;
-      const res = await fetch(`/api/admin/reserva?id=${id}`, { method: 'DELETE' });
-      if (res.ok) (b as HTMLElement).closest('tr')?.remove();
-      else alert('No se pudo borrar.');
+      if (!confirm('¿Borrar esta reserva? Se libera el cupo y se quita del calendario.')) return;
+      const btn = b as HTMLButtonElement;
+      const id = btn.dataset.id;
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Borrando…';
+      try {
+        const res = await fetch(`/api/admin/reserva?id=${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          btn.closest('tr')?.remove();
+          return;
+        }
+        alert('No se pudo borrar. Probá de nuevo.');
+      } catch {
+        alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
+      }
+      btn.disabled = false;
+      btn.textContent = orig;
     });
   });
 </script>
@@ -461,6 +510,7 @@ if (authed) {
   .login h1 { margin-bottom: 0.6rem; }
   .login form { display: flex; flex-direction: column; gap: 0.8rem; margin-top: 1.4rem; }
   .login input { font: inherit; padding: 0.7rem 0.9rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); }
+  .login__label { display: grid; gap: 0.35rem; font-size: 0.9rem; font-weight: 600; color: var(--ink); text-align: left; }
   .login__err { color: var(--clay-deep); font-size: 0.9rem; margin-top: 0.8rem; }
 
   .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
@@ -524,4 +574,6 @@ if (authed) {
   .badge--cancelada, .badge--expirada { background: color-mix(in srgb, var(--clay) 30%, var(--cream)); color: var(--clay-deep); }
   .del { background: none; border: 0; color: var(--clay-deep); cursor: pointer; font-size: 0.82rem; text-decoration: underline; }
   .del:hover { color: var(--ink); }
+  .tel-link { color: var(--sage-deep); text-decoration: underline; white-space: nowrap; }
+  .tel-link:hover { color: var(--ink); }
 </style>

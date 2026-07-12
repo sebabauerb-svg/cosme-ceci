@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
-import { getSql } from '../../../lib/db';
+import { getSql, ensureGoogleEventId } from '../../../lib/db';
 import {
   obtenerPago,
   verificarFirmaWebhook,
   webhookSecretConfigurado,
 } from '../../../lib/mercadopago';
-import { notificarReservaConfirmada } from '../../../lib/email';
+import { notificarReservaConfirmada, alertarPagoSinTurno } from '../../../lib/email';
 import { crearEventoReserva } from '../../../lib/calendar';
 
 export const prerender = false;
@@ -47,26 +47,37 @@ export const POST: APIRoute = async ({ request }) => {
       paymentId = body?.data?.id || body?.id || null;
     }
 
-    // Verificación de firma HMAC (si MP_WEBHOOK_SECRET está configurado).
-    // Evita que un tercero dispare el webhook con un paymentId cualquiera.
+    // Solo nos interesan notificaciones de pago (antes de exigir firma: los
+    // merchant_order / IPN legacy llegan sin x-signature y no deben dar 401).
+    if (topic && !String(topic).includes('payment')) return new Response('ok', { status: 200 });
+    if (!paymentId) return new Response('ok', { status: 200 });
+    if (!/^\d+$/.test(String(paymentId))) return new Response('ok', { status: 200 }); // id no numérico
+
+    // Verificación de firma HMAC. MP firma el manifest con el data.id del query;
+    // no se debe calcular con ids sacados del body.
     if (webhookSecretConfigurado()) {
+      if (!dataIdParam) {
+        // Notificación de pago sin data.id (formato IPN viejo): no viene firmada.
+        // La ignoramos; el webhook moderno con data.id es el que confirma.
+        return new Response('ok', { status: 200 });
+      }
       const firmaOk = verificarFirmaWebhook({
         xSignature: request.headers.get('x-signature'),
         xRequestId: request.headers.get('x-request-id'),
-        dataId: dataIdParam || (paymentId ? String(paymentId) : null),
+        dataId: dataIdParam,
       });
       if (!firmaOk) {
         console.error('MP webhook: firma inválida — descartado');
         return new Response('firma inválida', { status: 401 });
       }
+    } else if (import.meta.env.PROD) {
+      // Fail-closed en producción: el secret es requisito de go-live. Sin firma
+      // no procesamos pagos (cualquiera podría bombardear el endpoint).
+      console.error('MP webhook: MP_WEBHOOK_SECRET sin configurar en producción — descartado');
+      return new Response('secret no configurado', { status: 401 });
     } else {
-      console.warn('MP webhook: MP_WEBHOOK_SECRET sin configurar — firma NO verificada');
+      console.warn('MP webhook: MP_WEBHOOK_SECRET sin configurar — firma NO verificada (dev)');
     }
-
-    // Solo nos interesan notificaciones de pago.
-    if (topic && !String(topic).includes('payment')) return new Response('ok', { status: 200 });
-    if (!paymentId) return new Response('ok', { status: 200 });
-    if (!/^\d+$/.test(String(paymentId))) return new Response('ok', { status: 200 }); // id no numérico
 
     const pago = await obtenerPago(String(paymentId));
     if (!pago) return new Response('ok', { status: 200 });
@@ -80,14 +91,31 @@ export const POST: APIRoute = async ({ request }) => {
     if (estado === 'approved') {
       // Integridad de monto: el pago debe coincidir con el precio que registramos
       // server-side. Defensa extra contra manipulación del monto.
-      const prev = (await sql`select precio_uyu from reservas where id = ${reservaId}`) as any[];
+      const prev = (await sql`
+        select precio_uyu, nombre, telefono, email from reservas where id = ${reservaId}
+      `) as any[];
       const precioEsperado = prev[0]?.precio_uyu != null ? Number(prev[0].precio_uyu) : null;
       const montoPagado =
         typeof pago.transaction_amount === 'number' ? Math.round(pago.transaction_amount) : null;
       if (precioEsperado != null && montoPagado != null && montoPagado !== precioEsperado) {
+        // Hay plata acreditada que no confirma turno: dejar rastro y avisar a Ceci
+        // (MP recibe 200 y no reintenta; sin esto nadie se entera).
         console.error(
           `MP webhook: monto no coincide (esperado ${precioEsperado}, pagado ${montoPagado}) reserva ${reservaId} — no se confirma`
         );
+        await sql`
+          update reservas set mp_payment_id = ${String(paymentId)}, mp_estado = 'approved_monto_distinto'
+          where id = ${reservaId}
+        `;
+        await alertarPagoSinTurno({
+          motivo: `El monto pagado ($${montoPagado}) no coincide con el precio del servicio ($${precioEsperado}). El turno NO se confirmó.`,
+          paymentId: String(paymentId),
+          reservaId,
+          nombre: prev[0]?.nombre,
+          telefono: prev[0]?.telefono,
+          email: prev[0]?.email,
+          monto: montoPagado,
+        });
         return new Response('ok', { status: 200 });
       }
 
@@ -105,6 +133,19 @@ export const POST: APIRoute = async ({ request }) => {
         // 23505 = el cupo lo tomó otra reserva mientras tanto (pago tardío). No se puede confirmar.
         if (e?.code === '23505' || String(e?.message ?? e).includes('reservas_slot_unico')) {
           console.error('MP webhook: cupo ya ocupado, pago aprobado sin confirmar reserva', reservaId);
+          await sql`
+            update reservas set mp_payment_id = ${String(paymentId)}, mp_estado = 'approved_sin_cupo'
+            where id = ${reservaId}
+          `;
+          await alertarPagoSinTurno({
+            motivo: 'La clienta pagó, pero el horario ya lo tomó otra reserva. Hay que reprogramarla o devolverle el dinero.',
+            paymentId: String(paymentId),
+            reservaId,
+            nombre: prev[0]?.nombre,
+            telefono: prev[0]?.telefono,
+            email: prev[0]?.email,
+            monto: montoPagado,
+          });
           return new Response('ok', { status: 200 });
         }
         throw e;
@@ -134,7 +175,7 @@ export const POST: APIRoute = async ({ request }) => {
           // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).
           if (d.fecha && d.hora) {
             const duracionMin = d.sede === 'Montevideo' ? 45 : 30;
-            await crearEventoReserva({
+            const ev = await crearEventoReserva({
               resumen: `${nombreModalidad} — ${d.nombre}`,
               descripcion: [
                 `Servicio: ${nombreModalidad}`,
@@ -149,11 +190,57 @@ export const POST: APIRoute = async ({ request }) => {
               hora: d.hora,
               duracionMin,
             });
+            if (ev.ok && ev.eventId) {
+              try {
+                await ensureGoogleEventId(sql);
+                await sql`update reservas set google_event_id = ${ev.eventId} where id = ${reservaId}`;
+              } catch (e) {
+                console.error('No se pudo guardar google_event_id:', e instanceof Error ? e.message : e);
+              }
+            }
           }
         }
       }
+    } else if (estado === 'pending' || estado === 'in_process' || estado === 'authorized') {
+      // Pago en curso (ej. Abitab/Redpagos demora horas): además de registrar el
+      // estado, extendemos la reserva para que el cupo no se libere a los 30 min
+      // con un pago en camino.
+      await sql`
+        update reservas
+           set mp_payment_id = ${String(paymentId)}, mp_estado = ${estado},
+               expira_at = greatest(coalesce(expira_at, now()), now() + interval '2 days')
+        where id = ${reservaId} and estado = 'pendiente_pago'
+      `;
+    } else if (estado === 'refunded' || estado === 'charged_back') {
+      // Devolución o contracargo de un pago que ya había confirmado: registrar,
+      // liberar el cupo y avisar a Ceci (solo si ese pago es el que confirmó la reserva).
+      const upd = (await sql`
+        update reservas
+           set estado = 'cancelada', mp_estado = ${estado}
+         where id = ${reservaId} and estado = 'confirmada' and mp_payment_id = ${String(paymentId)}
+         returning nombre, telefono, email, precio_uyu
+      `) as any[];
+      if (upd.length) {
+        await alertarPagoSinTurno({
+          motivo:
+            estado === 'refunded'
+              ? 'Se devolvió el dinero de un turno confirmado. La reserva se canceló y el cupo quedó libre.'
+              : 'Hubo un contracargo sobre un turno confirmado. La reserva se canceló y el cupo quedó libre.',
+          paymentId: String(paymentId),
+          reservaId,
+          nombre: upd[0]?.nombre,
+          telefono: upd[0]?.telefono,
+          email: upd[0]?.email,
+          monto: upd[0]?.precio_uyu != null ? Number(upd[0].precio_uyu) : null,
+        });
+      } else {
+        await sql`
+          update reservas set mp_payment_id = ${String(paymentId)}, mp_estado = ${estado}
+          where id = ${reservaId} and estado = 'pendiente_pago'
+        `;
+      }
     } else {
-      // Pendiente / rechazado: guardamos el estado, no tocamos el cupo (expira solo si no se paga).
+      // Rechazado / cancelado: guardamos el estado, no tocamos el cupo (expira solo si no se paga).
       await sql`
         update reservas set mp_payment_id = ${String(paymentId)}, mp_estado = ${estado}
         where id = ${reservaId} and estado = 'pendiente_pago'

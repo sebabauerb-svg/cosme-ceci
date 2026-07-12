@@ -33,8 +33,8 @@ export function webhookSecretConfigurado(): boolean {
  * firmado con HMAC-SHA256 usando MP_WEBHOOK_SECRET; se compara contra v1.
  * Docs: https://www.mercadopago.com.uy/developers/es/docs/your-integrations/notifications/webhooks
  *
- * Devuelve true si el secret no está configurado (no bloqueamos hasta que Ceci
- * lo cargue). El llamador decide si exigir la verificación.
+ * Si el secret no está configurado: en producción devuelve false (fail-closed —
+ * el secret es requisito de go-live); en desarrollo devuelve true para poder probar.
  */
 export function verificarFirmaWebhook(opts: {
   xSignature: string | null;
@@ -42,7 +42,7 @@ export function verificarFirmaWebhook(opts: {
   dataId: string | null;
 }): boolean {
   const secret = process.env.MP_WEBHOOK_SECRET;
-  if (!secret) return true;
+  if (!secret) return !import.meta.env.PROD;
   if (!opts.xSignature) return false;
 
   let ts: string | null = null;
@@ -73,6 +73,8 @@ export async function crearPreferencia(opts: {
   reservaId: string;
   origin: string;
   email?: string | null;
+  /** ISO de cuándo vence la reserva pendiente: el checkout se cierra a la vez */
+  expiraIso?: string | null;
 }): Promise<{ id: string; initPoint: string }> {
   const body = {
     items: [
@@ -86,13 +88,18 @@ export async function crearPreferencia(opts: {
     external_reference: opts.reservaId,
     ...(opts.email ? { payer: { email: opts.email } } : {}),
     back_urls: {
-      success: `${opts.origin}/reservar?pago=ok`,
-      pending: `${opts.origin}/reservar?pago=pendiente`,
-      failure: `${opts.origin}/reservar?pago=error`,
+      success: `${opts.origin}/reservar?pago=ok&rid=${opts.reservaId}`,
+      pending: `${opts.origin}/reservar?pago=pendiente&rid=${opts.reservaId}`,
+      failure: `${opts.origin}/reservar?pago=error&rid=${opts.reservaId}`,
     },
     auto_return: 'approved',
     notification_url: `${opts.origin}/api/mp/webhook`,
     metadata: { reserva_id: opts.reservaId },
+    // El link de pago vence junto con la reserva (30 min): pagar más tarde
+    // dejaría plata acreditada sin cupo garantizado.
+    ...(opts.expiraIso
+      ? { expires: true, expiration_date_to: opts.expiraIso.replace('Z', '-00:00') }
+      : {}),
   };
 
   const res = await fetch(`${MP_API}/checkout/preferences`, {

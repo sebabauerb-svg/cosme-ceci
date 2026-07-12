@@ -24,6 +24,7 @@ const items = modalidades.map((m) => ({
   <main id="contenido" class="section booking">
     <div class="container booking__wrap">
       <header class="booking__head">
+        <span class="eyebrow">Reservá tu turno</span>
         <h1>Coordinemos tu atención</h1>
         <p class="booking__lead">Elegí la modalidad y el horario que mejor te queden. Te toma un minuto.</p>
         <ol class="booking__steps" aria-hidden="true">
@@ -62,8 +63,8 @@ const items = modalidades.map((m) => ({
         <div class="sede" id="sede" hidden>
           <p class="cal__label">¿Dónde preferís atenderte?</p>
           <div class="sede__opts">
-            <button class="sede__btn" data-sede="Montevideo">Montevideo</button>
-            <button class="sede__btn" data-sede="San José">San José</button>
+            <button class="sede__btn" data-sede="Montevideo" aria-pressed="false">Montevideo</button>
+            <button class="sede__btn" data-sede="San José" aria-pressed="false">San José</button>
           </div>
         </div>
 
@@ -122,8 +123,9 @@ const items = modalidades.map((m) => ({
           <span class="done__check" aria-hidden="true">✓</span>
           <h2>¡Casi listo!</h2>
           <p id="done-text"></p>
-          <p class="step__hint" id="done-hint">Para confirmar tu turno, aboná tu reserva y avisale a Ceci por WhatsApp (te abrimos el chat). El cupo queda reservado mientras tanto.</p>
+          <p class="step__hint" id="done-hint">Para confirmar tu turno, aboná tu reserva y avisale a Ceci por WhatsApp. El cupo queda reservado mientras tanto.</p>
           <a id="pago-link" class="btn btn--primary pay" target="_blank" rel="noopener" hidden>Pagar mi reserva</a>
+          <a id="wa-link" class="btn btn--ghost" target="_blank" rel="noopener" hidden>Avisar a Ceci por WhatsApp</a>
           <a href="/reservar" class="btn btn--ghost">Hacer otra reserva</a>
         </div>
       </section>
@@ -154,14 +156,23 @@ const items = modalidades.map((m) => ({
 
   function goTo(step) {
     clearAlert();
+    let activo = null;
     $$('.step').forEach((el) => {
       const active = Number(el.dataset.step) === step;
       el.toggleAttribute('hidden', !active);
       el.classList.toggle('is-active', active);
+      if (active) activo = el;
     });
     $$('.booking__steps li').forEach((li) =>
       li.classList.toggle('is-active', Number(li.dataset.ind) <= step)
     );
+    // Mover el foco al título del paso: sin esto, teclado y lector de pantalla
+    // quedan sobre un botón ahora oculto y no se anuncia el cambio de paso.
+    const titulo = activo?.querySelector('.step__title, h2');
+    if (titulo) {
+      titulo.setAttribute('tabindex', '-1');
+      titulo.focus({ preventScroll: true });
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -196,8 +207,12 @@ const items = modalidades.map((m) => ({
   // Sede (presencial): al elegir, cargamos la disponibilidad de esa sede
   $$('.sede__btn').forEach((s) =>
     s.addEventListener('click', () => {
-      $$('.sede__btn').forEach((x) => x.classList.remove('is-sel'));
+      $$('.sede__btn').forEach((x) => {
+        x.classList.remove('is-sel');
+        x.setAttribute('aria-pressed', 'false');
+      });
       s.classList.add('is-sel');
+      s.setAttribute('aria-pressed', 'true');
       state.lugar = s.dataset.sede;
       state.sedeSlug = slugSede(state.lugar);
       $('#agenda').hidden = false;
@@ -242,7 +257,9 @@ const items = modalidades.map((m) => ({
     const disp = new Set(slots.map((s) => s.fecha));
 
     const todas = [...disp, ...llenas].sort();
-    const [hy, hm] = new Date().toISOString().slice(0, 10).split('-').map(Number);
+    // Mes inicial: el de la primera fecha con datos (la fecha del navegador en UTC
+    // corre un día después de las 21:00 de Uruguay y saltearía el mes en curso).
+    const [hy, hm] = todas[0].split('-').map(Number);
     const [ly, lm] = todas[todas.length - 1].split('-').map(Number);
     const meses = [];
     let y = hy, m = hm;
@@ -421,20 +438,26 @@ const items = modalidades.map((m) => ({
         return;
       }
 
-      // Fallback (sin pago configurado): abrimos WhatsApp y mostramos el link manual.
-      window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`, '_blank', 'noopener');
+      // Fallback (sin pago configurado): botón de WhatsApp + link de pago manual.
+      // (No usamos window.open acá: al correr después del await, los bloqueadores
+      // de popups móviles lo frenan en silencio.)
+      const waLink = $('#wa-link');
+      if (waLink) {
+        waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`;
+        waLink.hidden = false;
+      }
       $('#done-text').textContent = m.esMembresia
         ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
         : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
       const hint = $('#done-hint');
       if (hint) {
         if (m.esMembresia) {
-          hint.textContent = 'Coordinamos la primera consulta al sumarte. Te abrimos el chat de WhatsApp para terminar de coordinar.';
+          hint.textContent = 'Coordinamos la primera consulta al sumarte. Avisale a Ceci por WhatsApp con el botón de abajo.';
         } else {
           const limite = new Date(Date.now() + 30 * 60 * 1000);
           const hh = String(limite.getHours()).padStart(2, '0');
           const mm = String(limite.getMinutes()).padStart(2, '0');
-          hint.textContent = `Tu cupo queda reservado 30 minutos: completá el pago antes de las ${hh}:${mm} para asegurarlo. Cualquier duda, te abrimos el chat de WhatsApp.`;
+          hint.textContent = `Tu cupo queda reservado 30 minutos: completá el pago antes de las ${hh}:${mm} para asegurarlo. Cualquier duda, escribile a Ceci con el botón de WhatsApp.`;
         }
       }
       const pagoLink = $('#pago-link');
@@ -458,8 +481,22 @@ const items = modalidades.map((m) => ({
     })
   );
 
+  // Al volver de MercadoPago con "atrás", el bfcache restaura la página con el
+  // botón deshabilitado en "Reservando…": lo reactivamos para poder reintentar.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      const btn = $('#confirmar');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Proceder al pago';
+      }
+    }
+  });
+
   // Regreso desde MercadoPago (back_urls): mostramos el estado del pago.
-  const pagoEstado = new URLSearchParams(location.search).get('pago');
+  const qsRetorno = new URLSearchParams(location.search);
+  const pagoEstado = qsRetorno.get('pago');
+  const reservaRid = qsRetorno.get('rid');
   if (pagoEstado) {
     const done = $('#done-text');
     const check = $('.done__check');
@@ -467,8 +504,32 @@ const items = modalidades.map((m) => ({
     const hint = $('#done-hint');
     if (hint) hint.hidden = true; // el aviso de WhatsApp no aplica cuando hay pago online
     if (pagoEstado === 'ok') {
-      if (titulo) titulo.textContent = '¡Turno confirmado!';
-      if (done) done.textContent = 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
+      // El query param solo dice que MP redirigió: la confirmación real la hace
+      // el webhook. Mostramos "confirmado" recién cuando la reserva lo está.
+      if (titulo) titulo.textContent = 'Pago recibido';
+      if (done) done.textContent = 'Estamos confirmando tu turno…';
+      if (reservaRid) {
+        (async () => {
+          for (let i = 0; i < 5; i++) {
+            try {
+              const r = await fetch(`/api/reserva-estado?id=${encodeURIComponent(reservaRid)}`);
+              const d = await r.json().catch(() => ({}));
+              if (d.ok && d.estado === 'confirmada') {
+                if (titulo) titulo.textContent = '¡Turno confirmado!';
+                if (done) done.textContent = 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
+                return;
+              }
+            } catch { /* reintenta */ }
+            await new Promise((r2) => setTimeout(r2, 2500));
+          }
+          if (titulo) titulo.textContent = 'Pago en acreditación';
+          if (check) check.textContent = '⏳';
+          if (done) done.textContent = 'Recibimos tu pago y lo estamos acreditando. En unos minutos te llega la confirmación por email. Si no llega, escribinos por WhatsApp.';
+        })();
+      } else {
+        if (titulo) titulo.textContent = '¡Gracias!';
+        if (done) done.textContent = 'Recibimos tu pago. En unos minutos te llega la confirmación por email.';
+      }
     } else if (pagoEstado === 'pendiente') {
       if (titulo) titulo.textContent = 'Pago en proceso';
       if (check) check.textContent = '⏳';
@@ -508,7 +569,7 @@ const items = modalidades.map((m) => ({
   .booking__head { text-align: center; margin-bottom: 2.5rem; }
   .booking__head h1 {
     margin: 0.3rem 0 0.6rem;
-    font-size: clamp(1.6rem, 3.2vw, 2.1rem);
+    font-size: clamp(1.9rem, 4.2vw, 2.6rem);
     text-wrap: balance;
   }
   .booking__lead {
@@ -556,7 +617,7 @@ const items = modalidades.map((m) => ({
   .opt__price { font-family: var(--font-serif); font-size: 1.18rem; color: var(--ink); white-space: nowrap; flex: none; }
   .opt__sub { font-size: 0.92rem; color: var(--ink-soft); font-weight: 400; }
   .opt__nota { font-size: 0.8rem; color: var(--ink-soft); font-weight: 400; opacity: 0.85; }
-  .opt__cta { justify-self: end; font-size: 0.85rem; font-weight: 600; color: var(--clay); margin-top: 0.35rem; }
+  .opt__cta { justify-self: end; font-size: 0.85rem; font-weight: 600; color: var(--clay-deep); margin-top: 0.35rem; }
   .opt:hover .opt__cta { text-decoration: underline; }
 
   .cal__label { font-weight: 600; font-size: 0.9rem; margin: 0 0 0.7rem; color: var(--ink); }
