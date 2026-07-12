@@ -116,13 +116,19 @@ export async function diagCalendario(): Promise<Record<string, unknown>> {
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(creds.calendarId)}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
+    const calBody = await calRes.text();
     const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
       headers: { Authorization: `Bearer ${token}` },
     });
+    const listBody = await listRes.text();
     let visibles: string[] = [];
     if (listRes.ok) {
-      const d: any = await listRes.json();
-      visibles = (d.items || []).map((c: any) => `${c.id} — ${c.accessRole}`);
+      try {
+        const d: any = JSON.parse(listBody);
+        visibles = (d.items || []).map((c: any) => `${c.id} — ${c.accessRole}`);
+      } catch {
+        /* ignore */
+      }
     }
     return {
       autenticacion: 'OK — la cuenta de servicio se autenticó con Google',
@@ -132,8 +138,10 @@ export async function diagCalendario(): Promise<Record<string, unknown>> {
           : calRes.status === 404
             ? 'NO — la cuenta de servicio NO tiene acceso (falta compartir el calendario con ella)'
             : `status ${calRes.status}`,
+      detalle_google: calRes.ok ? undefined : calBody.slice(0, 500),
+      detalle_lista: listRes.ok ? undefined : listBody.slice(0, 300),
       calendarios_que_ve_la_cuenta_de_servicio:
-        visibles.length ? visibles : '(ninguno — el calendario aún no fue compartido con la cuenta de servicio)',
+        visibles.length ? visibles : '(vacío — normal en cuentas de servicio; mirar detalle_google)',
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
