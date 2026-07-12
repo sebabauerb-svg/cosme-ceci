@@ -155,7 +155,7 @@ export const POST: APIRoute = async ({ request }) => {
         const r = (await sql`
           select r.modalidad, coalesce(s.nombre, '') as sede,
                  r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
-                 r.nombre, r.telefono, r.email
+                 r.nombre, r.telefono, r.email, r.duracion_min
           from reservas r left join sedes s on s.id = r.sede_id
           where r.id = ${reservaId}
         `) as any[];
@@ -174,7 +174,10 @@ export const POST: APIRoute = async ({ request }) => {
 
           // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).
           if (d.fecha && d.hora) {
-            const duracionMin = d.sede === 'Montevideo' ? 45 : 30;
+            // Duración real de la franja que Ceci abrió; fallback al valor
+            // histórico por sede para reservas de antes de tener duracion_min.
+            const duracionMin =
+              d.duracion_min != null ? Number(d.duracion_min) : d.sede === 'Montevideo' ? 45 : 30;
             const ev = await crearEventoReserva({
               resumen: `${nombreModalidad} — ${d.nombre}`,
               descripcion: [

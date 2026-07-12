@@ -3,7 +3,7 @@ export const prerender = false;
 
 import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
-import { getSql, ensureFranjas } from '../lib/db';
+import { getSql, ensureFranjas, ensureDuracionMin } from '../lib/db';
 
 const authed = isAdmin(Astro.cookies);
 
@@ -12,17 +12,8 @@ const LUGARES = [
   { slug: 'san-jose', nombre: 'San José' },
   { slug: 'online', nombre: 'Online (Virtual / Skincare Inteligente)' },
 ];
-// Intervalo de turnos por sede (minutos)
+// Duración por defecto sugerida al abrir un rango nuevo (Ceci puede cambiarla)
 const SEDE_INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
-function genHoras(step: number, start = '08:00', end = '20:30') {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  const out: string[] = [];
-  for (let t = sh * 60 + sm; t <= eh * 60 + em; t += step) {
-    out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
-  }
-  return out;
-}
 
 // Calendario de los próximos meses para que Ceci marque sus días.
 // "Hoy" en hora de Uruguay (UTC-3): el runtime corre en UTC y de 21:00 a 24:00
@@ -70,10 +61,10 @@ function fmtFechaTabla(iso?: string | null) {
   }
 }
 
-// Corte Mañana / Tarde para los atajos (debe coincidir con el del cliente)
-const CORTE = '13:00';
-// Cada día guarda su propio set de horas (no todos los días tienen el mismo horario)
-const config: Record<string, { dias: Record<string, string[]>; llenas: Set<string> }> = {
+// Cada día guarda su propio set de horas y su propia duración de consulta
+// (no todos los días tienen el mismo horario ni la misma duración)
+type DiaConfig = { horas: string[]; duracion: number };
+const config: Record<string, { dias: Record<string, DiaConfig>; llenas: Set<string> }> = {
   montevideo: { dias: {}, llenas: new Set() },
   'san-jose': { dias: {}, llenas: new Set() },
   online: { dias: {}, llenas: new Set() },
@@ -85,19 +76,22 @@ if (authed) {
   try {
     const sql = getSql();
     await ensureFranjas(sql);
+    await ensureDuracionMin(sql);
     const fr = await sql`
-      select coalesce(s.nombre, 'Online') as lugar, f.fecha::text as fecha, to_char(f.hora,'HH24:MI') as hora
+      select coalesce(s.nombre, 'Online') as lugar, f.fecha::text as fecha,
+             to_char(f.hora,'HH24:MI') as hora, f.duracion_min as duracion
       from franjas f left join sedes s on s.id = f.sede_id
       where f.fecha >= current_date
+      order by f.fecha, f.hora
     `;
     const map: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose', Online: 'online' };
-    // Horas guardadas de cada fecha (para precargar el calendario tal cual quedó)
+    // Horas guardadas de cada fecha (para precargar el calendario tal cual quedó).
+    // La duración se toma del primer turno del día (una franja se abre entera con
+    // un mismo rango+duración; si hubiera datos mezclados, prevalece el primero).
     for (const r of fr as any[]) {
       const slug = map[r.lugar] ?? 'online';
-      (config[slug].dias[r.fecha] ??= []).push(r.hora);
-    }
-    for (const slug of Object.keys(config)) {
-      for (const f of Object.keys(config[slug].dias)) config[slug].dias[f].sort();
+      const dia = (config[slug].dias[r.fecha] ??= { horas: [], duracion: Number(r.duracion) || 30 });
+      dia.horas.push(r.hora);
     }
     const bl = await sql`
       select coalesce(s.nombre, 'Online') as lugar, b.fecha::text as fecha
@@ -147,16 +141,16 @@ if (authed) {
 
           <section class="card">
             <h2>Tu disponibilidad</h2>
-            <p class="muted">Para cada lugar: <strong>tocá los días</strong> y elegí sus <strong>horarios</strong>. Cada día puede tener horarios distintos. Podés marcar días como <strong>llenos</strong>. Las clientas solo verán lo que marques. <strong>Nada se guarda hasta que tocás “Confirmar”.</strong></p>
+            <p class="muted">Para cada lugar: <strong>tocá los días</strong> que querés abrir, elegí el <strong>rango horario</strong> y la <strong>duración</strong> de cada consulta, y tocá <strong>Aplicar</strong>: el sistema arma los turnos solo. Podés marcar días como <strong>llenos</strong>. Las clientas solo verán lo que marques. <strong>Nada se guarda hasta que tocás “Confirmar”.</strong></p>
 
             {LUGARES.map((lugar) => (
               <div class="sede-block" data-sede={lugar.slug}>
                 <div class="sede-block__top">
-                  <h3>{lugar.nombre} <span class="sede-int">· turnos cada {SEDE_INTERVALO[lugar.slug]} min</span></h3>
+                  <h3>{lugar.nombre}</h3>
                   <span class="dirty-flag" data-dirty={lugar.slug} hidden>● Cambios sin confirmar</span>
                 </div>
 
-                <p class="hint">1) Tocá los días que querés editar (se resaltan). &nbsp; 2) Abajo elegí los horarios y tocá <b>Aplicar</b>. &nbsp; Repetí con otros días si tienen otro horario.</p>
+                <p class="hint">1) Tocá los días que querés editar (se resaltan). &nbsp; 2) Elegí desde/hasta y la duración de la consulta. &nbsp; 3) Tocá <b>Aplicar</b>. &nbsp; Repetí con otros días si tienen otro horario.</p>
 
                 <div class="acals">
                   {CAL.map((mes) => (
@@ -167,7 +161,9 @@ if (authed) {
                         {mes.cells.map((c) => {
                           if (!c) return <div class="acal__cell acal__cell--empty"></div>;
                           if (!c.sel) return <div class="acal__cell acal__cell--past">{c.day}</div>;
-                          const horas = config[lugar.slug].dias[c.iso] ?? [];
+                          const dia = config[lugar.slug].dias[c.iso];
+                          const horas = dia?.horas ?? [];
+                          const duracion = dia?.duracion ?? SEDE_INTERVALO[lugar.slug];
                           const lleno = config[lugar.slug].llenas.has(c.iso);
                           const st = lleno ? 'lleno' : horas.length ? 'horas' : '';
                           const hstr = horas.join(',');
@@ -179,8 +175,10 @@ if (authed) {
                               data-fecha={c.iso}
                               data-state={st}
                               data-horas={hstr}
+                              data-duracion={String(duracion)}
                               data-saved-state={st}
                               data-saved-horas={hstr}
+                              data-saved-duracion={String(duracion)}
                             >{c.day}</button>
                           );
                         })}
@@ -191,22 +189,22 @@ if (authed) {
 
                 <div class="editor" data-editor={lugar.slug}>
                   <p class="editor__count" data-count={lugar.slug}>Tocá uno o más días para elegir sus horarios.</p>
-                  <div class="quick">
-                    <span class="quick__lbl">Atajos:</span>
-                    <button type="button" class="chip" data-quick="manana">Mañana</button>
-                    <button type="button" class="chip" data-quick="tarde">Tarde</button>
-                    <button type="button" class="chip" data-quick="dia">Todo el día</button>
-                    <button type="button" class="chip chip--ghost" data-quick="none">Ninguno</button>
+                  <div class="rango">
+                    <label class="rango__f">Desde
+                      <input type="time" data-desde value="08:00" step="300" />
+                    </label>
+                    <label class="rango__f">Hasta
+                      <input type="time" data-hasta value="20:00" step="300" />
+                    </label>
+                    <label class="rango__f">Duración de la consulta
+                      <span class="rango__dur">
+                        <input type="number" data-duracion min="5" max="240" step="5" value={SEDE_INTERVALO[lugar.slug]} /> min
+                      </span>
+                    </label>
                   </div>
-                  <div class="horas">
-                    {genHoras(SEDE_INTERVALO[lugar.slug]).map((h) => (
-                      <label class="hora-chk">
-                        <input type="checkbox" data-h={h} /> {h}
-                      </label>
-                    ))}
-                  </div>
+                  <p class="rango__preview" data-preview aria-live="polite"></p>
                   <div class="editor__actions">
-                    <button type="button" class="btn btn--primary btn--sm" data-aplicar={lugar.slug}>Aplicar horarios</button>
+                    <button type="button" class="btn btn--primary btn--sm" data-aplicar={lugar.slug}>Aplicar a los días elegidos</button>
                     <button type="button" class="btn btn--ghost btn--sm" data-lleno={lugar.slug}>Marcar lleno</button>
                     <button type="button" class="btn btn--ghost btn--sm" data-quitar={lugar.slug}>Quitar día</button>
                     <button type="button" class="link-btn" data-deselect={lugar.slug}>Deseleccionar</button>
@@ -288,13 +286,19 @@ if (authed) {
     location.reload();
   });
 
-  // ----- Disponibilidad: seleccionar días + elegir horarios por día -----
-  const CORTE = '13:00';
-  const INTERVALO: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
-  function genHoras(step: number): string[] {
+  // ----- Disponibilidad: seleccionar días + generar horarios por rango -----
+  // Genera los horarios de inicio entre "desde" y "hasta" separados por
+  // "duracion" minutos, exigiendo que cada consulta termine antes de "hasta"
+  // (ej. 8 a 10 con 30 min → 08:00, 08:30, 09:00, 09:30).
+  function rangoHoras(desde: string, hasta: string, duracion: number): string[] {
+    if (!desde || !hasta || !duracion || duracion <= 0) return [];
+    const [dh, dm] = desde.split(':').map(Number);
+    const [hh, hm] = hasta.split(':').map(Number);
+    const fin = hh * 60 + hm;
     const out: string[] = [];
-    for (let t = 8 * 60; t <= 20 * 60 + 30; t += step)
+    for (let t = dh * 60 + dm; t + duracion <= fin; t += duracion) {
       out.push(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`);
+    }
     return out;
   }
   const fmtDia = (iso: string) => { const [, m, d] = iso.split('-'); return `${+d}/${+m}`; };
@@ -302,48 +306,46 @@ if (authed) {
   const selDe = (b: HTMLElement) => cellsDe(b).filter((c) => c.classList.contains('is-sel'));
   const horasDe = (c: HTMLElement) => (c.dataset.horas ? c.dataset.horas.split(',') : []);
 
-  // Pone el estado de un día: '' (libre), 'horas' (con horarios) o 'lleno'
-  function setState(cell: HTMLElement, state: string, horas: string[] = []) {
+  // Pone el estado de un día: '' (libre), 'horas' (con horarios+duración) o 'lleno'
+  function setState(cell: HTMLElement, state: string, horas: string[] = [], duracion?: number) {
     cell.classList.remove('is-horas', 'is-lleno');
     cell.dataset.state = state;
     cell.dataset.horas = state === 'horas' ? horas.join(',') : '';
+    if (state === 'horas' && duracion) cell.dataset.duracion = String(duracion);
     if (state) cell.classList.add('is-' + state);
   }
   function estaSucio(block: HTMLElement) {
     return cellsDe(block).some(
-      (c) => (c.dataset.state || '') !== (c.dataset.savedState || '') || (c.dataset.horas || '') !== (c.dataset.savedHoras || '')
+      (c) =>
+        (c.dataset.state || '') !== (c.dataset.savedState || '') ||
+        (c.dataset.horas || '') !== (c.dataset.savedHoras || '') ||
+        (c.dataset.state === 'horas' && (c.dataset.duracion || '') !== (c.dataset.savedDuracion || ''))
     );
   }
-  // Nombre lindo de un set de horas para el resumen
-  function etiquetaHoras(sede: string, horas: string[]) {
-    const all = genHoras(INTERVALO[sede] ?? 30);
-    const man = all.filter((h) => h < CORTE), tar = all.filter((h) => h >= CORTE);
-    const eq = (a: string[]) => a.length === horas.length && a.every((h, i) => h === horas[i]);
-    if (eq(all)) return 'Todo el día';
-    if (eq(man)) return 'Mañana';
-    if (eq(tar)) return 'Tarde';
-    return `${horas.length} horarios (${horas[0]}–${horas[horas.length - 1]})`;
+  function etiquetaHoras(horas: string[], duracion: string) {
+    return `${horas.length} turno${horas.length > 1 ? 's' : ''} de ${duracion} min (${horas[0]}–${horas[horas.length - 1]})`;
   }
 
   function refrescar(block: HTMLElement) {
     const sede = block.dataset.sede!;
-    // Agrupar días disponibles por su set de horas (firma)
-    const grupos: Record<string, string[]> = {};
+    // Agrupar días disponibles por su firma (horas + duración)
+    const grupos: Record<string, { horas: string[]; duracion: string; dias: string[] }> = {};
     const llenos: string[] = [];
     let turnos = 0;
     for (const c of cellsDe(block)) {
       if (c.dataset.state === 'lleno') { llenos.push(c.dataset.fecha!); continue; }
       if (c.dataset.state === 'horas') {
-        const sig = c.dataset.horas || '';
-        (grupos[sig] ??= []).push(c.dataset.fecha!);
+        const duracion = c.dataset.duracion || '30';
+        const sig = `${duracion}|${c.dataset.horas || ''}`;
+        (grupos[sig] ??= { horas: horasDe(c), duracion, dias: [] }).dias.push(c.dataset.fecha!);
         turnos += horasDe(c).length;
       }
     }
     const partes: string[] = [];
     for (const sig of Object.keys(grupos).sort()) {
-      const horas = sig.split(',');
-      const dias = grupos[sig].sort().map(fmtDia).join(', ');
-      partes.push(`<b>${etiquetaHoras(sede, horas)}</b> (${grupos[sig].length}): ${dias}`);
+      const g = grupos[sig];
+      const dias = g.dias.sort().map(fmtDia).join(', ');
+      partes.push(`<b>${etiquetaHoras(g.horas, g.duracion)}</b> (${g.dias.length} día${g.dias.length > 1 ? 's' : ''}): ${dias}`);
     }
     if (llenos.length) partes.push(`<b class="res-lleno">Llenos</b> (${llenos.length}): ${llenos.sort().map(fmtDia).join(', ')}`);
 
@@ -360,25 +362,48 @@ if (authed) {
     const sede = block.dataset.sede!;
     const sel = selDe(block);
     const cnt = block.querySelector(`[data-count="${sede}"]`) as HTMLElement;
-    const checks = [...block.querySelectorAll(`.editor[data-editor="${sede}"] input[data-h]`)] as HTMLInputElement[];
     if (cnt) cnt.textContent = sel.length
-      ? `${sel.length} día${sel.length > 1 ? 's' : ''} seleccionado${sel.length > 1 ? 's' : ''}: elegí horarios y tocá Aplicar.`
+      ? `${sel.length} día${sel.length > 1 ? 's' : ''} seleccionado${sel.length > 1 ? 's' : ''}: elegí el rango y tocá Aplicar.`
       : 'Tocá uno o más días para elegir sus horarios.';
-    // Si hay un único día seleccionado con horarios, precargarlos para editarlos.
-    // Con varios días (u ninguno) se limpian: si quedaran las horas del día
-    // anterior, "Aplicar" las copiaría a toda la selección sin que se note.
+    // Si hay un único día seleccionado con horarios, precargamos su rango en
+    // los inputs para poder ajustarlo. Con varios días (o ninguno) el rango
+    // tipeado se deja como está: es lo que se va a aplicar a todos.
+    const desde = block.querySelector('[data-desde]') as HTMLInputElement;
+    const hasta = block.querySelector('[data-hasta]') as HTMLInputElement;
+    const dur = block.querySelector('[data-duracion]') as HTMLInputElement;
     if (sel.length === 1 && sel[0].dataset.state === 'horas') {
-      const hs = new Set(horasDe(sel[0]));
-      checks.forEach((ch) => (ch.checked = hs.has(ch.dataset.h!)));
+      const horas = horasDe(sel[0]);
+      const duracion = Number(sel[0].dataset.duracion) || 30;
+      if (desde && horas.length) desde.value = horas[0];
+      if (dur) dur.value = String(duracion);
+      if (hasta && horas.length) {
+        const [h, m] = horas[horas.length - 1].split(':').map(Number);
+        const finMin = h * 60 + m + duracion;
+        hasta.value = `${String(Math.floor(finMin / 60) % 24).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}`;
+      }
+    }
+    actualizarPreview(block);
+  }
+
+  function actualizarPreview(block: HTMLElement) {
+    const desde = (block.querySelector('[data-desde]') as HTMLInputElement)?.value;
+    const hasta = (block.querySelector('[data-hasta]') as HTMLInputElement)?.value;
+    const duracion = Number((block.querySelector('[data-duracion]') as HTMLInputElement)?.value);
+    const prev = block.querySelector('[data-preview]') as HTMLElement;
+    if (!prev) return;
+    const horas = rangoHoras(desde, hasta, duracion);
+    if (!desde || !hasta || !duracion) {
+      prev.textContent = '';
+    } else if (!horas.length) {
+      prev.textContent = 'Ese rango no entra ni un turno: revisá desde/hasta/duración.';
     } else {
-      checks.forEach((ch) => (ch.checked = false));
+      prev.textContent = `Se van a crear ${horas.length} turno${horas.length > 1 ? 's' : ''}: ${horas.join(', ')}`;
     }
   }
 
   document.querySelectorAll<HTMLElement>('.sede-block').forEach((block) => {
     const sede = block.dataset.sede!;
     const msg = () => block.querySelector(`[data-msg="${sede}"]`) as HTMLElement;
-    const checks = () => [...block.querySelectorAll(`.editor[data-editor="${sede}"] input[data-h]`)] as HTMLInputElement[];
 
     // Seleccionar/deseleccionar días
     cellsDe(block).forEach((cell) =>
@@ -388,25 +413,21 @@ if (authed) {
       })
     );
 
-    // Atajos: tildan los horarios (no tocan los días)
-    block.querySelectorAll<HTMLElement>('.chip[data-quick]').forEach((chip) =>
-      chip.addEventListener('click', () => {
-        const all = genHoras(INTERVALO[sede] ?? 30);
-        const q = chip.dataset.quick;
-        checks().forEach((ch) => {
-          const h = ch.dataset.h!;
-          ch.checked = q === 'dia' ? true : q === 'manana' ? h < CORTE : q === 'tarde' ? h >= CORTE : false;
-        });
-      })
-    );
+    // Vista previa en vivo del rango
+    ['[data-desde]', '[data-hasta]', '[data-duracion]'].forEach((sel) => {
+      block.querySelector(sel)?.addEventListener('input', () => actualizarPreview(block));
+    });
 
-    // Aplicar horarios a los días seleccionados
+    // Aplicar el rango generado a los días seleccionados
     block.querySelector(`[data-aplicar="${sede}"]`)?.addEventListener('click', () => {
       const sel = selDe(block);
       if (!sel.length) { if (msg()) msg().textContent = 'Primero tocá los días a editar.'; return; }
-      const horas = checks().filter((ch) => ch.checked).map((ch) => ch.dataset.h!);
-      if (!horas.length) { if (msg()) msg().textContent = 'Elegí al menos un horario (o usá “Quitar día”).'; return; }
-      sel.forEach((c) => { setState(c, 'horas', horas); c.classList.remove('is-sel'); });
+      const desde = (block.querySelector('[data-desde]') as HTMLInputElement)?.value;
+      const hasta = (block.querySelector('[data-hasta]') as HTMLInputElement)?.value;
+      const duracion = Number((block.querySelector('[data-duracion]') as HTMLInputElement)?.value);
+      const horas = rangoHoras(desde, hasta, duracion);
+      if (!horas.length) { if (msg()) msg().textContent = 'Ese rango no genera ningún turno: revisá desde/hasta/duración.'; return; }
+      sel.forEach((c) => { setState(c, 'horas', horas, duracion); c.classList.remove('is-sel'); });
       if (msg()) msg().textContent = '';
       actualizarSeleccion(block); refrescar(block);
     });
@@ -438,7 +459,7 @@ if (authed) {
       cellsDe(block).forEach((c) => {
         c.classList.remove('is-sel');
         const st = c.dataset.savedState || '';
-        setState(c, st, st === 'horas' ? (c.dataset.savedHoras || '').split(',').filter(Boolean) : []);
+        setState(c, st, st === 'horas' ? (c.dataset.savedHoras || '').split(',').filter(Boolean) : [], Number(c.dataset.savedDuracion) || undefined);
       });
       if (msg()) msg().textContent = '';
       actualizarSeleccion(block); refrescar(block);
@@ -450,7 +471,7 @@ if (authed) {
       const cells = cellsDe(block);
       const dias = cells
         .filter((c) => c.dataset.state === 'horas')
-        .map((c) => ({ fecha: c.dataset.fecha, horas: horasDe(c) }));
+        .map((c) => ({ fecha: c.dataset.fecha, horas: horasDe(c), duracionMin: Number(c.dataset.duracion) || 30 }));
       const llenas = cells.filter((c) => c.dataset.state === 'lleno').map((c) => c.dataset.fecha);
       btn.disabled = true;
       if (msg()) msg().textContent = 'Guardando…';
@@ -462,7 +483,11 @@ if (authed) {
         });
         const d = await res.json().catch(() => ({}));
         if (res.ok) {
-          cells.forEach((c) => { c.dataset.savedState = c.dataset.state || ''; c.dataset.savedHoras = c.dataset.horas || ''; });
+          cells.forEach((c) => {
+            c.dataset.savedState = c.dataset.state || '';
+            c.dataset.savedHoras = c.dataset.horas || '';
+            c.dataset.savedDuracion = c.dataset.duracion || '';
+          });
           refrescar(block);
           if (msg()) msg().textContent = `✓ Confirmado: ${d.fechas} días · ${d.turnos} turnos${d.llenas ? ` · ${d.llenas} llenos` : ''}`;
         } else if (msg()) {
@@ -522,7 +547,6 @@ if (authed) {
   .sede-block { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--sand); }
   .sede-block__top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
   .sede-block__top h3 { font-size: 1.1rem; }
-  .sede-int { font-weight: 400; font-size: 0.82rem; color: var(--ink-soft); }
   .dirty-flag { font-size: 0.8rem; color: var(--clay-deep); font-weight: 600; }
   .btn--sm { padding: 0.45rem 1rem; font-size: 0.88rem; }
 
@@ -544,14 +568,12 @@ if (authed) {
 
   .editor { margin: 1rem 0 0.4rem; padding: 0.9rem 1rem; background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm); }
   .editor__count { font-size: 0.86rem; font-weight: 600; color: var(--ink); margin-bottom: 0.7rem; }
-  .quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.7rem; }
-  .quick__lbl { font-size: 0.82rem; color: var(--ink-soft); margin-right: 0.2rem; }
-  .chip { font: inherit; font-size: 0.82rem; font-weight: 600; padding: 0.32rem 0.8rem; border-radius: 999px; border: 1.5px solid var(--sage); background: var(--white); color: var(--sage-deep); cursor: pointer; }
-  .chip:hover { background: color-mix(in srgb, var(--sage) 14%, var(--white)); }
-  .chip--ghost { border-color: var(--sand); color: var(--ink-soft); }
-  .horas { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-bottom: 0.9rem; }
-  .hora-chk { display: flex; align-items: center; gap: 0.35rem; font-size: 0.86rem; }
-  .hora-chk input { width: 16px; height: 16px; accent-color: var(--sage); }
+  .rango { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem 1.2rem; margin-bottom: 0.6rem; }
+  .rango__f { display: grid; gap: 0.3rem; font-size: 0.82rem; font-weight: 600; color: var(--ink); }
+  .rango__f input[type="time"] { font: inherit; padding: 0.4rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .rango__dur { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
+  .rango__dur input[type="number"] { font: inherit; width: 4.5em; padding: 0.4rem 0.5rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .rango__preview { font-size: 0.82rem; color: var(--sage-deep); min-height: 1.3em; margin: 0 0 0.8rem; }
   .editor__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
   .link-btn { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.84rem; text-decoration: underline; }
   .link-btn:hover { color: var(--ink); }

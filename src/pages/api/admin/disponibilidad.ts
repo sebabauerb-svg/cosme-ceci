@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureFranjas } from '../../../lib/db';
+import { getSql, ensureFranjas, ensureDuracionMin } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 
 export const prerender = false;
@@ -18,7 +18,7 @@ function nombreSede(slug: string) {
 }
 
 // POST /api/admin/disponibilidad
-// body: { lugar, dias: [{ fecha:'YYYY-MM-DD', horas:['HH:MM', ...] }], llenas: ['YYYY-MM-DD'] }
+// body: { lugar, dias: [{ fecha:'YYYY-MM-DD', horas:['HH:MM', ...], duracionMin? }], llenas: ['YYYY-MM-DD'] }
 // Reemplaza la foto FUTURA de ese lugar: cada día abre exactamente sus horas; los llenos van a bloqueos.
 export const POST: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
@@ -44,16 +44,24 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   const llenasOk: string[] = (Array.isArray(body?.llenas) ? body.llenas : []).filter(esFecha);
   const llenasSet = new Set(llenasOk);
 
-  // Días disponibles, cada uno con su propio set de horas
+  // Duración de la consulta: la define Ceci al abrir cada rango (5–240 min).
+  const esDuracion = (v: unknown) => Number.isInteger(v) && (v as number) >= 5 && (v as number) <= 240;
+
+  // Días disponibles, cada uno con su propio set de horas y duración
   const diasIn: any[] = Array.isArray(body?.dias) ? body.dias : [];
   const diasOk = diasIn
     .filter((d) => d && esFecha(d.fecha) && Array.isArray(d.horas) && !llenasSet.has(d.fecha))
-    .map((d) => ({ fecha: d.fecha as string, horas: [...new Set((d.horas as any[]).filter((h) => esHora(h)))] as string[] }))
+    .map((d) => ({
+      fecha: d.fecha as string,
+      horas: [...new Set((d.horas as any[]).filter((h) => esHora(h)))] as string[],
+      duracionMin: esDuracion(d.duracionMin) ? (d.duracionMin as number) : 30,
+    }))
     .filter((d) => d.horas.length > 0);
 
   try {
     const sql = getSql();
     await ensureFranjas(sql);
+    await ensureDuracionMin(sql);
 
     let sedeId: string | null = null;
     const nombre = nombreSede(lugar);
@@ -73,11 +81,13 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       queries.push(sql`delete from bloqueos where sede_id is null and fecha >= ${hoy}`);
     }
 
-    // Insertar turnos: cada día abre exactamente sus horas
+    // Insertar turnos: cada día abre exactamente sus horas, con la duración que Ceci eligió
     let turnos = 0;
     for (const d of diasOk) {
       for (const h of d.horas) {
-        queries.push(sql`insert into franjas (sede_id, fecha, hora) values (${sedeId}, ${d.fecha}, ${h})`);
+        queries.push(
+          sql`insert into franjas (sede_id, fecha, hora, duracion_min) values (${sedeId}, ${d.fecha}, ${h}, ${d.duracionMin})`
+        );
         turnos++;
       }
     }

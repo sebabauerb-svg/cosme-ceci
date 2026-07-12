@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql } from '../../lib/db';
+import { getSql, ensureDuracionMin } from '../../lib/db';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
 import { precioOnline } from '../../lib/precios';
@@ -120,6 +120,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
   try {
     const sql = getSql();
+    await ensureDuracionMin(sql);
 
     // Liberar cupos de reservas pendientes vencidas (auto-expiración, sin cron)
     await sql`
@@ -136,18 +137,22 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         return json({ ok: false, error: 'Elegí la sede (Montevideo o San José)' }, 400);
     }
 
+    // Duración de la consulta: la fija Ceci al abrir el horario (franjas.duracion_min).
+    // Se copia a la reserva para que el evento de Calendar quede del tamaño correcto.
+    let duracionMin: number | null = null;
     if (!esMembresia) {
       // El horario tiene que existir en la agenda de Ceci y no estar bloqueado.
       // Sin este chequeo, un POST directo puede reservar (y pagar) un turno que
       // nunca se ofreció, o un slot que Ceci ya eliminó/bloqueó.
       const sedeKey = sedeId ?? 'online';
       const franja = await sql`
-        select 1 from franjas
+        select duracion_min from franjas
         where coalesce(sede_id::text, 'online') = ${sedeKey} and fecha = ${fecha} and hora = ${hora}
         limit 1
       `;
       if (!franja.length)
         return json({ ok: false, code: 'SLOT_TOMADO', error: 'Ese horario no está disponible. Elegí otro.' }, 409);
+      duracionMin = franja[0]?.duracion_min != null ? Number(franja[0].duracion_min) : null;
       const bloqueo = await sql`
         select 1 from bloqueos
         where fecha = ${fecha} and coalesce(sede_id::text, 'online') = ${sedeKey}
@@ -169,10 +174,10 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     try {
       const ins = await sql`
         insert into reservas
-          (modalidad, sede_id, fecha, hora, nombre, telefono, email, precio_uyu, estado, expira_at)
+          (modalidad, sede_id, fecha, hora, nombre, telefono, email, precio_uyu, estado, expira_at, duracion_min)
         values
           (${modalidad}, ${sedeId}, ${esMembresia ? null : fecha}, ${esMembresia ? null : hora},
-           ${nombreT}, ${telT}, ${emailT || null}, ${precioNum}, 'pendiente_pago', ${expira})
+           ${nombreT}, ${telT}, ${emailT || null}, ${precioNum}, 'pendiente_pago', ${expira}, ${duracionMin})
         returning id
       `;
       const reservaId = String(ins[0].id);
