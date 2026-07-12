@@ -8,7 +8,8 @@
 
 export const PRECIOS_UYU: Record<string, number | null> = {
   presencial: 1800,
-  virtual: 1500,
+  // ⚠️ TEMPORAL — prueba de pago end-to-end a $1. VOLVER A 1500 después de validar.
+  virtual: 1,
   'skincare-inteligente': 1600,
   // El Club es una membresía anual en cuotas estacionales (4 × $1.200): no se
   // cobra como pago único por Checkout Pro. Se coordina y cobra aparte → sin
