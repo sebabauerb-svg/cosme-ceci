@@ -72,3 +72,25 @@ export async function ensureHorarioSemanal(sql: any) {
     )
   `;
 }
+
+/**
+ * Flujo de reserva SIN pago (Fase 2), idempotente. Debe correr antes de cualquier
+ * query que mencione el estado 'a_confirmar' (comparar el enum con un valor
+ * inexistente lanza en Postgres).
+ *  - estado 'a_confirmar': reserva web que espera que Ceci la valide (hold 2 h).
+ *  - monto_cobrado / pagado: seguimiento del cobro, que Ceci registra a mano
+ *    (una reserva confirmada puede quedar con pagado=false para seguimiento).
+ *  - el índice de cupo único pasa a bloquear también 'a_confirmar' (se recrea con
+ *    otro nombre para no dropear/crear en cada request).
+ */
+export async function ensureConfirmacion(sql: any) {
+  await sql`alter type reserva_estado add value if not exists 'a_confirmar'`;
+  await sql`alter table reservas add column if not exists monto_cobrado numeric(10,2)`;
+  await sql`alter table reservas add column if not exists pagado boolean`;
+  await sql`
+    create unique index if not exists reservas_slot_unico_v2
+      on reservas (coalesce(sede_id::text, 'online'), fecha, hora)
+      where estado in ('pendiente_pago','confirmada','a_confirmar') and fecha is not null
+  `;
+  await sql`drop index if exists reservas_slot_unico`;
+}

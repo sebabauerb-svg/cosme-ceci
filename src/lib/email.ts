@@ -31,6 +31,8 @@ type Datos = {
   email?: string | null;
   /** true si la clienta fue redirigida al checkout de MercadoPago */
   pagoOnline?: boolean;
+  /** camino de reserva: 'coordinar' = sin pago, queda a confirmar por Ceci */
+  via?: 'pagar' | 'coordinar';
 };
 
 /** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
@@ -51,9 +53,14 @@ function bloqueDetalle(d: Datos) {
   return `<div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas.map((f) => `<p style="margin:4px 0">${f}</p>`).join('')}</div>`;
 }
 
-/** Avisa que el pago se acreditó y el turno quedó CONFIRMADO. Nunca lanza error. */
-export async function notificarReservaConfirmada(d: Datos) {
+/**
+ * Avisa que el turno quedó CONFIRMADO. Nunca lanza error.
+ * opts.online (default true): pago acreditado por MercadoPago. Si es false, la
+ * confirmó Ceci a mano desde el panel (sin pago online), y el copy lo refleja.
+ */
+export async function notificarReservaConfirmada(d: Datos, opts: { online?: boolean } = {}) {
   try {
+    const online = opts.online !== false;
     const ceci = process.env.CECI_NOTIF_EMAIL;
     const detalle = bloqueDetalle(d);
     const tareas: Promise<unknown>[] = [];
@@ -61,8 +68,10 @@ export async function notificarReservaConfirmada(d: Datos) {
       tareas.push(
         enviar(
           ceci,
-          `✅ Pago confirmado: ${d.nombre} (${d.modalidad})`,
-          `<h2 style="font-family:Georgia,serif;color:#2a302b">Turno confirmado (pago acreditado)</h2>${detalle}<p style="color:#55605a">El cupo quedó reservado.</p>`
+          online
+            ? `✅ Pago confirmado: ${d.nombre} (${d.modalidad})`
+            : `✅ Turno confirmado: ${d.nombre} (${d.modalidad})`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">${online ? 'Turno confirmado (pago acreditado)' : 'Turno confirmado'}</h2>${detalle}<p style="color:#55605a">El cupo quedó reservado.</p>`
         )
       );
     }
@@ -72,7 +81,7 @@ export async function notificarReservaConfirmada(d: Datos) {
           d.email,
           '✅ Tu turno quedó confirmado — Cecilia Gutiérrez · Cosmetología Médica',
           `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Turno confirmado!</h2>
-           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, recibimos tu pago y tu turno quedó confirmado:</p>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, ${online ? 'recibimos tu pago y tu turno quedó confirmado' : 'confirmamos tu turno'}:</p>
            ${detalle}
            <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Si necesitás reprogramar, escribinos por WhatsApp.</p>`
         )
@@ -90,18 +99,25 @@ export async function notificarReserva(d: Datos) {
     const ceci = process.env.CECI_NOTIF_EMAIL;
     const detalle = bloqueDetalle(d);
     const tareas: Promise<unknown>[] = [];
-    const notaCeci = d.pagoOnline
-      ? 'La clienta está pagando por MercadoPago. Si el pago se acredita te llega otro aviso; no hace falta coordinar nada.'
-      : 'Coordiná el pago con la clienta para confirmar.';
-    const notaClienta = d.pagoOnline
-      ? 'Cuando se acredite el pago te llega la confirmación por este medio. Si no llegaste a pagar, escribinos por WhatsApp.'
-      : 'Para confirmar el turno, coordiná el pago por WhatsApp. ¡Te esperamos!';
+    const coordinar = d.via === 'coordinar';
+    const notaCeci = coordinar
+      ? 'La clienta reservó SIN pagar y el cupo quedó retenido 2 horas. Confirmala o rechazala desde el panel: /admin → “Reservas a confirmar”.'
+      : d.pagoOnline
+        ? 'La clienta está pagando por MercadoPago. Si el pago se acredita te llega otro aviso; no hace falta coordinar nada.'
+        : 'Coordiná el pago con la clienta para confirmar.';
+    const notaClienta = coordinar
+      ? 'Tu turno quedó pre-reservado y Ceci lo confirma a la brevedad. Cualquier duda, escribinos por WhatsApp.'
+      : d.pagoOnline
+        ? 'Cuando se acredite el pago te llega la confirmación por este medio. Si no llegaste a pagar, escribinos por WhatsApp.'
+        : 'Para confirmar el turno, coordiná el pago por WhatsApp. ¡Te esperamos!';
     if (ceci) {
       tareas.push(
         enviar(
           ceci,
-          `Nueva reserva: ${d.nombre} (${d.modalidad})`,
-          `<h2 style="font-family:Georgia,serif;color:#2a302b">Nueva reserva</h2>${detalle}<p style="color:#55605a">${notaCeci}</p>`
+          coordinar
+            ? `⏳ Reserva a confirmar: ${d.nombre} (${d.modalidad})`
+            : `Nueva reserva: ${d.nombre} (${d.modalidad})`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">${coordinar ? 'Reserva a confirmar' : 'Nueva reserva'}</h2>${detalle}<p style="color:#55605a">${notaCeci}</p>`
         )
       );
     }
@@ -109,8 +125,10 @@ export async function notificarReserva(d: Datos) {
       tareas.push(
         enviar(
           d.email,
-          'Tu reserva con Cecilia Gutiérrez · Cosmetología Médica',
-          `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Reserva recibida!</h2>
+          coordinar
+            ? 'Tu reserva quedó pre-reservada — Cecilia Gutiérrez · Cosmetología Médica'
+            : 'Tu reserva con Cecilia Gutiérrez · Cosmetología Médica',
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">${coordinar ? '¡Reserva recibida! (a confirmar)' : '¡Reserva recibida!'}</h2>
            <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, registramos tu reserva:</p>
            ${detalle}
            <p style="font-family:system-ui;color:#55605a">${notaClienta}</p>`

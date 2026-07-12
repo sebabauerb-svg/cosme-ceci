@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureFranjas } from '../../lib/db';
+import { getSql, ensureFranjas, ensureConfirmacion } from '../../lib/db';
 import { ahoraUY, labelFecha, sedeKeyDeSlug } from '../../lib/agenda';
 
 export const prerender = false;
@@ -19,6 +19,7 @@ export const GET: APIRoute = async ({ url }) => {
   try {
     const sql = getSql();
     await ensureFranjas(sql);
+    await ensureConfirmacion(sql);
     const sedeKey = await sedeKeyDeSlug(sql, sede);
     const { hoy, hora: ahora } = ahoraUY();
 
@@ -33,7 +34,7 @@ export const GET: APIRoute = async ({ url }) => {
       select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora
       from reservas
       where (estado = 'confirmada'
-             or (estado = 'pendiente_pago' and (expira_at is null or expira_at > now())))
+             or (estado in ('pendiente_pago','a_confirmar') and (expira_at is null or expira_at > now())))
         and fecha >= ${hoy}
         and coalesce(sede_id::text, 'online') = ${sedeKey}
     `) as { fecha: string; hora: string }[];

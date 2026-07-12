@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureFranjas } from '../../../lib/db';
+import { getSql, ensureFranjas, ensureConfirmacion } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 
 export const prerender = false;
@@ -17,6 +17,7 @@ export const GET: APIRoute = async ({ url, cookies }) => {
   try {
     const sql = getSql();
     await ensureFranjas(sql);
+    await ensureConfirmacion(sql);
     const hoy = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
     const finD = new Date(Date.now() - 3 * 3600 * 1000 + dias * 86400000).toISOString().slice(0, 10);
 
@@ -32,7 +33,8 @@ export const GET: APIRoute = async ({ url, cookies }) => {
              r.nombre, r.modalidad
       from reservas r left join sedes s on s.id = r.sede_id
       where r.fecha >= ${hoy} and r.fecha <= ${finD}
-        and (r.estado = 'confirmada' or (r.estado = 'pendiente_pago' and (r.expira_at is null or r.expira_at > now())))
+        and (r.estado = 'confirmada'
+             or (r.estado in ('pendiente_pago','a_confirmar') and (r.expira_at is null or r.expira_at > now())))
       order by r.fecha, r.hora
     `) as any[];
 

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureDuracionMin, ensureFranjas } from '../../lib/db';
+import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion } from '../../lib/db';
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
@@ -13,6 +13,10 @@ const NOMBRE_MODALIDAD: Record<string, string> = {
   'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
   club: 'Club de las Estaciones',
 };
+
+// Tope de reservas "a confirmar" (sin pago) SIMULTÁNEAS por sede: evita que las
+// reservas sin pago tapen la agenda de una sede mientras esperan validación.
+const CAP_A_CONFIRMAR: Record<string, number> = { montevideo: 3, 'san-jose': 4, online: 3 };
 
 function labelFecha(iso?: string | null) {
   if (!iso) return null;
@@ -117,17 +121,26 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   // El monto lo fija el servidor según la modalidad. NUNCA se toma del cliente
   // (el body podría venir manipulado con precio: 1). Ver src/lib/precios.ts.
   const precioNum = precioOnline(modalidad);
-  const expira = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min para pagar
+
+  // Camino de reserva: 'pagar' (MercadoPago, hold 30 min) o 'coordinar' (sin pago,
+  // queda 'a_confirmar' con hold de 2 h para que Ceci la valide desde el panel).
+  const via = body?.via === 'coordinar' ? 'coordinar' : 'pagar';
+  const estadoInicial = via === 'coordinar' ? 'a_confirmar' : 'pendiente_pago';
+  const holdMin = via === 'coordinar' ? 120 : 30;
+  const expira = new Date(Date.now() + holdMin * 60 * 1000).toISOString();
+  const capSlug = modalidad === 'presencial' ? str(sede) : 'online';
 
   try {
     const sql = getSql();
     await ensureFranjas(sql);
     await ensureDuracionMin(sql);
+    await ensureConfirmacion(sql);
 
-    // Liberar cupos de reservas pendientes vencidas (auto-expiración, sin cron)
+    // Liberar cupos de reservas vencidas (auto-expiración, sin cron): tanto las de
+    // pago (30 min) como las 'a confirmar' sin validar (2 h).
     await sql`
       update reservas set estado = 'expirada'
-      where estado = 'pendiente_pago' and expira_at is not null and expira_at < now()
+      where estado in ('pendiente_pago','a_confirmar') and expira_at is not null and expira_at < now()
     `;
 
     let sedeId: string | null = null;
@@ -151,14 +164,28 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         return json({ ok: false, code: 'SLOT_TOMADO', error: 'Ese horario no está disponible. Elegí otro.' }, 409);
     }
 
-    // Tope de reservas pendientes activas por teléfono: evita que un mismo número
-    // acapare cupos (30 min c/u) sin pagar ninguno.
+    // Tope de reservas sin resolver por teléfono (pago pendiente + a confirmar):
+    // evita que un mismo número acapare cupos sin completar ninguno.
     const pendientes = await sql`
       select count(*)::int as n from reservas
-      where telefono = ${telT} and estado = 'pendiente_pago' and expira_at > now()
+      where telefono = ${telT} and estado in ('pendiente_pago','a_confirmar') and expira_at > now()
     `;
     if ((pendientes[0]?.n ?? 0) >= 3)
-      return json({ ok: false, error: 'Ya tenés reservas pendientes de pago. Completá el pago o esperá unos minutos.' }, 429);
+      return json({ ok: false, error: 'Ya tenés reservas sin confirmar. Completá el pago (o esperá) y probá de nuevo.' }, 429);
+
+    // Tope de reservas 'a confirmar' SIMULTÁNEAS por sede (solo camino coordinar con
+    // cupo): que las reservas sin pago no tapen la agenda entera de una sede.
+    if (via === 'coordinar' && !esMembresia) {
+      const cap = CAP_A_CONFIRMAR[capSlug] ?? 3;
+      const sedeKeyCount = sedeId ?? 'online';
+      const enSede = await sql`
+        select count(*)::int as n from reservas
+        where estado = 'a_confirmar' and (expira_at is null or expira_at > now())
+          and coalesce(sede_id::text, 'online') = ${sedeKeyCount}
+      `;
+      if ((enSede[0]?.n ?? 0) >= cap)
+        return json({ ok: false, error: 'Ahora mismo hay varias reservas sin confirmar en esta sede. Podés pagar online para asegurar tu cupo, o probá de nuevo más tarde.' }, 429);
+    }
 
     try {
       const ins = await sql`
@@ -166,15 +193,15 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
           (modalidad, sede_id, fecha, hora, nombre, telefono, email, precio_uyu, estado, expira_at, duracion_min)
         values
           (${modalidad}, ${sedeId}, ${esMembresia ? null : fecha}, ${esMembresia ? null : hora},
-           ${nombreT}, ${telT}, ${emailT || null}, ${precioNum}, 'pendiente_pago', ${expira}, ${duracionMin})
+           ${nombreT}, ${telT}, ${emailT || null}, ${precioNum}, ${estadoInicial}, ${expira}, ${duracionMin})
         returning id
       `;
       const reservaId = String(ins[0].id);
 
-      // Pago online con MercadoPago (si está configurado y hay monto).
-      // Si falla o no está configurado, devolvemos sin initPoint → la web cae al flujo manual.
+      // Pago online con MercadoPago (solo en el camino 'pagar', si está configurado
+      // y hay monto). En 'coordinar' no hay checkout: queda a confirmar por Ceci.
       let initPoint: string | null = null;
-      if (mpConfigurado() && precioNum) {
+      if (via === 'pagar' && mpConfigurado() && precioNum) {
         try {
           // Dominio canónico para back_urls y notification_url: el origin del request
           // puede ser un alias *.vercel.app o un preview (webhook inaccesible) o localhost.
@@ -216,9 +243,10 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         telefono: telT,
         email: emailT || null,
         pagoOnline: !!initPoint,
+        via,
       });
 
-      return json({ ok: true, id: reservaId, initPoint });
+      return json({ ok: true, id: reservaId, initPoint, via });
     } catch (e: any) {
       // 23505 = unique_violation → el cupo ya fue tomado entre que eligió y confirmó
       if (e?.code === '23505' || String(e?.message ?? e).includes('reservas_slot_unico')) {
