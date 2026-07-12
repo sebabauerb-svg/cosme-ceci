@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureDuracionMin } from '../../lib/db';
-import { duracionDeTurno, ensureHorarioSemanal } from '../../lib/agenda';
+import { getSql, ensureDuracionMin, ensureFranjas } from '../../lib/db';
+import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
 import { precioOnline } from '../../lib/precios';
@@ -121,8 +121,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
   try {
     const sql = getSql();
+    await ensureFranjas(sql);
     await ensureDuracionMin(sql);
-    await ensureHorarioSemanal(sql);
 
     // Liberar cupos de reservas pendientes vencidas (auto-expiración, sin cron)
     await sql`

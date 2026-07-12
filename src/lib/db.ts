@@ -20,7 +20,8 @@ export function getSql() {
   return neon(cs);
 }
 
-/** Crea la tabla de franjas por fecha si no existe (idempotente). */
+/** Crea la tabla de franjas por fecha si no existe (idempotente).
+ *  Cada fila = un turno disponible (sede_id NULL = online). */
 export async function ensureFranjas(sql: any) {
   await sql`
     create table if not exists franjas (
@@ -28,9 +29,11 @@ export async function ensureFranjas(sql: any) {
       sede_id uuid references sedes(id) on delete cascade,
       fecha date not null,
       hora time not null,
+      duracion_min integer not null default 30,
       unique (sede_id, fecha, hora)
     )
   `;
+  await sql`alter table franjas add column if not exists duracion_min integer not null default 30`;
 }
 
 /** Columna para el id del evento de Google Calendar (idempotente). Permite

@@ -3,29 +3,16 @@ export const prerender = false;
 
 import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
-import { getSql, ensureDuracionMin } from '../lib/db';
-import { ensureHorarioSemanal } from '../lib/agenda';
+import { getSql, ensureFranjas, ensureDuracionMin } from '../lib/db';
 
 const authed = isAdmin(Astro.cookies);
 
 const SEDES = [
-  { slug: 'montevideo', nombre: 'Montevideo', durDefault: 45 },
-  { slug: 'san-jose', nombre: 'San José', durDefault: 30 },
-  { slug: 'online', nombre: 'Online', durDefault: 30 },
-];
-// Días de la semana. Convención: 0=domingo … 6=sábado (Date.getUTCDay).
-// Se muestran con el lunes primero.
-const DIAS = [
-  { n: 1, nombre: 'Lunes' },
-  { n: 2, nombre: 'Martes' },
-  { n: 3, nombre: 'Miércoles' },
-  { n: 4, nombre: 'Jueves' },
-  { n: 5, nombre: 'Viernes' },
-  { n: 6, nombre: 'Sábado' },
-  { n: 0, nombre: 'Domingo' },
+  { slug: 'montevideo', nombre: 'Montevideo', dur: 45 },
+  { slug: 'san-jose', nombre: 'San José', dur: 30 },
+  { slug: 'online', nombre: 'Online', dur: 30 },
 ];
 
-// Fecha legible para la tabla de reservas (ej. "mié 15 jul")
 function fmtFechaTabla(iso?: string | null) {
   if (!iso) return '—';
   try {
@@ -40,39 +27,20 @@ function fmtFechaTabla(iso?: string | null) {
   }
 }
 
-let bloques: any[] = []; // { sede, dia, desde, hasta, duracion }
-let excepciones: string[] = []; // 'YYYY-MM-DD'
 let reservas: any[] = [];
 let dbError = '';
 
 if (authed) {
   try {
     const sql = getSql();
-    await ensureHorarioSemanal(sql);
+    await ensureFranjas(sql);
     await ensureDuracionMin(sql);
-    const nombreASlug: Record<string, string> = { Montevideo: 'montevideo', 'San José': 'san-jose' };
-    const hs = (await sql`
-      select coalesce(s.nombre, 'Online') as sede, h.dia_semana as dia,
-             to_char(h.hora_desde, 'HH24:MI') as desde, to_char(h.hora_hasta, 'HH24:MI') as hasta,
-             h.duracion_min as duracion
-      from horario_semanal h left join sedes s on s.id = h.sede_id
-      order by h.dia_semana, h.hora_desde
-    `) as any[];
-    bloques = hs.map((r) => ({
-      sede: nombreASlug[r.sede] ?? 'online',
-      dia: Number(r.dia),
-      desde: r.desde,
-      hasta: r.hasta,
-      duracion: Number(r.duracion),
-    }));
-    const bl = (await sql`select fecha::text as fecha from bloqueos where fecha >= current_date order by fecha`) as any[];
-    excepciones = bl.map((r) => r.fecha);
     reservas = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
              r.nombre, r.telefono, r.estado
       from reservas r left join sedes s on s.id = r.sede_id
-      order by r.created_at desc limit 50
+      order by r.created_at desc limit 60
     `) as any[];
   } catch (e) {
     dbError = e instanceof Error ? e.message : String(e);
@@ -105,28 +73,69 @@ if (authed) {
           {dbError && <p class="login__err">Error de base de datos: {dbError}</p>}
 
           <section class="card">
-            <div class="card__head">
-              <div>
-                <h2>Tu horario semanal</h2>
-                <p class="muted">Definí una vez qué días y horarios atendés en cada lugar. Los turnos se abren solos para las próximas 10 semanas. Marcá abajo los días que no atendés (feriados, viajes).</p>
-              </div>
-              <button type="button" id="reset-todo" class="link-btn link-btn--danger">Borrar todo</button>
+            <h2>Tu disponibilidad</h2>
+            <p class="muted">Elegí un lugar, tocá los días del calendario y abrí tus horarios. Las clientas solo verán lo que dejes abierto.</p>
+
+            <div class="sedes-tabs" id="sedes-tabs">
+              {SEDES.map((s, i) => (
+                <button type="button" class:list={['sede-tab', i === 0 && 'is-active']} data-sede={s.slug} data-dur={s.dur}>{s.nombre}</button>
+              ))}
             </div>
 
-            <div id="dias"></div>
+            <div class="disp">
+              <!-- Columna izquierda: franja + calendario -->
+              <div class="disp__cal">
+                <div class="franja">
+                  <span class="franja__lbl">Horario a abrir:</span>
+                  <input type="time" id="f-desde" value="08:00" step="300" />
+                  <span class="franja__sep">a</span>
+                  <input type="time" id="f-hasta" value="12:00" step="300" />
+                  <span class="franja__sep">·</span>
+                  <input type="number" id="f-dur" min="5" max="240" step="5" value="45" />
+                  <span class="franja__sep">min</span>
+                  <span class="franja__prev" id="f-prev"></span>
+                </div>
+                <div class="atajo">
+                  <span class="atajo__lbl">Atajo:</span>
+                  <button type="button" class="btn btn--ghost btn--sm" id="atajo-btn">Repetir cada</button>
+                  <select id="atajo-dia">
+                    <option value="1">lunes</option>
+                    <option value="2">martes</option>
+                    <option value="3">miércoles</option>
+                    <option value="4">jueves</option>
+                    <option value="5">viernes</option>
+                    <option value="6">sábado</option>
+                    <option value="0">domingo</option>
+                  </select>
+                  <span class="atajo__lbl">por</span>
+                  <input type="number" id="atajo-n" min="1" max="26" step="1" value="10" />
+                  <span class="atajo__lbl">semanas</span>
+                </div>
 
-            <div class="exc">
-              <h3>Días que no atenderás</h3>
-              <p class="muted">Se cierran aunque estén en tu horario semanal.</p>
-              <div class="exc__row">
-                <input type="date" id="exc-fecha" />
-                <button type="button" class="btn btn--ghost btn--sm" id="exc-add">Agregar fecha</button>
+                <div class="cal">
+                  <div class="cal__head">
+                    <button type="button" class="cal__nav" id="cal-prev" aria-label="Mes anterior">‹</button>
+                    <span class="cal__mes" id="cal-mes"></span>
+                    <button type="button" class="cal__nav" id="cal-next" aria-label="Mes siguiente">›</button>
+                  </div>
+                  <div class="cal__wd"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+                  <div class="cal__grid" id="cal-grid"></div>
+                  <div class="cal__leg">
+                    <span><i class="lg lg--on"></i> abierto</span>
+                    <span><i class="lg lg--res"></i> con reserva</span>
+                    <span><i class="lg lg--sel"></i> viendo</span>
+                  </div>
+                </div>
               </div>
-              <div id="exc-chips" class="exc__chips"></div>
+
+              <!-- Columna derecha: detalle del día -->
+              <div class="disp__dia" id="dia-panel">
+                <p class="dia-vacio">Tocá un día del calendario para abrir o gestionar sus turnos.</p>
+              </div>
             </div>
 
             <div class="guardar">
-              <button type="button" id="guardar" class="btn btn--primary">Guardar horario</button>
+              <button type="button" id="guardar" class="btn btn--primary">Guardar</button>
               <span id="guardar-msg" class="guardar__msg"></span>
             </div>
           </section>
@@ -144,18 +153,13 @@ if (authed) {
                   <tbody>
                     {reservas.map((r) => (
                       <tr>
-                        <td>{r.modalidad}</td>
+                        <td>{r.modalidad === 'manual' ? 'Reserva manual' : r.modalidad}</td>
                         <td>{r.sede}</td>
                         <td>{fmtFechaTabla(r.fecha)}</td>
                         <td>{r.hora ?? '—'}</td>
                         <td>{r.nombre}</td>
-                        <td>{r.telefono ? (
-                          <a
-                            class="tel-link"
-                            href={`https://wa.me/598${String(r.telefono).replace(/\D/g, '').replace(/^(598|0)/, '')}`}
-                            target="_blank"
-                            rel="noopener"
-                          >{r.telefono}</a>
+                        <td>{r.telefono && r.telefono !== '—' ? (
+                          <a class="tel-link" href={`https://wa.me/598${String(r.telefono).replace(/\D/g, '').replace(/^(598|0)/, '')}`} target="_blank" rel="noopener">{r.telefono}</a>
                         ) : '—'}</td>
                         <td><span class={`badge badge--${r.estado}`}>{r.estado}</span></td>
                         <td><button class="del" data-id={r.id}>Borrar</button></td>
@@ -172,250 +176,292 @@ if (authed) {
   </main>
 </Base>
 
-<script define:vars={{ SEDES, DIAS, bloquesInit: bloques, excepcionesInit: excepciones }}>
+<script>
   // ---------- Login ----------
-  const lf = document.getElementById('login-form');
+  const lf = document.getElementById('login-form') as HTMLFormElement | null;
   lf?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = document.getElementById('login-error');
-    const pw = lf.querySelector('input[name="password"]').value;
+    const pw = (lf.querySelector('input[name="password"]') as HTMLInputElement).value;
     const res = await fetch('/api/admin/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: pw }),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: pw }),
     });
     if (res.ok) location.reload();
-    else {
-      const d = await res.json().catch(() => ({}));
-      if (err) { err.textContent = d.error || 'No se pudo entrar.'; err.hidden = false; }
-    }
+    else { const d = await res.json().catch(() => ({})); if (err) { err.textContent = d.error || 'No se pudo entrar.'; err.hidden = false; } }
   });
-
   document.getElementById('logout')?.addEventListener('click', async () => {
     await fetch('/api/admin/login', { method: 'DELETE' });
     location.reload();
   });
 
-  const diasCont = document.getElementById('dias');
-  if (diasCont) {
-    // ---------- Estado ----------
-    let uid = 1;
-    // Cada bloque lleva un _id local para el render; el estado es la fuente de verdad.
-    const bloques = (bloquesInit || []).map((b) => ({ _id: uid++, ...b }));
-    let excepciones = [...(excepcionesInit || [])];
-    const durDefault = Object.fromEntries(SEDES.map((s) => [s.slug, s.durDefault]));
-    const nombreSede = Object.fromEntries(SEDES.map((s) => [s.slug, s.nombre]));
+  const panel = document.getElementById('dia-panel');
+  if (panel) {
+    const $ = (id: string) => document.getElementById(id)!;
+    const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const hoyUY = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 
-    // Cantidad de turnos de un rango (misma lógica que el servidor).
-    function contarTurnos(desde, hasta, dur) {
-      if (!desde || !hasta || !dur || dur <= 0) return 0;
+    // ---------- Estado ----------
+    let sede = 'montevideo';
+    let durSede: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
+    // dias: fecha -> { horas:Set<string>, duracion:number }
+    let dias = new Map<string, { horas: Set<string>; duracion: number }>();
+    // reservas: 'fecha hora' -> { nombre, modalidad }
+    let reservasMap = new Map<string, { nombre: string; modalidad: string }>();
+    let sel: string | null = null; // fecha seleccionada
+    let sucio = false;
+    const base = new Date(hoyUY + 'T12:00:00Z');
+    let vy = base.getUTCFullYear(), vm = base.getUTCMonth();
+
+    function rangoHoras(desde: string, hasta: string, dur: number): string[] {
+      if (!desde || !hasta || !dur || dur <= 0) return [];
       const [dh, dm] = desde.split(':').map(Number);
       const [hh, hm] = hasta.split(':').map(Number);
       const fin = hh * 60 + hm;
-      let n = 0;
-      for (let t = dh * 60 + dm; t + dur <= fin; t += dur) n++;
-      return n;
+      const out: string[] = [];
+      for (let t = dh * 60 + dm; t + dur <= fin; t += dur) out.push(`${pad(Math.floor(t / 60))}:${pad(t % 60)}`);
+      return out;
     }
-
-    function marcarSucio() {
-      const msg = document.getElementById('guardar-msg');
-      if (msg) { msg.textContent = 'Tenés cambios sin guardar.'; msg.className = 'guardar__msg guardar__msg--dirty'; }
-    }
-
-    // ---------- Render de los días ----------
-    function render() {
-      diasCont.innerHTML = '';
-      for (const dia of DIAS) {
-        const delDia = bloques.filter((b) => b.dia === dia.n);
-        const card = document.createElement('div');
-        card.className = 'dia' + (delDia.length ? '' : ' dia--vacio');
-
-        const head = document.createElement('div');
-        head.className = 'dia__head';
-        head.innerHTML = `<span class="dia__nombre">${dia.nombre}</span>`;
-        const addBtn = document.createElement('button');
-        addBtn.type = 'button';
-        addBtn.className = 'btn btn--ghost btn--sm';
-        addBtn.textContent = '+ Agregar horario';
-        addBtn.addEventListener('click', () => {
-          bloques.push({ _id: uid++, sede: 'montevideo', dia: dia.n, desde: '08:00', hasta: '12:00', duracion: durDefault['montevideo'] });
-          marcarSucio();
-          render();
-        });
-        head.appendChild(addBtn);
-        card.appendChild(head);
-
-        if (!delDia.length) {
-          const vacio = document.createElement('p');
-          vacio.className = 'dia__sin';
-          vacio.textContent = 'Sin atención';
-          card.appendChild(vacio);
-        } else {
-          const cont = document.createElement('div');
-          cont.className = 'dia__bloques';
-          for (const b of delDia) cont.appendChild(filaBloque(b));
-          card.appendChild(cont);
-        }
-        diasCont.appendChild(card);
-      }
-    }
-
-    function filaBloque(b) {
-      const fila = document.createElement('div');
-      fila.className = 'bloque';
-
-      const sel = document.createElement('select');
-      sel.className = 'bloque__sede';
-      for (const s of SEDES) {
-        const op = document.createElement('option');
-        op.value = s.slug; op.textContent = s.nombre;
-        if (s.slug === b.sede) op.selected = true;
-        sel.appendChild(op);
-      }
-      sel.addEventListener('change', () => { b.sede = sel.value; b.duracion = durDefault[b.sede] || b.duracion; marcarSucio(); render(); });
-
-      const desde = document.createElement('input');
-      desde.type = 'time'; desde.step = '300'; desde.value = b.desde; desde.className = 'bloque__t';
-      const hasta = document.createElement('input');
-      hasta.type = 'time'; hasta.step = '300'; hasta.value = b.hasta; hasta.className = 'bloque__t';
-      const dur = document.createElement('input');
-      dur.type = 'number'; dur.min = '5'; dur.max = '240'; dur.step = '5'; dur.value = b.duracion; dur.className = 'bloque__dur';
-
-      const count = document.createElement('span');
-      count.className = 'bloque__count';
-      const actualizarCount = () => {
-        const n = contarTurnos(desde.value, hasta.value, Number(dur.value));
-        count.textContent = n ? `${n} turno${n > 1 ? 's' : ''}` : '⚠ sin turnos';
-        count.classList.toggle('bloque__count--warn', !n);
+    function franjaActual() {
+      return {
+        desde: ($('f-desde') as HTMLInputElement).value,
+        hasta: ($('f-hasta') as HTMLInputElement).value,
+        dur: Number(($('f-dur') as HTMLInputElement).value),
       };
-      desde.addEventListener('input', () => { b.desde = desde.value; actualizarCount(); marcarSucio(); });
-      hasta.addEventListener('input', () => { b.hasta = hasta.value; actualizarCount(); marcarSucio(); });
-      dur.addEventListener('input', () => { b.duracion = Number(dur.value); actualizarCount(); marcarSucio(); });
-      actualizarCount();
+    }
+    function marcarSucio() { sucio = true; setMsg('Tenés cambios sin guardar.', 'dirty'); }
+    function setMsg(txt: string, cls = '') { const m = $('guardar-msg'); m.textContent = txt; m.className = 'guardar__msg' + (cls ? ' guardar__msg--' + cls : ''); }
 
-      const del = document.createElement('button');
-      del.type = 'button'; del.className = 'bloque__del'; del.title = 'Quitar'; del.textContent = '✕';
-      del.addEventListener('click', () => {
-        const i = bloques.indexOf(b);
-        if (i >= 0) bloques.splice(i, 1);
-        marcarSucio();
-        render();
-      });
-
-      fila.append(sel, tag('span', 'bloque__sep', 'de'), desde, tag('span', 'bloque__sep', 'a'), hasta,
-        tag('span', 'bloque__sep', '·'), dur, tag('span', 'bloque__sep', 'min'), count, del);
-      return fila;
+    // ---------- Cargar sede ----------
+    async function cargarSede(s: string) {
+      sede = s;
+      sel = null; sucio = false; setMsg('');
+      ($('f-dur') as HTMLInputElement).value = String(durSede[s]);
+      try {
+        const res = await fetch(`/api/admin/horario?sede=${s}`);
+        const d = await res.json();
+        dias = new Map();
+        reservasMap = new Map();
+        if (d.ok) {
+          for (const f of d.franjas) {
+            const dia = dias.get(f.fecha) ?? { horas: new Set<string>(), duracion: Number(f.duracion) || 30 };
+            dia.horas.add(f.hora); dia.duracion = Number(f.duracion) || dia.duracion;
+            dias.set(f.fecha, dia);
+          }
+          for (const r of d.reservas) reservasMap.set(`${r.fecha} ${r.hora}`, { nombre: r.nombre, modalidad: r.modalidad });
+        }
+      } catch { setMsg('No se pudo cargar. Probá de nuevo.', 'dirty'); }
+      renderCal(); renderDia(); actualizarPrev();
     }
 
-    function tag(t, cls, txt) {
-      const el = document.createElement(t);
-      el.className = cls; el.textContent = txt;
+    // ---------- Preview de la franja ----------
+    function actualizarPrev() {
+      const { desde, hasta, dur } = franjaActual();
+      const n = rangoHoras(desde, hasta, dur).length;
+      $('f-prev').textContent = n ? `${n} turno${n > 1 ? 's' : ''}` : '⚠ sin turnos';
+      $('f-prev').className = 'franja__prev' + (n ? '' : ' franja__prev--warn');
+    }
+    ['f-desde', 'f-hasta', 'f-dur'].forEach((id) => $(id).addEventListener('input', actualizarPrev));
+
+    // ---------- Calendario ----------
+    function renderCal() {
+      $('cal-mes').textContent = `${MESES[vm]} ${vy}`;
+      const grid = $('cal-grid');
+      grid.innerHTML = '';
+      const first = new Date(Date.UTC(vy, vm, 1)).getUTCDay(); // 0=dom
+      const offset = (first + 6) % 7; // lunes primero
+      for (let i = 0; i < offset; i++) grid.appendChild(cel(''));
+      const ndays = new Date(Date.UTC(vy, vm + 1, 0)).getUTCDate();
+      for (let d = 1; d <= ndays; d++) {
+        const iso = `${vy}-${pad(vm + 1)}-${pad(d)}`;
+        grid.appendChild(cel(iso, d));
+      }
+    }
+    function cel(iso: string, day?: number) {
+      const el = document.createElement(iso && iso >= hoyUY ? 'button' : 'div');
+      el.className = 'cal__cell';
+      if (!iso) { el.className += ' cal__cell--empty'; return el; }
+      el.textContent = String(day);
+      if (iso < hoyUY) { el.className += ' cal__cell--past'; return el; }
+      (el as HTMLButtonElement).type = 'button';
+      const dia = dias.get(iso);
+      if (dia && dia.horas.size) {
+        el.className += ' cal__cell--on';
+        const conRes = [...dia.horas].some((h) => reservasMap.has(`${iso} ${h}`));
+        if (conRes) el.className += ' cal__cell--res';
+      }
+      if (iso === sel) el.className += ' cal__cell--sel';
+      el.addEventListener('click', () => { sel = iso; renderCal(); renderDia(); });
       return el;
     }
+    $('cal-prev').addEventListener('click', () => { if (vm === 0) { vm = 11; vy--; } else vm--; renderCal(); });
+    $('cal-next').addEventListener('click', () => { if (vm === 11) { vm = 0; vy++; } else vm++; renderCal(); });
 
-    // ---------- Excepciones ----------
-    function renderExc() {
-      const cont = document.getElementById('exc-chips');
-      cont.innerHTML = '';
-      if (!excepciones.length) {
-        cont.innerHTML = '<span class="exc__vacio">No hay días cerrados.</span>';
+    // ---------- Panel del día ----------
+    function renderDia() {
+      if (!sel) { panel.innerHTML = '<p class="dia-vacio">Tocá un día del calendario para abrir o gestionar sus turnos.</p>'; return; }
+      const [y, m, d] = sel.split('-');
+      const titulo = new Date(sel + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+      const dia = dias.get(sel);
+      panel.innerHTML = '';
+
+      const h = document.createElement('div'); h.className = 'dia-panel__head';
+      h.innerHTML = `<strong>${titulo}</strong>`;
+      panel.appendChild(h);
+
+      if (!dia || !dia.horas.size) {
+        const p = document.createElement('p'); p.className = 'dia-vacio';
+        p.textContent = 'Este día está cerrado. Abrilo con el horario de la izquierda:';
+        panel.appendChild(p);
+        panel.appendChild(btnAbrir());
         return;
       }
-      for (const f of [...excepciones].sort()) {
-        const chip = document.createElement('span');
-        chip.className = 'exc__chip';
-        const [y, m, d] = f.split('-');
-        chip.textContent = `${+d}/${+m}/${y} `;
-        const x = document.createElement('button');
-        x.type = 'button'; x.textContent = '✕'; x.title = 'Quitar';
-        x.addEventListener('click', () => { excepciones = excepciones.filter((e) => e !== f); marcarSucio(); renderExc(); });
-        chip.appendChild(x);
-        cont.appendChild(chip);
+
+      const horas = [...dia.horas].sort();
+      const wrap = document.createElement('div'); wrap.className = 'turnos';
+      for (const hora of horas) {
+        const key = `${sel} ${hora}`;
+        const res = reservasMap.get(key);
+        const t = document.createElement('div');
+        t.className = 'turno' + (res ? ' turno--res' : '');
+        const lbl = document.createElement('span'); lbl.className = 'turno__h'; lbl.textContent = hora;
+        t.appendChild(lbl);
+        if (res) {
+          const n = document.createElement('span'); n.className = 'turno__nom';
+          n.textContent = res.modalidad === 'manual' ? res.nombre : `${res.nombre} (web)`;
+          t.appendChild(n);
+          if (res.modalidad === 'manual') {
+            const lib = document.createElement('button'); lib.className = 'turno__x'; lib.textContent = 'Liberar';
+            lib.addEventListener('click', () => liberar(hora));
+            t.appendChild(lib);
+          }
+        } else {
+          const marc = document.createElement('button'); marc.className = 'turno__marc'; marc.textContent = 'Marcar reservado';
+          marc.addEventListener('click', () => marcarReservado(hora));
+          t.appendChild(marc);
+          const quitar = document.createElement('button'); quitar.className = 'turno__x'; quitar.textContent = '✕';
+          quitar.title = 'Quitar este turno';
+          quitar.addEventListener('click', () => { dia.horas.delete(hora); if (!dia.horas.size) dias.delete(sel!); marcarSucio(); renderCal(); renderDia(); });
+          t.appendChild(quitar);
+        }
+        wrap.appendChild(t);
       }
+      panel.appendChild(wrap);
+
+      const acc = document.createElement('div'); acc.className = 'dia-panel__acc';
+      acc.appendChild(btnAbrir('Agregar otro horario'));
+      const cerrar = document.createElement('button'); cerrar.className = 'btn btn--ghost btn--sm';
+      cerrar.textContent = 'Cerrar este día';
+      cerrar.addEventListener('click', () => {
+        const conRes = horas.some((hh) => reservasMap.has(`${sel} ${hh}`));
+        if (conRes && !confirm('Este día tiene reservas. Si lo cerrás, las reservas siguen pero no se ofrecen más turnos nuevos. ¿Seguir?')) return;
+        dias.delete(sel!); marcarSucio(); renderCal(); renderDia();
+      });
+      acc.appendChild(cerrar);
+      panel.appendChild(acc);
     }
-    document.getElementById('exc-add')?.addEventListener('click', () => {
-      const inp = document.getElementById('exc-fecha');
-      const f = inp.value;
-      if (!f) return;
-      if (!excepciones.includes(f)) { excepciones.push(f); marcarSucio(); renderExc(); }
-      inp.value = '';
+
+    function btnAbrir(txt = 'Abrir con este horario') {
+      const b = document.createElement('button'); b.className = 'btn btn--primary btn--sm'; b.textContent = txt;
+      b.addEventListener('click', () => {
+        const { desde, hasta, dur } = franjaActual();
+        const horas = rangoHoras(desde, hasta, dur);
+        if (!horas.length) { setMsg('Ese horario no genera turnos: revisá desde/hasta/duración.', 'dirty'); return; }
+        const dia = dias.get(sel!) ?? { horas: new Set<string>(), duracion: dur };
+        horas.forEach((h) => dia.horas.add(h));
+        dia.duracion = dur;
+        dias.set(sel!, dia);
+        marcarSucio(); renderCal(); renderDia();
+      });
+      return b;
+    }
+
+    // ---------- Reserva manual (acción inmediata) ----------
+    async function marcarReservado(hora: string) {
+      const nombre = prompt('¿A nombre de quién? (nombre de la persona que reservó)');
+      if (!nombre || !nombre.trim()) return;
+      const res = await fetch('/api/admin/reserva-manual', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sede, fecha: sel, hora, nombre: nombre.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { reservasMap.set(`${sel} ${hora}`, { nombre: nombre.trim(), modalidad: 'manual' }); renderCal(); renderDia(); }
+      else alert(d.error || 'No se pudo marcar el turno.');
+    }
+    async function liberar(hora: string) {
+      if (!confirm('¿Liberar este turno? Vuelve a quedar disponible para reservar.')) return;
+      const res = await fetch(`/api/admin/reserva-manual?sede=${sede}&fecha=${sel}&hora=${hora}`, { method: 'DELETE' });
+      if (res.ok) { reservasMap.delete(`${sel} ${hora}`); renderCal(); renderDia(); }
+      else alert('No se pudo liberar el turno.');
+    }
+
+    // ---------- Atajo repetir ----------
+    $('atajo-btn').addEventListener('click', () => {
+      const { desde, hasta, dur } = franjaActual();
+      const horas = rangoHoras(desde, hasta, dur);
+      if (!horas.length) { setMsg('Ese horario no genera turnos: revisá desde/hasta/duración.', 'dirty'); return; }
+      const dow = Number(($('atajo-dia') as HTMLInputElement).value); // 0=dom
+      const n = Math.max(1, Math.min(26, Number(($('atajo-n') as HTMLInputElement).value)));
+      // Primer día >= hoy con ese día de la semana
+      let cur = new Date(hoyUY + 'T12:00:00Z');
+      while (cur.getUTCDay() !== dow) cur = new Date(cur.getTime() + 86400000);
+      let agregados = 0;
+      for (let i = 0; i < n; i++) {
+        const iso = cur.toISOString().slice(0, 10);
+        const dia = dias.get(iso) ?? { horas: new Set<string>(), duracion: dur };
+        horas.forEach((h) => dia.horas.add(h));
+        dia.duracion = dur;
+        dias.set(iso, dia);
+        agregados++;
+        cur = new Date(cur.getTime() + 7 * 86400000);
+      }
+      marcarSucio(); renderCal(); renderDia();
+      setMsg(`Agregado a ${agregados} días. Revisá y tocá Guardar.`, 'dirty');
     });
 
     // ---------- Guardar ----------
-    document.getElementById('guardar')?.addEventListener('click', async (ev) => {
-      const btn = ev.currentTarget;
-      const msg = document.getElementById('guardar-msg');
-      // Validar que ningún bloque quede sin turnos
-      const invalido = bloques.find((b) => contarTurnos(b.desde, b.hasta, b.duracion) === 0);
-      if (invalido) {
-        if (msg) { msg.textContent = 'Revisá los horarios marcados con ⚠ (no generan turnos).'; msg.className = 'guardar__msg guardar__msg--dirty'; }
-        return;
-      }
-      btn.disabled = true;
-      if (msg) { msg.textContent = 'Guardando…'; msg.className = 'guardar__msg'; }
+    $('guardar').addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
+      const payload = { sede, dias: [...dias.entries()].map(([fecha, d]) => ({ fecha, horas: [...d.horas], duracion: d.duracion })) };
+      btn.disabled = true; setMsg('Guardando…');
       try {
         const res = await fetch('/api/admin/horario', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            bloques: bloques.map((b) => ({ sede: b.sede, dia: b.dia, desde: b.desde, hasta: b.hasta, duracion: b.duracion })),
-            excepciones,
-          }),
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
         });
         const d = await res.json().catch(() => ({}));
-        if (res.ok) {
-          if (msg) { msg.textContent = '✓ Guardado. Tu agenda ya está publicada.'; msg.className = 'guardar__msg guardar__msg--ok'; }
-        } else if (msg) {
-          msg.textContent = `Error: ${d.error || 'no se pudo guardar'}${d.detalle ? ' — ' + d.detalle : ''}`;
-          msg.className = 'guardar__msg guardar__msg--dirty';
-        }
-      } catch {
-        if (msg) { msg.textContent = 'Sin conexión: no se guardó. Probá de nuevo.'; msg.className = 'guardar__msg guardar__msg--dirty'; }
-      } finally {
-        btn.disabled = false;
-      }
+        if (res.ok) { sucio = false; setMsg(`✓ Guardado (${d.turnos} turnos en ${d.dias} días). Ya está publicado.`, 'ok'); }
+        else setMsg(`Error: ${d.error || 'no se pudo'}${d.detalle ? ' — ' + d.detalle : ''}`, 'dirty');
+      } catch { setMsg('Sin conexión: no se guardó. Probá de nuevo.', 'dirty'); }
+      finally { btn.disabled = false; }
     });
 
-    // ---------- Borrar todo ----------
-    document.getElementById('reset-todo')?.addEventListener('click', async (ev) => {
-      const btn = ev.currentTarget;
-      if (!confirm('¿Borrar TODO tu horario semanal y los días cerrados? Las reservas ya hechas no se tocan.')) return;
-      if (prompt('Para confirmar, escribí BORRAR (en mayúsculas):') !== 'BORRAR') { alert('No coincide. No se borró nada.'); return; }
-      btn.disabled = true;
-      try {
-        const res = await fetch('/api/admin/horario', { method: 'DELETE' });
-        const d = await res.json().catch(() => ({}));
-        if (res.ok) { alert('Listo, se borró todo el horario.'); location.reload(); }
-        else alert(`Error: ${d.error || 'no se pudo borrar'}${d.detalle ? '\n\nDetalle: ' + d.detalle : ''}`);
-      } catch {
-        alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
-      } finally {
-        btn.disabled = false;
-      }
+    // ---------- Tabs de sede ----------
+    document.querySelectorAll<HTMLButtonElement>('.sede-tab').forEach((tab) => {
+      durSede[tab.dataset.sede!] = Number(tab.dataset.dur);
+      tab.addEventListener('click', async () => {
+        if (sucio && !confirm('Tenés cambios sin guardar en esta sede. ¿Cambiar igual y perderlos?')) return;
+        document.querySelectorAll('.sede-tab').forEach((t) => t.classList.remove('is-active'));
+        tab.classList.add('is-active');
+        await cargarSede(tab.dataset.sede!);
+      });
     });
 
-    render();
-    renderExc();
+    cargarSede('montevideo');
   }
 
-  // ---------- Borrar reserva ----------
+  // ---------- Borrar reserva (tabla) ----------
   document.querySelectorAll('.del').forEach((b) => {
     b.addEventListener('click', async () => {
       if (!confirm('¿Borrar esta reserva? Se libera el cupo y se quita del calendario.')) return;
-      const btn = b;
-      const id = btn.dataset.id;
+      const btn = b as HTMLButtonElement;
       const orig = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = 'Borrando…';
+      btn.disabled = true; btn.textContent = 'Borrando…';
       try {
-        const res = await fetch(`/api/admin/reserva?id=${id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/admin/reserva?id=${btn.dataset.id}`, { method: 'DELETE' });
         if (res.ok) { btn.closest('tr')?.remove(); return; }
         alert('No se pudo borrar. Probá de nuevo.');
-      } catch {
-        alert('Sin conexión: no se pudo borrar. Probá de nuevo.');
-      }
-      btn.disabled = false;
-      btn.textContent = orig;
+      } catch { alert('Sin conexión: no se pudo borrar.'); }
+      btn.disabled = false; btn.textContent = orig;
     });
   });
 </script>
@@ -434,37 +480,69 @@ if (authed) {
   .muted { color: var(--ink-soft); font-size: 0.9rem; margin: 0.3rem 0 0; line-height: 1.6; }
   .card { margin-bottom: 2rem; }
   .card h2 { font-size: 1.4rem; margin-bottom: 0.2rem; }
-  .card__head { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 0.8rem; margin-bottom: 1.4rem; }
-  .card__head > div { max-width: 60ch; }
 
-  /* Día */
-  .dia { background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius); padding: 0.85rem 1rem; margin-bottom: 0.7rem; }
-  .dia--vacio { background: transparent; border-style: dashed; }
-  .dia__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-  .dia__nombre { font-weight: 600; font-size: 1rem; color: var(--ink); }
-  .dia__sin { font-size: 0.85rem; color: var(--ink-soft); margin: 0.4rem 0 0; }
-  .dia__bloques { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.7rem; }
+  /* Tabs de sede */
+  .sedes-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1.2rem 0 1.4rem; }
+  .sede-tab { font: inherit; font-weight: 600; font-size: 0.9rem; padding: 0.55rem 1.1rem; border: 1px solid var(--sand); border-radius: 999px; background: var(--white); color: var(--ink); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+  .sede-tab:hover { border-color: var(--sage); }
+  .sede-tab.is-active { background: var(--sage); color: var(--cream); border-color: var(--sage); }
 
-  /* Bloque horario */
-  .bloque { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; background: var(--cream-deep); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; }
-  .bloque__sede { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .bloque__t { font: inherit; padding: 0.35rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .bloque__dur { font: inherit; width: 4em; padding: 0.35rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .bloque__sep { font-size: 0.85rem; color: var(--ink-soft); }
-  .bloque__count { font-size: 0.8rem; color: var(--sage-deep); font-weight: 600; margin-left: auto; }
-  .bloque__count--warn { color: var(--clay-deep); }
-  .bloque__del { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.9rem; padding: 0.2rem 0.4rem; }
-  .bloque__del:hover { color: var(--clay-deep); }
+  /* Layout disponibilidad */
+  .disp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+  @media (max-width: 720px) { .disp { grid-template-columns: 1fr; } }
 
-  /* Excepciones */
-  .exc { margin-top: 1.5rem; padding-top: 1.3rem; border-top: 1px solid var(--sand); }
-  .exc h3 { font-size: 1.05rem; margin-bottom: 0.1rem; }
-  .exc__row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
-  .exc__row input { font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
-  .exc__chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.8rem; }
-  .exc__chip { display: inline-flex; align-items: center; gap: 0.3rem; background: color-mix(in srgb, var(--clay) 14%, var(--cream)); color: var(--clay-deep); font-size: 0.85rem; padding: 0.3rem 0.7rem; border-radius: 999px; }
-  .exc__chip button { background: none; border: 0; color: var(--clay-deep); cursor: pointer; font-size: 0.85rem; padding: 0; }
-  .exc__vacio { font-size: 0.85rem; color: var(--ink-soft); }
+  /* Franja */
+  .franja { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.7rem 0.85rem; }
+  .franja__lbl { font-size: 0.85rem; font-weight: 600; color: var(--ink); margin-right: 0.2rem; }
+  .franja input[type="time"] { font: inherit; padding: 0.35rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .franja input[type="number"] { font: inherit; width: 4em; padding: 0.35rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .franja__sep { font-size: 0.85rem; color: var(--ink-soft); }
+  .franja__prev { font-size: 0.8rem; font-weight: 600; color: var(--sage-deep); margin-left: auto; }
+  .franja__prev--warn { color: var(--clay-deep); }
+
+  /* Atajo */
+  .atajo { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.7rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+  .atajo select, .atajo input { font: inherit; padding: 0.3rem 0.4rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .atajo input { width: 3.5em; }
+
+  /* Calendario */
+  .cal { margin-top: 1rem; }
+  .cal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+  .cal__mes { font-family: var(--font-serif); font-size: 1.05rem; text-transform: capitalize; color: var(--ink); }
+  .cal__nav { font-size: 1.3rem; line-height: 1; background: none; border: 1px solid var(--sand); border-radius: var(--radius-sm); width: 34px; height: 34px; cursor: pointer; color: var(--ink); }
+  .cal__nav:hover { border-color: var(--sage); }
+  .cal__wd { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+  .cal__wd span { text-align: center; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); }
+  .cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.85rem; border-radius: 8px; border: 1px solid transparent; font-family: inherit; color: var(--ink); }
+  .cal__cell--empty { border: 0; }
+  .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 38%, var(--cream)); }
+  button.cal__cell { background: var(--white); border-color: var(--sand); cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+  button.cal__cell:hover { border-color: var(--sage); }
+  .cal__cell--on { background: color-mix(in srgb, var(--sage) 22%, var(--cream)) !important; border-color: color-mix(in srgb, var(--sage) 45%, var(--cream)) !important; color: var(--sage-deep) !important; font-weight: 600; }
+  .cal__cell--res { box-shadow: inset 0 -4px 0 -1px var(--clay); }
+  .cal__cell--sel { box-shadow: 0 0 0 2px var(--ink); }
+  .cal__leg { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-top: 0.7rem; font-size: 0.75rem; color: var(--ink-soft); }
+  .cal__leg span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .lg { width: 13px; height: 13px; border-radius: 4px; display: inline-block; }
+  .lg--on { background: color-mix(in srgb, var(--sage) 22%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sage) 45%, var(--cream)); }
+  .lg--res { background: var(--clay); }
+  .lg--sel { background: var(--white); box-shadow: 0 0 0 2px var(--ink); }
+
+  /* Panel del día */
+  .disp__dia { background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 1rem 1.1rem; min-height: 160px; }
+  .dia-vacio { font-size: 0.9rem; color: var(--ink-soft); line-height: 1.6; margin: 0 0 0.8rem; }
+  .dia-panel__head { text-transform: capitalize; font-size: 1.02rem; margin-bottom: 0.8rem; color: var(--ink); }
+  .turnos { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.9rem; }
+  .turno { display: flex; align-items: center; gap: 0.5rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.4rem 0.6rem; }
+  .turno--res { background: color-mix(in srgb, var(--clay) 12%, var(--cream)); border-color: color-mix(in srgb, var(--clay) 30%, var(--cream)); }
+  .turno__h { font-weight: 600; font-size: 0.9rem; color: var(--ink); min-width: 3.2em; }
+  .turno__nom { font-size: 0.85rem; color: var(--clay-deep); flex: 1; }
+  .turno__marc { margin-left: auto; font: inherit; font-size: 0.78rem; background: none; border: 1px solid var(--sand); border-radius: 999px; padding: 0.2rem 0.7rem; cursor: pointer; color: var(--sage-deep); }
+  .turno__marc:hover { border-color: var(--sage); }
+  .turno__x { font: inherit; font-size: 0.78rem; background: none; border: 0; cursor: pointer; color: var(--ink-soft); }
+  .turno__x:hover { color: var(--clay-deep); }
+  .dia-panel__acc { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
   /* Guardar */
   .guardar { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1.6rem; }
@@ -473,9 +551,6 @@ if (authed) {
   .guardar__msg--dirty { color: var(--clay-deep); }
 
   .btn--sm { padding: 0.4rem 0.85rem; font-size: 0.85rem; }
-  .link-btn { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 0.84rem; text-decoration: underline; white-space: nowrap; }
-  .link-btn:hover { color: var(--ink); }
-  .link-btn--danger { color: var(--clay-deep); }
 
   /* Tabla reservas */
   .grid-wrap { overflow-x: auto; }
