@@ -112,6 +112,7 @@ const items = modalidades.map((m) => ({
         </ul>
         <button class="btn btn--primary pay" id="confirmar">Proceder al pago</button>
         <p class="step__hint center">Te llevamos al pago seguro con MercadoPago.</p>
+        <a id="wa-share" class="btn btn--ghost pay" target="_blank" rel="noopener">Avisar a Ceci por WhatsApp (opcional)</a>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -387,6 +388,22 @@ const items = modalidades.map((m) => ({
     filas.push(`<div class="resumen__row"><span>A nombre de</span><strong>${state.nombre}</strong></div>`);
     filas.push(`<div class="resumen__row resumen__row--total"><span>Total a pagar</span><strong>${m.precio}</strong></div>`);
     $('#resumen').innerHTML = filas.join('');
+
+    // Botón opcional "Avisar a Ceci por WhatsApp": solo para compartir el turno,
+    // no reemplaza el pago online (que confirma la reserva automáticamente).
+    const waShare = $('#wa-share');
+    if (waShare) waShare.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensajeCompartir())}`;
+  }
+
+  function waMensajeCompartir() {
+    const m = state.modalidad;
+    const l = ['Hola Ceci! Te aviso que reservé por la web:', `• ${m.nombre}`];
+    if (state.lugar) l.push(`• Sede: ${state.lugar}`);
+    if (!m.esMembresia) l.push(`• Día y hora: ${state.fechaLabel} · ${state.hora} h`);
+    l.push(`• A nombre de: ${state.nombre}`);
+    if (state.email) l.push(`• Email: ${state.email}`);
+    l.push('¡Nos vemos!');
+    return l.join('\n');
   }
 
   function waMensaje() {
