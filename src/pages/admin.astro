@@ -306,7 +306,7 @@ if (authed) {
         alert(`Listo: se borraron ${d.franjasBorradas ?? 0} horarios y ${d.bloqueosBorrados ?? 0} días llenos.`);
         location.reload();
       } else {
-        alert(`Error: ${d.error || 'no se pudo borrar'}`);
+        alert(`Error: ${d.error || 'no se pudo borrar'}${d.detalle ? '\n\nDetalle: ' + d.detalle : ''}`);
       }
     } catch {
       alert('Sin conexión: no se pudo borrar. Probá de nuevo.');

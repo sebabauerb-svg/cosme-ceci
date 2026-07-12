@@ -119,7 +119,9 @@ export const DELETE: APIRoute = async ({ cookies }) => {
     ]);
     return json({ ok: true, franjasBorradas: (f as any[]).length, bloqueosBorrados: (b as any[]).length });
   } catch (e) {
-    console.error('DELETE /api/admin/disponibilidad:', e instanceof Error ? e.message : e);
-    return json({ ok: false, error: 'No se pudo borrar la disponibilidad. Probá de nuevo.' }, 500);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('DELETE /api/admin/disponibilidad:', msg);
+    // Detalle visible temporalmente (endpoint solo accesible con sesión admin) para diagnosticar.
+    return json({ ok: false, error: 'No se pudo borrar la disponibilidad. Probá de nuevo.', detalle: msg }, 500);
   }
 };
