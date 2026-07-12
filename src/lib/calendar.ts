@@ -31,11 +31,11 @@ function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function accessToken(email: string, key: string): Promise<string> {
+async function accessToken(email: string, key: string, scope: string = SCOPE): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const claims = b64url(
-    JSON.stringify({ iss: email, scope: SCOPE, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 })
+    JSON.stringify({ iss: email, scope, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 })
   );
   const input = `${header}.${claims}`;
   const sig = crypto.createSign('RSA-SHA256').update(input).sign(key);
@@ -111,7 +111,9 @@ export async function diagCalendario(): Promise<Record<string, unknown>> {
   const creds = getCreds();
   if (!creds) return { error: 'Google Calendar no está configurado' };
   try {
-    const token = await accessToken(creds.email, creds.key);
+    // Para leer metadata del calendario y la lista hace falta el scope amplio;
+    // el token de producción (calendar.events) no alcanza para esas consultas.
+    const token = await accessToken(creds.email, creds.key, 'https://www.googleapis.com/auth/calendar');
     const calRes = await fetch(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(creds.calendarId)}`,
       { headers: { Authorization: `Bearer ${token}` } }
