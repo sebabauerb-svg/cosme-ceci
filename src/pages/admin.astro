@@ -494,16 +494,36 @@ if (authed) {
     cargarSede('montevideo');
   }
 
-  // ---------- Agenda consolidada (todas las sedes) ----------
+  // ---------- Agenda consolidada (todas las sedes), semana por semana ----------
   (async function cargarAgenda() {
     const cont = document.getElementById('agenda');
     if (!cont) return;
     const CLS: Record<string, string> = { Montevideo: 'mv', 'San José': 'sj', Online: 'on' };
+    const DIA = 86400000;
+
+    // Lunes (12:00Z) de la semana que contiene esa fecha ISO.
+    const lunesDe = (iso: string) => {
+      const dt = new Date(iso + 'T12:00:00Z');
+      const dow = (dt.getUTCDay() + 6) % 7; // 0 = lunes
+      dt.setUTCDate(dt.getUTCDate() - dow);
+      return dt;
+    };
+    const isoDe = (dt: Date) => dt.toISOString().slice(0, 10);
+    const fmtRango = (mon: Date) => {
+      const sun = new Date(mon.getTime() + 6 * DIA);
+      if (mon.getUTCMonth() === sun.getUTCMonth()) {
+        const mes = mon.toLocaleDateString('es-UY', { month: 'long', timeZone: 'UTC' });
+        return `${mon.getUTCDate()} al ${sun.getUTCDate()} de ${mes}`;
+      }
+      const o = { day: 'numeric', month: 'long', timeZone: 'UTC' } as const;
+      return `${mon.toLocaleDateString('es-UY', o)} al ${sun.toLocaleDateString('es-UY', o)}`;
+    };
+
     try {
-      const res = await fetch('/api/admin/resumen');
-      if (res.status === 401) { cont.innerHTML = '<p class="muted">Ingresá de nuevo para ver la agenda.</p>'; return; }
+      const res = await fetch('/api/admin/resumen?dias=56');
+      if (res.status === 401) { cont.innerHTML = '<p class="ag-vacia">Ingresá de nuevo para ver la agenda.</p>'; return; }
       const d = await res.json();
-      if (!d.ok) { cont.innerHTML = '<p class="muted">No se pudo cargar la agenda.</p>'; return; }
+      if (!d.ok) { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar la agenda.</p>'; return; }
 
       // Consolidar: fecha → sede → Map<hora, {reservado, nombre}>
       const porFecha = new Map<string, Map<string, Map<string, any>>>();
@@ -516,9 +536,18 @@ if (authed) {
       for (const r of d.reservas) getSede(r.fecha, r.sede).set(r.hora, { reservado: true, nombre: r.nombre });
 
       const fechas = [...porFecha.keys()].sort();
-      if (!fechas.length) { cont.innerHTML = '<p class="muted">No hay turnos abiertos ni reservas todavía. Cargalos arriba en “Tu disponibilidad”.</p>'; return; }
-      cont.innerHTML = '';
-      for (const fecha of fechas) {
+      if (!fechas.length) { cont.innerHTML = '<p class="ag-vacia">No hay turnos abiertos ni reservas todavía. Cargalos arriba en “Tu disponibilidad”.</p>'; return; }
+
+      // Semanas de lunes a domingo. offset 0 = semana que contiene hoy.
+      const baseMon = lunesDe(d.hoy);
+      const offsetDe = (iso: string) => Math.round((lunesDe(iso).getTime() - baseMon.getTime()) / (7 * DIA));
+      const offsets = fechas.map(offsetDe);
+      const minOff = Math.min(...offsets);
+      const maxOff = Math.max(...offsets);
+      let semana = minOff; // arranca en la semana actual o, si está vacía, la próxima con datos
+
+      // Un bloque por día (misma estructura de siempre).
+      function bloqueDia(fecha: string) {
         const titulo = new Date(fecha + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
         const bloque = document.createElement('div'); bloque.className = 'ag-dia';
         const h = document.createElement('div'); h.className = 'ag-dia__fecha'; h.textContent = titulo; bloque.appendChild(h);
@@ -537,9 +566,50 @@ if (authed) {
           row.appendChild(chips);
           bloque.appendChild(row);
         }
-        cont.appendChild(bloque);
+        return bloque;
       }
-    } catch { cont.innerHTML = '<p class="muted">No se pudo cargar la agenda.</p>'; }
+
+      function render() {
+        cont!.innerHTML = '';
+        const mon = new Date(baseMon.getTime() + semana * 7 * DIA);
+        const lunISO = isoDe(mon);
+        const domISO = isoDe(new Date(mon.getTime() + 6 * DIA));
+
+        // Encabezado con navegación de semanas.
+        const nav = document.createElement('div'); nav.className = 'ag-nav';
+        const prev = document.createElement('button');
+        prev.className = 'ag-nav__btn'; prev.type = 'button'; prev.textContent = '‹';
+        prev.setAttribute('aria-label', 'Semana anterior');
+        prev.disabled = semana <= minOff;
+        prev.addEventListener('click', () => { if (semana > minOff) { semana--; render(); } });
+
+        const info = document.createElement('div'); info.className = 'ag-nav__info';
+        const rango = document.createElement('span'); rango.className = 'ag-nav__rango';
+        rango.textContent = 'Semana del ' + fmtRango(mon);
+        info.appendChild(rango);
+        if (semana === 0) { const b = document.createElement('span'); b.className = 'ag-nav__badge'; b.textContent = 'Esta semana'; info.appendChild(b); }
+
+        const next = document.createElement('button');
+        next.className = 'ag-nav__btn'; next.type = 'button'; next.textContent = '›';
+        next.setAttribute('aria-label', 'Semana siguiente');
+        next.disabled = semana >= maxOff;
+        next.addEventListener('click', () => { if (semana < maxOff) { semana++; render(); } });
+
+        nav.appendChild(prev); nav.appendChild(info); nav.appendChild(next);
+        cont!.appendChild(nav);
+
+        const dela = fechas.filter((f) => f >= lunISO && f <= domISO);
+        if (!dela.length) {
+          const p = document.createElement('p'); p.className = 'ag-vacia';
+          p.textContent = 'No hay turnos abiertos ni reservas esta semana.';
+          cont!.appendChild(p);
+          return;
+        }
+        for (const fecha of dela) cont!.appendChild(bloqueDia(fecha));
+      }
+
+      render();
+    } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar la agenda.</p>'; }
   })();
 
   // ---------- Borrar reserva (tabla) ----------
@@ -752,6 +822,17 @@ if (authed) {
   .ag-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .ag-chip { font-size: 0.78rem; font-variant-numeric: tabular-nums; padding: 0.25rem 0.6rem; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, var(--white)); color: color-mix(in srgb, var(--c) 62%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 24%, var(--white)); }
   .ag-chip--res { background: var(--c); color: var(--white); border-color: var(--c); font-weight: 600; }
+
+  /* Navegación de semanas de la agenda */
+  .ag-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1.1rem; padding-bottom: 0.9rem; border-bottom: 1px solid var(--sand); }
+  .ag-nav__info { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.4rem 0.6rem; text-align: center; }
+  .ag-nav__rango { font-family: var(--font-serif); font-size: 1.05rem; font-weight: 500; color: var(--ink); }
+  .ag-nav__badge { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--sage-deep); background: color-mix(in srgb, var(--sage) 16%, var(--white)); border: 1px solid color-mix(in srgb, var(--sage) 30%, var(--white)); padding: 0.16rem 0.55rem; border-radius: 999px; }
+  .ag-nav__btn { flex: none; display: grid; place-items: center; width: 34px; height: 34px; font-size: 1.15rem; line-height: 1; font-family: inherit; background: none; border: 1px solid var(--sand); border-radius: 50%; color: var(--ink-soft); cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+  .ag-nav__btn:hover:not(:disabled) { border-color: var(--sage); color: var(--sage-deep); background: color-mix(in srgb, var(--sage) 8%, var(--white)); }
+  .ag-nav__btn:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+  .ag-nav__btn:disabled { opacity: 0.32; cursor: not-allowed; }
+  .ag-vacia { text-align: center; color: var(--ink-soft); font-size: 0.9rem; line-height: 1.6; padding: 0.8rem 0; margin: 0; }
 
   @media (max-width: 560px) { .ag-sede { grid-template-columns: 1fr; gap: 0.2rem; } }
 </style>

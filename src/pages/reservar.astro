@@ -397,12 +397,14 @@ const items = modalidades.map((m) => ({
 
   function waMensajeCompartir() {
     const m = state.modalidad;
-    const l = ['Hola Ceci! Te aviso que reservé por la web:', `• ${m.nombre}`];
+    const l = m.esMembresia
+      ? ['Hola Ceci! Me gustaría sumarme al Club de las Estaciones:', `• ${m.nombre}`]
+      : ['Hola Ceci! Me gustaría agendar este turno por la web:', `• ${m.nombre}`];
     if (state.lugar) l.push(`• Sede: ${state.lugar}`);
     if (!m.esMembresia) l.push(`• Día y hora: ${state.fechaLabel} · ${state.hora} h`);
     l.push(`• A nombre de: ${state.nombre}`);
     if (state.email) l.push(`• Email: ${state.email}`);
-    l.push('¡Nos vemos!');
+    l.push('Queda sujeto a tu confirmación. ¡Gracias!');
     return l.join('\n');
   }
 
@@ -708,37 +710,51 @@ const items = modalidades.map((m) => ({
   }
   .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
   /* Calendario mensual */
-  .cal2 { max-width: 340px; margin: 0 auto 1.6rem; }
+  .cal2 { max-width: 340px; margin: 0 auto 1.8rem; }
   .cal2__head {
-    font-family: var(--font-serif); font-size: 1.1rem; text-transform: capitalize;
-    text-align: center; margin-bottom: 0.7rem; color: var(--ink);
+    font-family: var(--font-serif); font-size: 1.15rem; font-weight: 500; text-transform: capitalize;
+    text-align: center; margin-bottom: 0.9rem; color: var(--ink);
   }
   .cal2__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-  .cal2__wd { text-align: center; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); padding-bottom: 2px; }
+  .cal2__wd { text-align: center; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: 4px; }
   .cal2__cell {
     aspect-ratio: 1; display: grid; place-items: center; font-size: 0.88rem;
-    border-radius: 9px; border: 1px solid transparent; font-family: inherit;
+    font-variant-numeric: tabular-nums;
+    border-radius: var(--radius-sm); border: 1px solid transparent; font-family: inherit;
   }
   .cal2__cell--empty { border: 0; }
-  .cal2__cell--off { color: color-mix(in srgb, var(--ink-soft) 38%, var(--cream)); }
+  /* Día sin turnos: número tenue, sin caja. */
+  .cal2__cell--off { color: color-mix(in srgb, var(--ink-soft) 42%, var(--cream)); }
+  /* Día con turnos libres: tinte salvia, invita a tocar. */
   .cal2__cell--on {
-    background: color-mix(in srgb, var(--sage) 20%, var(--cream));
-    border-color: color-mix(in srgb, var(--sage) 45%, var(--cream));
+    background: color-mix(in srgb, var(--sage) 18%, var(--cream));
+    border-color: color-mix(in srgb, var(--sage) 40%, var(--cream));
     color: var(--sage-deep); cursor: pointer; font-weight: 600;
-    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+    transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
   }
-  .cal2__cell--on:hover { background: color-mix(in srgb, var(--sage) 32%, var(--cream)); transform: translateY(-1px); }
-  .cal2__cell--sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  .cal2__cell--on:hover {
+    background: color-mix(in srgb, var(--sage) 30%, var(--cream));
+    border-color: color-mix(in srgb, var(--sage) 60%, var(--cream));
+    transform: translateY(-1px);
+  }
+  .cal2__cell--on:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+  /* Día elegido: salvia plena, con una elevación sutil. */
+  .cal2__cell--sel {
+    background: var(--sage); color: var(--cream); border-color: var(--sage); font-weight: 600;
+    box-shadow: 0 4px 12px -6px color-mix(in srgb, var(--sage) 70%, transparent);
+  }
+  .cal2__cell--on.cal2__cell--sel:hover { background: var(--sage-deep); transform: none; }
+  /* Día completo (todos los turnos tomados): apagado y calmo, sin rojo de alarma. */
   .cal2__cell--full {
-    background: color-mix(in srgb, #c0392b 11%, var(--cream));
-    border-color: color-mix(in srgb, #c0392b 26%, var(--cream));
-    color: #a23226; text-decoration: line-through;
+    background: color-mix(in srgb, var(--sand) 45%, var(--cream));
+    border-color: color-mix(in srgb, var(--sand) 70%, var(--cream));
+    color: color-mix(in srgb, var(--ink-soft) 75%, var(--cream)); text-decoration: line-through;
   }
-  .cal2__leg { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.78rem; color: var(--ink-soft); margin-top: 0.6rem; justify-content: center; }
-  .cal2__leg span { display: inline-flex; align-items: center; gap: 0.35rem; }
-  .cal2__lg { width: 13px; height: 13px; border-radius: 4px; display: inline-block; }
-  .cal2__lg--on { background: color-mix(in srgb, var(--sage) 20%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sage) 45%, var(--cream)); }
-  .cal2__lg--full { background: color-mix(in srgb, #c0392b 11%, var(--cream)); border: 1px solid color-mix(in srgb, #c0392b 26%, var(--cream)); }
+  .cal2__leg { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.76rem; color: var(--ink-soft); margin-top: 0.8rem; justify-content: center; }
+  .cal2__leg span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .cal2__lg { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .cal2__lg--on { background: color-mix(in srgb, var(--sage) 30%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sage) 50%, var(--cream)); }
+  .cal2__lg--full { background: color-mix(in srgb, var(--sand) 55%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sand) 80%, var(--cream)); }
   /* Horarios agrupados (Mañana / Tarde) */
   .slots-group { margin-bottom: 1rem; }
   .slots-group__t {
