@@ -83,7 +83,7 @@ const links = [
     font-size: 0.66rem;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: var(--sage);
+    color: var(--sage-deep); /* contraste AA sobre crema (sage no llega a 4.5:1) */
     font-weight: 600;
   }
   .nav__links {
@@ -125,9 +125,18 @@ const links = [
   .nav__mobile .btn { margin-top: 0.6rem; }
 
   @media (max-width: 980px) {
-    .nav__links, .nav__cta { display: none; }
+    /* El CTA de conversión sigue visible en la barra (compacto); el hamburger
+       queda solo para los links de secciones. */
+    .nav__links { display: none; }
+    .nav__inner { gap: 0.8rem; }
+    .nav__cta { padding: 0.5rem 1rem; font-size: 0.85rem; margin-left: auto; white-space: nowrap; }
     .nav__toggle { display: flex; }
     .nav__mobile[data-open='true'] { display: flex; }
+  }
+  @media (max-width: 400px) {
+    /* En pantallas muy angostas priorizamos marca + CTA */
+    .nav__sub { display: none; }
+    .nav__cta { padding: 0.45rem 0.85rem; font-size: 0.8rem; }
   }
 </style>
 

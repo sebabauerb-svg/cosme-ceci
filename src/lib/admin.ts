@@ -19,10 +19,10 @@ export function adminConfigurado(): boolean {
 }
 
 function timingEqual(a: string, b: string): boolean {
-  const ba = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ba.length !== bb.length) return false; // distinta longitud → no coincide
-  return crypto.timingSafeEqual(ba, bb);
+  // Comparamos HMACs de largo fijo (32 bytes): sin early-return por longitud,
+  // así ni siquiera se filtra el largo de la contraseña por timing.
+  const h = (s: string) => crypto.createHmac('sha256', 'cg-pw-cmp').update(s).digest();
+  return crypto.timingSafeEqual(h(a), h(b));
 }
 
 /** Compara la contraseña recibida contra ADMIN_PASSWORD en tiempo constante. */

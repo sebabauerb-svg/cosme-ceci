@@ -61,7 +61,8 @@ function sumarMinutos(hora: string, min: number): string {
 
 /**
  * Crea un evento en el calendario de Ceci. Nunca lanza.
- * Devuelve { ok } para que un endpoint de prueba pueda mostrar el error.
+ * Devuelve { ok, eventId } — el eventId se guarda en la reserva para poder
+ * borrar el evento si el turno se cancela.
  */
 export async function crearEventoReserva(opts: {
   resumen: string;
@@ -69,7 +70,7 @@ export async function crearEventoReserva(opts: {
   fecha: string; // YYYY-MM-DD
   hora: string; // HH:MM
   duracionMin: number;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; eventId?: string; error?: string }> {
   const creds = getCreds();
   if (!creds) return { ok: false, error: 'Google Calendar no está configurado' };
   try {
@@ -90,6 +91,31 @@ export async function crearEventoReserva(opts: {
     );
     if (!res.ok) {
       const msg = `Calendar event ${res.status}: ${await res.text()}`;
+      console.error('Google Calendar:', msg);
+      return { ok: false, error: msg };
+    }
+    const d: any = await res.json().catch(() => null);
+    return { ok: true, eventId: d?.id ? String(d.id) : undefined };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('Google Calendar:', msg);
+    return { ok: false, error: msg };
+  }
+}
+
+/** Borra un evento del calendario de Ceci (cancelación de turno). Nunca lanza. */
+export async function borrarEventoReserva(eventId: string): Promise<{ ok: boolean; error?: string }> {
+  const creds = getCreds();
+  if (!creds) return { ok: false, error: 'Google Calendar no está configurado' };
+  try {
+    const token = await accessToken(creds.email, creds.key);
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(creds.calendarId)}/events/${encodeURIComponent(eventId)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+    );
+    // 404/410 = ya no existe: lo damos por borrado.
+    if (!res.ok && res.status !== 404 && res.status !== 410) {
+      const msg = `Calendar delete ${res.status}: ${await res.text()}`;
       console.error('Google Calendar:', msg);
       return { ok: false, error: msg };
     }

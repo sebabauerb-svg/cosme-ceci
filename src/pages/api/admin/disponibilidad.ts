@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureFranjas } from '../../../lib/db';
+import { getSql, ensureFranjas, ensureDuracionMin } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 
 export const prerender = false;
@@ -18,7 +18,7 @@ function nombreSede(slug: string) {
 }
 
 // POST /api/admin/disponibilidad
-// body: { lugar, dias: [{ fecha:'YYYY-MM-DD', horas:['HH:MM', ...] }], llenas: ['YYYY-MM-DD'] }
+// body: { lugar, dias: [{ fecha:'YYYY-MM-DD', horas:['HH:MM', ...], duracionMin? }], llenas: ['YYYY-MM-DD'] }
 // Reemplaza la foto FUTURA de ese lugar: cada día abre exactamente sus horas; los llenos van a bloqueos.
 export const POST: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
@@ -35,24 +35,33 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     return json({ ok: false, error: 'Lugar inválido' }, 400);
   }
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  // "Hoy" en hora de Uruguay (UTC-3): el runtime corre en UTC.
+  const hoy = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   const esFecha = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= hoy;
-  const esHora = (h: string) => /^\d{2}:\d{2}$/.test(h);
+  const esHora = (h: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(h);
 
   // Días llenos (bloqueos) — tienen prioridad sobre la disponibilidad
   const llenasOk: string[] = (Array.isArray(body?.llenas) ? body.llenas : []).filter(esFecha);
   const llenasSet = new Set(llenasOk);
 
-  // Días disponibles, cada uno con su propio set de horas
+  // Duración de la consulta: la define Ceci al abrir cada rango (5–240 min).
+  const esDuracion = (v: unknown) => Number.isInteger(v) && (v as number) >= 5 && (v as number) <= 240;
+
+  // Días disponibles, cada uno con su propio set de horas y duración
   const diasIn: any[] = Array.isArray(body?.dias) ? body.dias : [];
   const diasOk = diasIn
     .filter((d) => d && esFecha(d.fecha) && Array.isArray(d.horas) && !llenasSet.has(d.fecha))
-    .map((d) => ({ fecha: d.fecha as string, horas: [...new Set((d.horas as any[]).filter((h) => esHora(h)))] as string[] }))
+    .map((d) => ({
+      fecha: d.fecha as string,
+      horas: [...new Set((d.horas as any[]).filter((h) => esHora(h)))] as string[],
+      duracionMin: esDuracion(d.duracionMin) ? (d.duracionMin as number) : 30,
+    }))
     .filter((d) => d.horas.length > 0);
 
   try {
     const sql = getSql();
     await ensureFranjas(sql);
+    await ensureDuracionMin(sql);
 
     let sedeId: string | null = null;
     const nombre = nombreSede(lugar);
@@ -61,31 +70,38 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       sedeId = r[0]?.id ? String(r[0].id) : null;
     }
 
-    // Borrar la foto futura de ese lugar (no tocamos el pasado)
+    // Reemplazo de la foto futura de ese lugar en UNA transacción: si algo
+    // falla a mitad de camino no queda la agenda borrada sin sus reemplazos.
+    const queries: any[] = [];
     if (sedeId) {
-      await sql`delete from franjas where sede_id = ${sedeId} and fecha >= ${hoy}`;
-      await sql`delete from bloqueos where sede_id = ${sedeId} and fecha >= ${hoy}`;
+      queries.push(sql`delete from franjas where sede_id = ${sedeId} and fecha >= ${hoy}`);
+      queries.push(sql`delete from bloqueos where sede_id = ${sedeId} and fecha >= ${hoy}`);
     } else {
-      await sql`delete from franjas where sede_id is null and fecha >= ${hoy}`;
-      await sql`delete from bloqueos where sede_id is null and fecha >= ${hoy}`;
+      queries.push(sql`delete from franjas where sede_id is null and fecha >= ${hoy}`);
+      queries.push(sql`delete from bloqueos where sede_id is null and fecha >= ${hoy}`);
     }
 
-    // Insertar turnos: cada día abre exactamente sus horas
+    // Insertar turnos: cada día abre exactamente sus horas, con la duración que Ceci eligió
     let turnos = 0;
     for (const d of diasOk) {
       for (const h of d.horas) {
-        await sql`insert into franjas (sede_id, fecha, hora) values (${sedeId}, ${d.fecha}, ${h})`;
+        queries.push(
+          sql`insert into franjas (sede_id, fecha, hora, duracion_min) values (${sedeId}, ${d.fecha}, ${h}, ${d.duracionMin})`
+        );
         turnos++;
       }
     }
 
     // Días marcados "llenos" → bloqueos
     for (const f of llenasOk) {
-      await sql`insert into bloqueos (sede_id, fecha, motivo) values (${sedeId}, ${f}, 'lleno')`;
+      queries.push(sql`insert into bloqueos (sede_id, fecha, motivo) values (${sedeId}, ${f}, 'lleno')`);
     }
+
+    await sql.transaction(queries);
 
     return json({ ok: true, lugar, fechas: diasOk.length, turnos, llenas: llenasOk.length });
   } catch (e) {
-    return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
+    console.error('POST /api/admin/disponibilidad:', e instanceof Error ? e.message : e);
+    return json({ ok: false, error: 'No se pudo guardar la disponibilidad. Probá de nuevo.' }, 500);
   }
 };

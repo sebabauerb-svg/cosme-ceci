@@ -40,7 +40,11 @@ export const GET: APIRoute = async ({ url }) => {
       sedeKey = r[0]?.id ? String(r[0].id) : 'online';
     }
 
-    const hoy = new Date().toISOString().slice(0, 10);
+    // "Hoy" y "ahora" en hora de Uruguay (UTC-3): el runtime corre en UTC y sin
+    // el offset los slots del día desaparecen 3 horas antes de medianoche.
+    const ahoraUYiso = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
+    const hoy = ahoraUYiso.slice(0, 10);
+    const ahoraUY = ahoraUYiso.slice(11, 16);
 
     // Franjas configuradas por Ceci (desde hoy en adelante)
     const franjas = await sql`
@@ -61,10 +65,11 @@ export const GET: APIRoute = async ({ url }) => {
     `;
     const tomadas = new Set((ocupadas as any[]).map((o) => `${o.fecha} ${o.hora}`));
 
-    // Fechas bloqueadas (de esta sede o globales)
+    // Fechas bloqueadas de esta sede. sede_id null = sede Online (misma convención
+    // que franjas y reservas); un bloqueo de Online no debe tapar Montevideo/San José.
     const blo = await sql`
       select fecha::text as fecha from bloqueos
-      where fecha >= ${hoy} and (sede_id is null or coalesce(sede_id::text, '') = ${sedeKey})
+      where fecha >= ${hoy} and coalesce(sede_id::text, 'online') = ${sedeKey}
     `;
     const bloqueadas = new Set((blo as any[]).map((b) => b.fecha));
 
@@ -76,6 +81,7 @@ export const GET: APIRoute = async ({ url }) => {
     for (const f of franjas as any[]) {
       if (bloqueadas.has(f.fecha)) continue;
       if (tomadas.has(`${f.fecha} ${f.hora}`)) continue;
+      if (f.fecha === hoy && f.hora <= ahoraUY) continue; // hora de hoy ya pasada
       const arr = porFecha.get(f.fecha) ?? [];
       arr.push(f.hora);
       porFecha.set(f.fecha, arr);
@@ -93,6 +99,7 @@ export const GET: APIRoute = async ({ url }) => {
 
     return json({ ok: true, sede, slots, llenas });
   } catch (e) {
-    return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
+    console.error('GET /api/disponibilidad:', e instanceof Error ? e.message : e);
+    return json({ ok: false, error: 'No pudimos cargar la disponibilidad.' }, 500);
   }
 };

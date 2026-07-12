@@ -32,3 +32,20 @@ export async function ensureFranjas(sql: any) {
     )
   `;
 }
+
+/** Columna para el id del evento de Google Calendar (idempotente). Permite
+ *  borrar el evento del calendario si el turno se cancela. */
+export async function ensureGoogleEventId(sql: any) {
+  await sql`alter table reservas add column if not exists google_event_id text`;
+}
+
+/**
+ * Duración de la consulta por turno (idempotente). Ceci define la duración al
+ * abrir cada rango horario (ej. "30 min"); se guarda en franjas y se copia a
+ * la reserva al momento de reservar, para que el evento de Calendar quede del
+ * tamaño correcto sin depender de un valor fijo por sede.
+ */
+export async function ensureDuracionMin(sql: any) {
+  await sql`alter table franjas add column if not exists duracion_min integer not null default 30`;
+  await sql`alter table reservas add column if not exists duracion_min integer`;
+}
