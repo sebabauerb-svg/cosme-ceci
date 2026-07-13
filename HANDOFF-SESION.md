@@ -1,87 +1,124 @@
-# Handoff — estado del proyecto (12/7/2026)
+# Handoff — estado del proyecto (actualizado 12/7/2026 · sesión Fase 2)
 
 Contexto para continuar en una sesión nueva. El sitio de **Cecilia Gutiérrez ·
 Cosmetología Médica** (Astro 5 SSR en Vercel, dominio `cgcosmetologiamedica.com`)
 está **en producción y funcionando**: reserva pública, cobro con MercadoPago,
 agenda que crea eventos en Google Calendar, y panel de administración.
 
+---
+
+## 🎯 Prioridades para la PRÓXIMA sesión (empezar por acá)
+
+**Antes de tocar nada: confirmá en qué rama estás y el estado del repo.**
+
+1. **Pulido visual de `/reservar` (rápido y visible).**
+   En una revisión quedaron botones/elementos mal centrados o que "se ven raros"
+   pero funcionan. Foco:
+   - Paso 4 (confirmar): "Pagar ahora con MercadoPago" / separador "o" /
+     "Reservar y coordinar con Ceci" + sus hints.
+   - Paso 5 (éxito): "Pagar mi reserva", "Avisar a Ceci por WhatsApp" y
+     "Hacer otra reserva" quedan con anchos/centrado **inconsistentes**. Pista:
+     `#pago-link` usa la clase `.pay` (full-width, centrado) y los otros dos no
+     → unificar el tratamiento de esos botones.
+   - Alinear/centrar y dejar ancho consistente. **No romper la funcionalidad (ya anda).**
+
+2. **Seguridad — mergear el upgrade a Astro 7.**
+   Rama `chore/upgrade-astro-seguridad` (cierra 4/5 vulnerabilidades), **SIN mergear**.
+   ⚠️ El build local **NO corre en esta PC**: Windows App Control (Smart App Control)
+   bloquea el compilador **nativo** de Astro 7 (`ERR_DLOPEN_FAILED`). Verificar en un
+   **preview de Vercel** que buildea y que `/reservar` y `/admin` andan, y recién ahí
+   mergear. Rebasar contra el `main` actual (ya tiene Fase 2; no chocan — deps vs código).
+   Quedan 3 avisos de `path-to-regexp` (build-time, sin fix upstream, ya estaban en Astro 5).
+
+3. **Backlog a explorar (features nuevas).**
+   a) Al confirmar en admin, avisarle a la **paciente** por un canal directo tipo
+      **WhatsApp** (hoy ya se manda **email** si dejó email, vía
+      `notificarReservaConfirmada` en `reserva-confirmar.ts`).
+   b) **Recordatorios automáticos** de turnos (ej. 24 h antes) → cron de Vercel +
+      canal de envío. Evaluar WhatsApp Business API.
+   Copy de cara al paciente: pasar por `skincare-brand-voice` + guardrails legales.
+
+---
+
+## ✅ Novedades de esta sesión (ya en PRODUCCIÓN, mergeadas a `main`)
+
+- **Fase 1:** la "Agenda de próximas semanas" del admin ahora se navega **semana por
+  semana** (flechas ‹ ›, arranca en la actual/próxima con datos). Mensaje opcional de
+  WhatsApp en `/reservar` pasó a "me gustaría agendar… sujeto a confirmación". Calendario
+  del cliente: se quitó el rojo de alarma de días llenos (paleta serena) + radios tokenizados.
+- **Fase 2 — reserva SIN pago:** en `/reservar`, paso de confirmar con dos caminos:
+  "Pagar ahora con MercadoPago" y "Reservar y coordinar con Ceci" (crea reserva
+  `a_confirmar`, **retiene el cupo 2 h**, tope por sede Mvd 3 / SJ 4 / Online 3).
+  Mensajes WhatsApp: "sujeto a confirmación" al coordinar; "PAGO CONFIRMADO vía
+  MercadoPago" al volver del pago (detalle en `sessionStorage`).
+- **Fase 2 — panel admin "Reservas a confirmar":** lista las `a_confirmar` con cuenta
+  regresiva del hold; por reserva: monto + "ya pagó" + **Confirmar** / **Rechazar**.
+  Confirmar deja el turno firme (= MercadoPago) + evento en Calendar. La tabla de
+  Reservas tiene columna **Pago** con toggle cobrado/pendiente + monto (seguimiento).
+- **Endpoints nuevos:** `/api/admin/por-confirmar`, `reserva-confirmar`, `reserva-rechazar`,
+  `reserva-pago`. Migración **0005** (estado `a_confirmar`, columnas `monto_cobrado`/`pagado`,
+  índice de cupo recreado) — se **auto-aplica** vía `ensureConfirmacion()` en la primera request.
+- **Fix importante:** `.btn { display:inline-flex }` anulaba el atributo `hidden`
+  (botón "Pagar mi reserva" quedaba visible en el camino coordinar). Se agregó
+  `[hidden] { display:none !important }` en `global.css`.
+
+## Ramas abiertas
+
+- `chore/upgrade-astro-seguridad` — Astro 7 (ver prioridad 2). **Sin mergear.**
+- `feat/reserva-sin-pago` — Fase 2. **Ya mergeada a main** (se puede borrar).
+
 ## Qué está funcionando (validado en producción)
 
-- **Reserva pública** (`/reservar`): elegir modalidad → sede → fecha/hora → datos → pago.
-- **MercadoPago** (Checkout Pro, credenciales de **PRODUCCIÓN** reales de la cuenta de
-  Ceci). Validado end-to-end con un pago real de $1: la reserva se confirma sola.
-  - ⚠️ El webhook es **fail-closed en producción**: sin `MP_WEBHOOK_SECRET` los pagos
-    aprobados NO confirman la reserva. Está cargado y funcionando.
-- **Google Calendar**: al confirmarse un pago se crea el evento en el calendario
-  `cosmetologiamedicacg@gmail.com`. Requirió compartir ese calendario con la cuenta de
-  servicio `reservascecicosme@cecicosme.iam.gserviceaccount.com` (permiso "Hacer cambios
-  en los eventos"). Ya hecho.
-- **Emails** (Resend): aviso de reserva y de confirmación.
-- **Panel admin** (`/admin`): gestión de disponibilidad + reservas.
+- **Reserva pública** (`/reservar`): modalidad → sede → fecha/hora → datos → pagar/coordinar.
+- **MercadoPago** (Checkout Pro, credenciales de **PRODUCCIÓN** reales). Webhook
+  **fail-closed**: sin `MP_WEBHOOK_SECRET` los pagos aprobados NO confirman (está cargado).
+- **Google Calendar**: al confirmar (pago o Ceci desde admin) se crea el evento en
+  `cosmetologiamedicacg@gmail.com` (compartido con la service account).
+- **Emails** (Resend): aviso de reserva, de "a confirmar" y de confirmación.
+- **Panel admin** (`/admin`): disponibilidad + reservas + reservas a confirmar.
 
 ## Arquitectura de la agenda (modelo POR FECHA)
 
-Tras dos rediseños (ver historia abajo), el modelo final es **por fecha**:
-
 - Tabla **`franjas`** (`sede_id`, `fecha`, `hora`, `duracion_min`): cada fila = un turno
   disponible. `sede_id NULL` = Online.
-- Reservas en tabla **`reservas`**. Reserva manual = `modalidad='manual'`, `telefono='—'`,
-  `estado='confirmada'` (ocupa el cupo).
+- Tabla **`reservas`**: estados `pendiente_pago` (pago 30 min), `a_confirmar` (sin pago,
+  hold 2 h), `confirmada`, `cancelada`, `expirada`. Reserva manual = `modalidad='manual'`.
 - **`src/lib/agenda.ts`**: helpers (`ahoraUY`, `labelFecha`, `sedeKeyDeSlug`,
-  `duracionDeTurno`). Zona horaria Uruguay = `new Date(Date.now() - 3*3600*1000)`.
-- **Endpoints admin**: `/api/admin/horario` (GET/POST franjas por sede),
-  `/api/admin/reserva-manual` (POST/DELETE), `/api/admin/resumen` (agenda consolidada),
-  `/api/admin/reserva` (DELETE, borra reserva + evento Calendar).
-- **Público**: `/api/disponibilidad` (lee franjas), `/api/reservar` (valida contra franjas),
-  `/api/mp/webhook`, `/api/reserva-estado`.
-- Tablas sin uso que quedaron en la DB: `horario_semanal` (rediseño descartado). No molesta.
-
-## Panel admin — cómo funciona (`src/pages/admin.astro`)
-
-- Pestañas de sede (Montevideo/San José/Online), una a la vez.
-- Selector de franja (desde/hasta/duración, **formato 24h con selects**).
-- Calendario mensual navegable: tocar días para abrirlos; atajo "Repetir cada `<día>` por
-  N semanas" (toggle: segundo click deshace).
-- Panel del día: abrir/cerrar día, marcar turno como reservado (solo nombre), liberar.
-- "Agenda de las próximas semanas": vista consolidada por día, colores por sede
-  (Montevideo=salvia, Online=azul `#6d8299`, San José=arcilla).
+  `duracionDeTurno`). Hora Uruguay = `new Date(Date.now() - 3*3600*1000)`.
+- **`src/lib/db.ts`**: funciones `ensure*` idempotentes que auto-aplican el esquema en
+  runtime (no hay tool de migración; los `.sql` en `supabase/migrations` son referencia).
 
 ### ⚠️ Trampa de Astro ya resuelta (no reintroducir)
-El calendario, la agenda y los turnos se crean por **JavaScript** (`createElement`). Un
-`<style>` scoped de Astro **NO** aplica a elementos creados dinámicamente. Por eso sus
-estilos van en un **`<style is:global>`** al final del archivo. Si agregás estilos para
-elementos que crea el JS, ponelos en ese bloque global, no en el scoped.
+El calendario, la agenda, los turnos y las "reservas a confirmar" se crean por
+**JavaScript** (`createElement`). Un `<style>` scoped de Astro **NO** aplica a elementos
+creados dinámicamente → sus estilos van en el **`<style is:global>`** al final del archivo.
 
-## Pendientes / próximos pasos
+## Flujo de trabajo / cosas a saber
 
-1. **Agenda como grilla semanal**: hoy es una lista vertical por día con chips coloreados.
-   Sebas la quiere más "tipo calendario semanal" (grilla de 7 columnas con las horas). Es
-   un refinamiento de UI de la sección `#agenda` en `admin.astro` + su CSS global.
-2. **Limpiar endpoints de diagnóstico temporales** (se crearon para depurar y ya no hacen
-   falta): `src/pages/api/admin/diag-mp.ts` (entero) y el bloque de diagnóstico extra en
-   `src/pages/api/admin/test-calendar.ts` + `diagCalendario()` en `src/lib/calendar.ts`.
-3. **Limpieza CSS**: en `admin.astro` las reglas de elementos-JS quedaron duplicadas (una
-   vez en el `<style>` scoped, otra en el `<style is:global>`). Quitar las del scoped.
-4. **Testimonios reales**: siguen siendo placeholders (hard gate legal antes de traer
-   tráfico). Ver `PENDIENTES-EQUIPO.md`.
-5. **Assets**: `og-image.jpg` y `apple-touch-icon.png` pendientes (Bloque 4 de PENDIENTES).
-
-## Variables de entorno (Vercel · Production)
-
-Todas cargadas y funcionando: `DATABASE_URL` (Neon), `ADMIN_PASSWORD`, `MP_ACCESS_TOKEN`
-(APP_USR- producción), `MP_WEBHOOK_SECRET`, `PUBLIC_SITE_URL`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`,
-`GOOGLE_PRIVATE_KEY`, `GOOGLE_CALENDAR_ID`, `RESEND_API_KEY`, `RESEND_FROM`, `CECI_NOTIF_EMAIL`.
-
-## Flujo de trabajo
-
-- Deploy = push a `main` (Vercel deploya solo, ~40-60s). `gh` no está instalado; se usa la
-  API pública de GitHub para chequear el estado del deploy.
-- El preview de Vercel está protegido por Vercel Authentication (no accesible sin login),
-  así que se prueba directo en producción.
+- **Deploy = push a `main`** (Vercel deploya solo, ~40-60s).
+- **`gh` NO está instalado**: no se pueden abrir PRs por CLI. Se usa la API pública de
+  GitHub, o se abre el PR a mano con el link `.../pull/new/<rama>` (el bot de Vercel
+  comenta la URL del preview).
+- **El preview de Vercel pide login de Vercel** (Vercel Authentication): se prueba
+  logueado en el navegador, o directo en producción.
 - La estética se ve recién con **Ctrl+Shift+R** (el CSS se cachea).
+- **Windows App Control** bloquea el compilador nativo de Astro 7 → el build/dev local
+  no corre en Astro 7 en esta PC (relevante para la prioridad 2).
 
-## Historia de los rediseños del admin (para no repetir)
+## Variables de entorno (Vercel · Production) — todas cargadas
 
-1. Franjas por fecha con checkboxes hora-por-hora → confuso.
-2. Horario semanal recurrente → no servía (San José es por fechas puntuales).
-3. **Por fecha con calendario navegable + reserva manual** (actual y aprobado).
+`DATABASE_URL` (Neon), `ADMIN_PASSWORD`, `MP_ACCESS_TOKEN` (APP_USR- producción),
+`MP_WEBHOOK_SECRET`, `PUBLIC_SITE_URL`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`,
+`GOOGLE_CALENDAR_ID`, `RESEND_API_KEY`, `RESEND_FROM`, `CECI_NOTIF_EMAIL`.
+
+## Backlog técnico previo (sigue vigente)
+
+1. **Agenda como grilla semanal**: hoy es lista vertical por día con chips (ya con
+   navegación por semanas). Sebas la quiere más "tipo calendario semanal" (grilla de 7
+   columnas). Refinamiento de `#agenda` en `admin.astro` + su CSS global.
+2. **Limpiar endpoints de diagnóstico**: `src/pages/api/admin/diag-mp.ts` (entero) y el
+   bloque extra en `test-calendar.ts` + `diagCalendario()` en `src/lib/calendar.ts`.
+3. **Limpieza CSS admin**: reglas de elementos-JS duplicadas (scoped + is:global). Quitar
+   las del scoped.
+4. **Testimonios reales**: siguen placeholders (hard gate legal antes de traer tráfico).
+5. **Assets**: `og-image.jpg` y `apple-touch-icon.png` pendientes.
