@@ -135,6 +135,10 @@ img { max-width: 100%; display: block; }
 }
 
 /* Botones */
+/* El atributo `hidden` debe ganar siempre, incluso sobre el display de .btn/.pay
+   (si no, un botón con hidden=true seguía visible por display:inline-flex). */
+[hidden] { display: none !important; }
+
 .btn {
   display: inline-flex;
   align-items: center;

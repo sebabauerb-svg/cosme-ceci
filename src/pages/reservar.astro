@@ -107,14 +107,14 @@ const items = modalidades.map((m) => ({
         <div class="resumen" id="resumen"></div>
         <ul class="trust">
           <li>Pagando con MercadoPago tu turno queda confirmado al instante</li>
-          <li>O reservás y coordinás con Ceci: te guardamos el cupo 2 h</li>
+          <li>O reservás y Ceci confirma tu turno (lo coordinás por WhatsApp)</li>
           <li>¿Necesitás reprogramar? <a href={waReprogramar} target="_blank" rel="noopener">Escribinos por WhatsApp</a> y lo vemos sin problema</li>
         </ul>
         <button class="btn btn--primary pay" id="confirmar">Pagar ahora con MercadoPago</button>
         <p class="step__hint center" id="hint-mp">Pago seguro con MercadoPago. Tu turno queda confirmado al instante.</p>
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
         <button class="btn btn--ghost pay" id="coordinar">Reservar y coordinar con Ceci</button>
-        <p class="step__hint center" id="hint-coord">Te guardamos el cupo 2 h y Ceci confirma tu turno. Le avisás por WhatsApp.</p>
+        <p class="step__hint center" id="hint-coord">Ceci confirma tu turno y te avisa. Podés escribirle por WhatsApp.</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -400,7 +400,7 @@ const items = modalidades.map((m) => ({
     const coordHint = $('#hint-coord');
     if (coordHint) coordHint.textContent = esMemb
       ? 'Registramos tu interés y Ceci coordina con vos. Le avisás por WhatsApp.'
-      : 'Te guardamos el cupo 2 h y Ceci confirma tu turno. Le avisás por WhatsApp.';
+      : 'Ceci confirma tu turno y te avisa. Podés escribirle por WhatsApp.';
   }
 
   function waMensajeCompartir() {
@@ -529,11 +529,11 @@ const items = modalidades.map((m) => ({
     $('#pago-link').hidden = true;
     $('#done-text').textContent = m.esMembresia
       ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-      : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó pre-reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
+      : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó agendada para el ${state.fechaLabel} a las ${state.hora} h, a confirmar por Ceci.`;
     const hint = $('#done-hint');
     if (hint) hint.textContent = m.esMembresia
       ? 'Ceci coordina con vos a la brevedad. Avisale por WhatsApp con el botón de abajo.'
-      : 'Te guardamos el cupo 2 horas. Ceci confirma tu turno a la brevedad; avisale por WhatsApp con el botón de abajo.';
+      : 'Ceci confirma tu turno a la brevedad. Podés avisarle por WhatsApp con el botón de abajo.';
     goTo(5);
   });
 
