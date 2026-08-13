@@ -45,8 +45,9 @@ export const CONCEPTO_PREFIJO = 'Seña';
  * que se muestra ANTES de pagar, no recién en la confirmación.
  */
 export const POLITICA_CANCELACION =
-  'Los cambios o cancelaciones se hacen con al menos 24 horas de anticipación. ' +
-  'Pasado ese plazo, o si no podés asistir, la seña no se reintegra.';
+  'Para garantizar una atención organizada y puntual, te recordamos que los cambios o ' +
+  'cancelaciones deben realizarse con al menos 24 horas de anticipación. De lo contrario, ' +
+  'o en caso de inasistencia, el turno no será reembolsable.';
 
 /** ¿Hay datos bancarios cargados como para mostrarlos en la web? */
 export function hayDatosTransferencia(): boolean {

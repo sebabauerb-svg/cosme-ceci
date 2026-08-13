@@ -13,8 +13,8 @@
  */
 
 export const direcciones: Record<string, string> = {
-  'San José': 'Treinta y Tres esquina Larrañaga (Escritorio Duca & Aldaz)',
-  Montevideo: 'Maldonado 1321/402',
+  'San José': 'Treinta y Tres esquina Larrañaga Escritorio Duca & Aldaz',
+  Montevideo: 'Maldonado 1321 apto 402',
 };
 
 /** Dirección de la sede, o null si no la tenemos cargada. */
@@ -23,9 +23,12 @@ export function direccionSede(sede?: string | null): string | null {
   return direcciones[sede] || null;
 }
 
-/** 'San José — Treinta y Tres esquina…', o solo el nombre si no hay dirección. */
+/**
+ * 'Montevideo Maldonado 1321 apto 402', o solo el nombre si no hay dirección.
+ * Sin guión ni coma entre sede y calle: así lo escribe Ceci en sus mensajes.
+ */
 export function sedeConDireccion(sede?: string | null): string | null {
   if (!sede) return null;
   const dir = direccionSede(sede);
-  return dir ? `${sede} — ${dir}` : sede;
+  return dir ? `${sede} ${dir}` : sede;
 }

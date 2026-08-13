@@ -43,23 +43,24 @@ export const PLANTILLAS: Array<{ id: PlantillaId; nombre: string; ayuda: string 
 
 const $ = (n: number) => '$' + n.toLocaleString('es-UY');
 
-/** Solo el primer nombre: en un WhatsApp, "Hola María Fernanda" suena a formulario. */
-function primerNombre(nombre: string): string {
-  return String(nombre || '').trim().split(/\s+/)[0] || '';
+/** 'miércoles 19 de agosto' → 'Miércoles 19 de agosto' */
+function capitalizar(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 /**
  * Qué, cuándo y dónde: el bloque que va igual en casi todas las plantillas.
- * El servicio va en su propia línea y NO dentro de la frase, para no tener que
- * bajarlo a minúscula: "Skincare Inteligente" es nombre de marca.
+ * Va como lista con viñetas, igual que lo escribe Ceci. El servicio ocupa su
+ * propia línea y no entra en la frase: así no hay que bajarlo a minúscula y
+ * "Skincare Inteligente" conserva las mayúsculas de marca.
  */
 function bloqueCuando(d: DatosMensaje): string[] {
   const l: string[] = [];
-  if (d.modalidad) l.push(`📋 Servicio: ${d.modalidad}`);
-  if (d.fechaLarga) l.push(`🗓️ Día: ${d.fechaLarga}`);
-  if (d.hora) l.push(`⏰ Hora: ${d.hora}`);
-  const lugar = d.sede ? sedeConDireccion(d.sede) : 'Videollamada (te paso el link antes de la consulta)';
-  if (lugar) l.push(`📍 Lugar: ${lugar}`);
+  if (d.modalidad) l.push(`* ${d.modalidad}`);
+  if (d.fechaLarga) l.push(`* 🗓️ Día: ${capitalizar(d.fechaLarga)}`);
+  if (d.hora) l.push(`* ⏰ Hora: ${d.hora} h`);
+  const lugar = d.sede ? sedeConDireccion(d.sede) : 'Videollamada (te enviamos el link antes de la consulta)';
+  if (lugar) l.push(`* 📍 Lugar: ${lugar}`);
   return l;
 }
 
@@ -85,74 +86,71 @@ function armar(lineas: Array<string | null>): string {
 }
 
 export function generarMensaje(plantilla: PlantillaId, d: DatosMensaje): string {
-  const nom = primerNombre(d.nombre);
+  // Nombre tal como está cargado: Ceci puede corregirlo desde el panel, así que
+  // no lo recortamos (un "María Cecilia" se perdería quedándonos con la primera
+  // palabra). El saludo lleva coma, como lo escribe ella.
+  const nom = String(d.nombre || '').trim();
   const cuando = bloqueCuando(d);
-  const saldo = d.saldo != null && d.saldo > 0 ? d.saldo : null;
+  const cierre = '¡Quedamos a disposición por cualquier duda y nos vemos pronto! ✨';
 
   if (plantilla === 'confirmacion') {
     return armar([
-      `¡Hola ${nom}! ¿Cómo estás?`,
-      'Te confirmo tu turno:',
+      `¡Hola, ${nom}!`,
+      'Te confirmamos los detalles de tu turno agendado a través de la web:',
       null,
       ...cuando,
       null,
-      d.senaPagada != null
-        ? `Ya me llegó tu seña de ${$(d.senaPagada)}, así que tu lugar en la agenda queda reservado. ✨`
-        : 'Tu lugar en la agenda queda reservado. ✨',
-      saldo ? `El saldo de ${$(saldo)} lo abonás el día de la consulta.` : null,
-      null,
       POLITICA_CANCELACION,
       null,
-      '¡Nos vemos! Cualquier duda quedo a las órdenes.',
+      cierre,
     ]);
   }
 
   if (plantilla === 'transferencia') {
-    const banco = bloqueBanco(d.nombre);
     return armar([
-      `¡Hola ${nom}! ¿Cómo estás?`,
-      'Te escribo para coordinar los detalles de tu consulta:',
+      `¡Hola, ${nom}!`,
+      'Te escribimos para coordinar los detalles de tu consulta:',
       null,
       ...cuando,
       null,
-      `Para dejar tu turno confirmado y asegurar la disponibilidad del espacio, te pido la seña de ${d.sena != null ? $(d.sena) : 'la seña'}.`,
-      banco.length ? null : null,
-      ...banco,
+      `Para dejar tu turno formalmente confirmado y asegurar la disponibilidad del espacio, te pedimos el pago de la seña previa de ${d.sena != null ? $(d.sena) : 'la seña'}.`,
       null,
-      'Cuando la hagas, mandame el comprobante y te confirmo el lugar en la agenda.',
+      'Podés realizar la transferencia a los siguientes datos:',
+      ...bloqueBanco(d.nombre),
+      null,
+      'Por favor, envianos el comprobante de pago una vez realizado para confirmar tu lugar en la agenda.',
       null,
       POLITICA_CANCELACION,
       null,
-      '¡Quedo a disposición por cualquier duda! ✨',
+      cierre,
     ]);
   }
 
   if (plantilla === 'recordatorio') {
     return armar([
-      `¡Hola ${nom}! ¿Cómo estás?`,
-      'Te paso un recordatorio de tu consulta:',
+      `¡Hola, ${nom}!`,
+      'Te recordamos tu turno:',
       null,
       ...cuando,
       null,
-      saldo ? `Te queda un saldo de ${$(saldo)} para abonar en la consulta.` : null,
-      'Si necesitás reprogramar, avisame lo antes posible así libero el horario.',
+      'Si necesitás reprogramar, avisanos lo antes posible así liberamos el horario.',
       null,
-      '¡Nos vemos! ✨',
+      cierre,
     ]);
   }
 
   // reprogramar
   return armar([
-    `¡Hola ${nom}! ¿Cómo estás?`,
+    `¡Hola, ${nom}!`,
     d.fechaLarga
-      ? `Necesito mover tu turno del ${d.fechaLarga}${d.hora ? ` a las ${d.hora}` : ''}. Disculpame el cambio.`
-      : 'Necesito mover tu turno. Disculpame el cambio.',
+      ? `Necesitamos mover tu turno del ${capitalizar(d.fechaLarga)}${d.hora ? ` a las ${d.hora} h` : ''}. Disculpanos el cambio.`
+      : 'Necesitamos mover tu turno. Disculpanos el cambio.',
     null,
     '¿Alguno de estos horarios te sirve?',
-    '• ',
-    '• ',
+    '* ',
+    '* ',
     null,
-    'Si preferís, decime qué días te quedan cómodos y lo acomodamos.',
+    'Si preferís, decinos qué días te quedan cómodos y lo acomodamos.',
     d.senaPagada != null ? 'Tu seña queda vigente para el nuevo turno.' : null,
     null,
     '¡Gracias por la paciencia! ✨',
