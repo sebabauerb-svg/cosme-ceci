@@ -1,6 +1,18 @@
 # Handoff — estado del proyecto (actualizado 12/8/2026 · sesión seña + mobile)
 
-## 🔴 Lo primero de la próxima sesión
+## 🔴 Lo primero de la próxima sesión (actualizado 12/8 · noche)
+
+1. **Cargar `CRON_SECRET` en Vercel (Production)** — hasta que exista, el cron de
+   recordatorios NO manda nada (fail-closed a propósito).
+2. **Probar la rama `feat/panel-gestion`** (`e163ed1`) con datos reales: es la
+   única parte sin verificar end-to-end, porque el panel necesita base de datos
+   y login que no hay en local.
+3. **Astro 7 YA ESTÁ EN PRODUCCIÓN** (`2da1987`). Las alertas de GitHub bajaron
+   de 28 a 1. El build de Astro 7 **ahora corre en la PC de Sebas**: el bloqueo
+   de Windows App Control desapareció, así que ya no hace falta el preview para
+   verificarlo.
+
+## Lo anterior
 
 **Verificar en vivo lo que no se pudo probar sin producción** (el flujo de seña
 se mergeó a `main` el 12/8/2026, commit `08c273a`):
