@@ -2,14 +2,14 @@
 
 ## 🔴 Lo primero de la próxima sesión
 
-**Decidir el deploy de la rama `claude/project-improvements-57cc24`** (commit
-`3e4ce64`): cambia el cobro de la web de $1.800 a una **seña de $700**. Es un
-cambio de plata en un sitio con MercadoPago en producción → no se mergeó sin
-visto bueno. Los datos de Ceci ya están cargados y validados por Sebas.
+**Verificar en vivo lo que no se pudo probar sin producción** (el flujo de seña
+se mergeó a `main` el 12/8/2026, commit `08c273a`):
 
-Después del deploy, lo que no se pudo verificar antes: **los mails reales**
-(necesitan una reserva de verdad con Resend) y el **checkout de MercadoPago
-cobrando $700** (las credenciales son de producción: probarlo cobra en serio).
+1. **Una reserva real de punta a punta** por el camino de transferencia, para
+   ver los mails que salen (Resend) y el WhatsApp de confirmación del panel.
+2. **Un pago de MercadoPago**: que el checkout cobre **$700** y que el webhook
+   confirme el turno. Ojo: credenciales de producción, el pago es real.
+3. Si algo sale distinto, mirar los logs de la función en Vercel.
 
 ## ✅ Novedades de esta sesión (12/8/2026)
 
