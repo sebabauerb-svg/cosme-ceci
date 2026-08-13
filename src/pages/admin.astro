@@ -649,6 +649,45 @@ if (authed) {
     const vaciarSiCorresponde = () => {
       if (!cont.querySelector('.pc-item')) cont.innerHTML = '<p class="ag-vacia">No hay reservas a confirmar por ahora.</p>';
     };
+    /** Teléfono uruguayo → link de WhatsApp (098… y 59898… llegan al mismo lado). */
+    const waHref = (tel: string, msg: string) =>
+      `https://wa.me/598${String(tel).replace(/\D/g, '').replace(/^(598|0)/, '')}?text=${encodeURIComponent(msg)}`;
+
+    /**
+     * Al confirmar, el turno ya salió por mail automático. Acá le damos a Ceci el
+     * segundo canal que pidió: un WhatsApp a la paciente con el mensaje escrito.
+     */
+    function mostrarConfirmada(el: HTMLElement, r: any) {
+      const cuando = r.fechaLabel ? `${r.fechaLabel}${r.hora ? ' · ' + r.hora + ' h' : ''}` : fmtCuando(r.fecha, r.hora);
+      el.classList.add('pc-item--ok');
+      el.innerHTML = '';
+      const t = document.createElement('div'); t.className = 'pc-ok__t';
+      t.textContent = `✓ ${r.nombre}: turno confirmado`;
+      const sub = document.createElement('div'); sub.className = 'pc-ok__sub';
+      sub.textContent = `${cuando} · le enviamos el mail de confirmación`;
+      el.appendChild(t); el.appendChild(sub);
+
+      const acc = document.createElement('div'); acc.className = 'pc-ok__acc';
+      if (r.telefono && r.telefono !== '—') {
+        const msg = [
+          `Hola ${r.nombre}! Te confirmo tu turno:`,
+          `• ${r.modalidad}`,
+          r.sede ? `• Sede: ${r.sede}` : null,
+          `• ${cuando}`,
+          '¡Nos vemos! Si necesitás cambiar algo, avisame por acá.',
+        ].filter(Boolean).join('\n');
+        const wa = document.createElement('a');
+        wa.className = 'btn btn--primary btn--sm'; wa.target = '_blank'; wa.rel = 'noopener';
+        wa.href = waHref(r.telefono, msg);
+        wa.textContent = 'Avisar por WhatsApp';
+        acc.appendChild(wa);
+      }
+      const listo = document.createElement('button');
+      listo.className = 'pc-rech'; listo.textContent = 'Listo';
+      listo.addEventListener('click', () => { el.remove(); vaciarSiCorresponde(); });
+      acc.appendChild(listo);
+      el.appendChild(acc);
+    }
 
     function item(r: any) {
       const el = document.createElement('div'); el.className = 'pc-item pc--' + (CLS[r.sede] || 'on');
@@ -689,7 +728,7 @@ if (authed) {
           });
           if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
           const d = await res.json().catch(() => ({}));
-          if (res.ok && d.ok) { el.remove(); vaciarSiCorresponde(); }
+          if (res.ok && d.ok) { mostrarConfirmada(el, { ...r, ...(d.reserva || {}) }); }
           else { conf.disabled = false; rech.disabled = false; conf.textContent = 'Confirmar'; alert(d.error || 'No se pudo confirmar.'); }
         } catch { conf.disabled = false; rech.disabled = false; conf.textContent = 'Confirmar'; alert('Sin conexión: probá de nuevo.'); }
       });
@@ -1001,6 +1040,13 @@ if (authed) {
   .pc-rech { font: inherit; font-size: 0.82rem; background: none; border: 0; color: var(--clay-deep); cursor: pointer; text-decoration: underline; padding: 0.3rem 0.4rem; }
   .pc-rech:hover { color: var(--ink); }
   .pc-rech:disabled, .pc-item .btn:disabled { opacity: 0.6; cursor: default; }
+
+  /* Reserva recién confirmada: queda un momento en la lista para poder mandarle
+     el WhatsApp a la paciente antes de sacarla de la vista. */
+  .pc-item--ok { border-color: color-mix(in srgb, var(--sage) 45%, var(--white)); background: color-mix(in srgb, var(--sage) 8%, var(--white)); }
+  .pc-ok__t { font-weight: 600; color: var(--sage-deep); }
+  .pc-ok__sub { font-size: 0.85rem; color: var(--ink-soft); margin-top: 0.15rem; }
+  .pc-ok__acc { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; margin-top: 0.7rem; }
 
   @media (max-width: 560px) { .ag-sede { grid-template-columns: 1fr; gap: 0.2rem; } }
 </style>

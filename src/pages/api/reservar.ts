@@ -3,7 +3,7 @@ import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion } from '..
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
-import { precioOnline } from '../../lib/precios';
+import { senaOnline, saldoEnConsulta } from '../../lib/precios';
 
 export const prerender = false;
 
@@ -82,7 +82,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   }
 
   const { modalidad, sede, fecha, hora, nombre, telefono, email } = body ?? {};
-  if (!modalidad || !nombre || !telefono) {
+  // El email es obligatorio: la confirmación del turno (con día y hora) se manda
+  // por ese medio, tanto si paga por MercadoPago como si la confirma Ceci.
+  if (!modalidad || !nombre || !telefono || !email) {
     return json({ ok: false, error: 'Faltan datos obligatorios' }, 400);
   }
 
@@ -100,7 +102,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   if (!(modalidad in NOMBRE_MODALIDAD)) return json({ ok: false, error: 'Modalidad inválida' }, 400);
   if (nombreT.length < 2 || nombreT.length > 120) return json({ ok: false, error: 'Nombre inválido' }, 400);
   if (telT.length < 5 || telT.length > 40) return json({ ok: false, error: 'Teléfono inválido' }, 400);
-  if (emailT && (emailT.length > 160 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailT)))
+  if (!emailT || emailT.length > 160 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailT))
     return json({ ok: false, error: 'Email inválido' }, 400);
   if (!esMembresia) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return json({ ok: false, error: 'Fecha inválida' }, 400);
@@ -120,7 +122,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
   // El monto lo fija el servidor según la modalidad. NUNCA se toma del cliente
   // (el body podría venir manipulado con precio: 1). Ver src/lib/precios.ts.
-  const precioNum = precioOnline(modalidad);
+  // Es la SEÑA que reserva el turno, no el total del servicio: el saldo se
+  // abona en la consulta. El webhook de MP valida el pago contra este valor.
+  const precioNum = senaOnline(modalidad);
 
   // Camino de reserva: 'pagar' (MercadoPago, hold 30 min) o 'coordinar' (sin pago,
   // queda 'a_confirmar' con hold de 2 h para que Ceci la valide desde el panel).
@@ -209,14 +213,18 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
             process.env.PUBLIC_SITE_URL || process.env.SITE_URL || new URL(request.url).origin;
           if (!process.env.PUBLIC_SITE_URL && !process.env.SITE_URL)
             console.warn('MP: PUBLIC_SITE_URL sin configurar, usando origin del request:', origin);
-          const tituloItem = [
-            NOMBRE_MODALIDAD[modalidad] ?? modalidad,
-            nombreS,
-            esMembresia ? null : labelFecha(fecha),
-            esMembresia ? null : hora ? `${hora} h` : null,
-          ]
-            .filter(Boolean)
-            .join(' · ');
+          // El título es lo que la paciente ve en el checkout y en el resumen de
+          // MercadoPago: tiene que decir que es la SEÑA, no el total del servicio.
+          const tituloItem =
+            'Seña — ' +
+            [
+              NOMBRE_MODALIDAD[modalidad] ?? modalidad,
+              nombreS,
+              esMembresia ? null : labelFecha(fecha),
+              esMembresia ? null : hora ? `${hora} h` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ');
           const pref = await crearPreferencia({
             titulo: tituloItem,
             precio: precioNum,
@@ -244,6 +252,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         email: emailT || null,
         pagoOnline: !!initPoint,
         via,
+        sena: precioNum,
+        saldo: saldoEnConsulta(modalidad),
       });
 
       return json({ ok: true, id: reservaId, initPoint, via });

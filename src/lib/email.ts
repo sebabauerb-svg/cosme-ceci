@@ -4,6 +4,8 @@
  * Variables: RESEND_API_KEY, RESEND_FROM (remitente), CECI_NOTIF_EMAIL (a dónde le llega a Ceci).
  */
 
+import { filasTransferencia, hayDatosTransferencia } from '../data/pago';
+
 const FROM_DEFAULT = 'Cecilia Gutiérrez · Cosmetología Médica <onboarding@resend.dev>';
 
 async function enviar(to: string, subject: string, html: string) {
@@ -33,6 +35,10 @@ type Datos = {
   pagoOnline?: boolean;
   /** camino de reserva: 'coordinar' = sin pago, queda a confirmar por Ceci */
   via?: 'pagar' | 'coordinar';
+  /** seña que reserva el turno (lo único que se cobra por la web) */
+  sena?: number | null;
+  /** saldo que queda para abonar en la consulta */
+  saldo?: number | null;
 };
 
 /** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
@@ -51,6 +57,21 @@ function bloqueDetalle(d: Datos) {
     `<strong>WhatsApp:</strong> ${esc(d.telefono)}`,
   ].filter(Boolean);
   return `<div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas.map((f) => `<p style="margin:4px 0">${f}</p>`).join('')}</div>`;
+}
+
+/**
+ * Línea de cobro para la clienta: qué señó y qué le queda por abonar. Se omite
+ * si no hay seña registrada (ej. el Club, que se coordina aparte).
+ */
+function bloqueCobro(d: Datos) {
+  if (d.sena == null) return '';
+  const saldo =
+    d.saldo != null && d.saldo > 0
+      ? ` · <strong>Saldo a abonar en la consulta:</strong> $${esc(d.saldo)}`
+      : '';
+  return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:14px 0 0">
+    <strong>Seña abonada:</strong> $${esc(d.sena)}${saldo}
+  </p>`;
 }
 
 /**
@@ -76,13 +97,25 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
       );
     }
     if (d.email) {
+      // El día y la hora van en el asunto: es lo que la paciente necesita ver
+      // sin abrir el mail, y lo que después busca para no olvidarse del turno.
+      const cuando = d.fechaLabel ? `${d.fechaLabel}${d.hora ? ' · ' + d.hora + ' h' : ''}` : null;
       tareas.push(
         enviar(
           d.email,
-          '✅ Tu turno quedó confirmado — Cecilia Gutiérrez · Cosmetología Médica',
+          cuando
+            ? `✅ Turno confirmado: ${cuando} — Cecilia Gutiérrez · Cosmetología Médica`
+            : '✅ Tu turno quedó confirmado — Cecilia Gutiérrez · Cosmetología Médica',
           `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Turno confirmado!</h2>
-           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, ${online ? 'recibimos tu pago y tu turno quedó confirmado' : 'confirmamos tu turno'}:</p>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, ${
+             online
+               ? 'recibimos tu seña por MercadoPago y tu turno quedó confirmado'
+               : d.sena != null
+                 ? 'confirmamos tu pago y tu turno quedó agendado'
+                 : 'confirmamos tu turno'
+           }:</p>
            ${detalle}
+           ${bloqueCobro(d)}
            <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Si necesitás reprogramar, escribinos por WhatsApp.</p>`
         )
       );
@@ -93,6 +126,23 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
   }
 }
 
+/**
+ * Datos bancarios para señar por transferencia. Vacío si todavía no se cargaron
+ * en `src/data/pago.ts` (ahí el copy le dice que Ceci se los pasa por WhatsApp).
+ */
+function bloqueTransferencia(sena?: number | null) {
+  if (!hayDatosTransferencia()) return '';
+  const filas = filasTransferencia()
+    .map((f) => `<p style="margin:4px 0"><strong>${esc(f.label)}:</strong> ${esc(f.valor)}</p>`)
+    .join('');
+  return `<div style="background:#f6f4ef;border-radius:10px;padding:14px 18px;margin:16px 0">
+    <p style="font-family:system-ui,sans-serif;font-weight:600;color:#2a302b;margin:0 0 8px">
+      Datos para transferir${sena != null ? ` la seña de $${esc(sena)}` : ''}
+    </p>
+    <div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas}</div>
+  </div>`;
+}
+
 /** Notifica a Ceci y (si dejó email) a la clienta. Nunca lanza error. */
 export async function notificarReserva(d: Datos) {
   try {
@@ -101,12 +151,13 @@ export async function notificarReserva(d: Datos) {
     const tareas: Promise<unknown>[] = [];
     const coordinar = d.via === 'coordinar';
     const notaCeci = coordinar
-      ? 'La clienta reservó SIN pagar y el cupo quedó retenido 2 horas. Confirmala o rechazala desde el panel: /admin → “Reservas a confirmar”.'
+      ? `La clienta reservó para señar por transferencia${d.sena != null ? ` ($${esc(d.sena)})` : ''} y el cupo quedó retenido 2 horas. Cuando veas el pago, confirmala (o rechazala) desde el panel: /admin → “Reservas a confirmar”.`
       : d.pagoOnline
         ? 'La clienta está pagando por MercadoPago. Si el pago se acredita te llega otro aviso; no hace falta coordinar nada.'
         : 'Coordiná el pago con la clienta para confirmar.';
+    const montoSena = d.sena != null ? `$${esc(d.sena)}` : 'la seña';
     const notaClienta = coordinar
-      ? 'Tu turno quedó pre-reservado y Ceci lo confirma a la brevedad. Cualquier duda, escribinos por WhatsApp.'
+      ? `Tu turno queda reservado. Para confirmarlo, transferí ${montoSena} de seña y avisale a Ceci por WhatsApp: cuando vea el pago te llega la confirmación con el día y la hora.`
       : d.pagoOnline
         ? 'Cuando se acredite el pago te llega la confirmación por este medio. Si no llegaste a pagar, escribinos por WhatsApp.'
         : 'Para confirmar el turno, coordiná el pago por WhatsApp. ¡Te esperamos!';
@@ -131,6 +182,7 @@ export async function notificarReserva(d: Datos) {
           `<h2 style="font-family:Georgia,serif;color:#2a302b">${coordinar ? '¡Reserva recibida! (a confirmar)' : '¡Reserva recibida!'}</h2>
            <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, registramos tu reserva:</p>
            ${detalle}
+           ${coordinar ? bloqueTransferencia(d.sena) : ''}
            <p style="font-family:system-ui;color:#55605a">${notaClienta}</p>`
         )
       );

@@ -3,6 +3,7 @@ import { getSql, ensureConfirmacion, ensureGoogleEventId } from '../../../lib/db
 import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { notificarReservaConfirmada } from '../../../lib/email';
+import { SENA_UYU, saldoEnConsulta } from '../../../lib/precios';
 
 export const prerender = false;
 
@@ -76,6 +77,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         nombre: d.nombre,
         telefono: d.telefono,
         email: d.email,
+        // Solo hablamos de seña abonada si Ceci marcó que ya pagó: puede
+        // confirmar un turno sin haber visto el pago todavía.
+        sena: pagado ? (montoCobrado ?? SENA_UYU) : null,
+        saldo: pagado ? saldoEnConsulta(d.modalidad) : null,
       },
       { online: false }
     );
@@ -101,7 +106,19 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         catch (e) { console.error('No se pudo guardar google_event_id:', e instanceof Error ? e.message : e); }
       }
     }
-    return json({ ok: true });
+    // Devolvemos el detalle para que el panel arme el WhatsApp de confirmación
+    // a la paciente (además del email automático que ya salió).
+    return json({
+      ok: true,
+      reserva: {
+        nombre: d.nombre,
+        telefono: d.telefono,
+        modalidad: nombreModalidad,
+        sede: sedeNombre,
+        fechaLabel: labelFecha(d.fecha),
+        hora: d.hora,
+      },
+    });
   } catch (e) {
     console.error('POST /api/admin/reserva-confirmar:', e instanceof Error ? e.message : e);
     return json({ ok: false, error: 'No se pudo confirmar la reserva.' }, 500);

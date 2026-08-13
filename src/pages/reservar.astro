@@ -5,8 +5,13 @@ import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
 import { site, whatsappLink } from '../data/site';
+import { SENA_UYU, senaOnline, saldoEnConsulta } from '../lib/precios';
+import { hayDatosTransferencia, filasTransferencia } from '../data/pago';
 
 const waReprogramar = whatsappLink('Hola Ceci! Necesito reprogramar mi turno reservado por la web.');
+
+/** Pesos uruguayos con separador de miles: 1800 → $1.800 */
+const fmt = (n: number) => '$' + n.toLocaleString('es-UY');
 
 const items = modalidades.map((m) => ({
   id: m.id,
@@ -15,7 +20,17 @@ const items = modalidades.map((m) => ({
   precio: m.precio ?? 'A coordinar',
   precioNota: m.precioNota ?? '',
   esMembresia: m.id === 'club', // el Club es membresía anual, no turno suelto
+  // La web cobra una seña, no el total: el saldo se abona en la consulta.
+  // El Club no tiene seña (se coordina y cobra aparte) → sena null.
+  sena: senaOnline(m.id),
+  senaLabel: senaOnline(m.id) != null ? fmt(SENA_UYU) : null,
+  saldoLabel: (saldoEnConsulta(m.id) ?? 0) > 0 ? fmt(saldoEnConsulta(m.id)!) : null,
 }));
+
+// Datos bancarios para señar por transferencia. Si todavía no se cargaron en
+// src/data/pago.ts, la web no inventa nada: dice que Ceci los pasa por WhatsApp.
+const datosBanco = hayDatosTransferencia() ? filasTransferencia() : [];
+const senaLabel = fmt(SENA_UYU);
 ---
 
 <Base title="Reservá tu turno" description="Reservá tu consulta con Cecilia Gutiérrez: presencial en Montevideo y San José, o virtual. Pago simple y seguro con MercadoPago." path="/reservar" noindex>
@@ -90,10 +105,10 @@ const items = modalidades.map((m) => ({
           <label>WhatsApp
             <input type="tel" name="tel" required autocomplete="tel" placeholder="09x xxx xxx" />
           </label>
-          <label>Email (opcional)
-            <input type="email" name="email" autocomplete="email" placeholder="tu@email.com" />
+          <label>Email
+            <input type="email" name="email" required autocomplete="email" placeholder="tu@email.com" />
           </label>
-          <p class="form__note">Tus datos se usan solo para coordinar tu atención.</p>
+          <p class="form__note">A este correo te llega la confirmación con el día y la hora de tu turno. Tus datos se usan solo para coordinar tu atención.</p>
           <div class="step__nav">
             <button type="button" class="btn btn--ghost" data-back>← Volver</button>
             <button type="submit" class="btn btn--primary">Continuar al pago</button>
@@ -105,16 +120,17 @@ const items = modalidades.map((m) => ({
       <section class="step" data-step="4" hidden aria-label="Confirmar reserva">
         <h2 class="step__title">Confirmá tu reserva</h2>
         <div class="resumen" id="resumen"></div>
-        <ul class="trust">
+        <ul class="trust" id="trust">
+          <li id="trust-sena">Reservás con una seña; el saldo lo abonás en la consulta</li>
           <li>Pagando con MercadoPago tu turno queda confirmado al instante</li>
-          <li>O reservás y Ceci confirma tu turno (lo coordinás por WhatsApp)</li>
+          <li>O señás por transferencia y Ceci confirma tu turno al ver el pago</li>
           <li>¿Necesitás reprogramar? <a href={waReprogramar} target="_blank" rel="noopener">Escribinos por WhatsApp</a> y lo vemos sin problema</li>
         </ul>
-        <button class="btn btn--primary pay" id="confirmar">Pagar ahora con MercadoPago</button>
+        <button class="btn btn--primary pay" id="confirmar">Pagar la seña con MercadoPago</button>
         <p class="step__hint center" id="hint-mp">Pago seguro con MercadoPago. Tu turno queda confirmado al instante.</p>
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
-        <button class="btn btn--ghost pay" id="coordinar">Reservar y coordinar con Ceci</button>
-        <p class="step__hint center" id="hint-coord">Ceci confirma tu turno y te avisa. Podés escribirle por WhatsApp.</p>
+        <button class="btn btn--ghost pay" id="coordinar">Reservar y señar por transferencia</button>
+        <p class="step__hint center" id="hint-coord">Te mostramos los datos bancarios y le avisás a Ceci por WhatsApp. Confirma tu turno al ver el pago.</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -127,9 +143,30 @@ const items = modalidades.map((m) => ({
           <h2>¡Casi listo!</h2>
           <p id="done-text"></p>
           <p class="step__hint" id="done-hint">Para confirmar tu turno, aboná tu reserva y avisale a Ceci por WhatsApp. El cupo queda reservado mientras tanto.</p>
-          <a id="pago-link" class="btn btn--primary pay" target="_blank" rel="noopener" hidden>Pagar mi reserva</a>
-          <a id="wa-link" class="btn btn--ghost" target="_blank" rel="noopener" hidden>Avisar a Ceci por WhatsApp</a>
-          <a href="/reservar" class="btn btn--ghost">Hacer otra reserva</a>
+
+          <!-- Datos para señar por transferencia (solo en el camino "coordinar") -->
+          <div class="banco" id="datos-banco" hidden>
+            <p class="banco__t">Datos para transferir la seña de {senaLabel}</p>
+            {datosBanco.length ? (
+              <dl class="banco__list">
+                {datosBanco.map((f) => (
+                  <div class="banco__row">
+                    <dt>{f.label}</dt>
+                    <dd>{f.valor}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p class="banco__fallback">Ceci te pasa los datos de la cuenta por WhatsApp. Escribile con el botón de acá abajo y te responde con todo.</p>
+            )}
+            <p class="banco__nota">Cuando transfieras, mandale el comprobante por WhatsApp: al verlo confirma tu turno y te llega el mail con el día y la hora.</p>
+          </div>
+
+          <div class="done__acciones">
+            <a id="pago-link" class="btn btn--primary pay" target="_blank" rel="noopener" hidden>Pagar mi reserva</a>
+            <a id="wa-link" class="btn btn--ghost pay" target="_blank" rel="noopener" hidden>Avisar a Ceci por WhatsApp</a>
+            <a href="/reservar" class="btn btn--ghost pay">Hacer otra reserva</a>
+          </div>
         </div>
       </section>
     </div>
@@ -139,7 +176,7 @@ const items = modalidades.map((m) => ({
   <WhatsappFloat />
 </Base>
 
-<script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago }}>
+<script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0 }}>
   const state = { modalidad: null, sedeSlug: 'online', lugar: null, fecha: null, fechaLabel: null, hora: null, nombre: '', tel: '', email: '' };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -369,7 +406,8 @@ const items = modalidades.map((m) => ({
   $('#form').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
-    if (!f.nombre.value.trim() || !f.tel.value.trim()) return f.reportValidity();
+    // El email es obligatorio: por ahí sale la confirmación con día y hora.
+    if (!f.checkValidity()) return f.reportValidity();
     state.nombre = f.nombre.value.trim();
     state.tel = f.tel.value.trim();
     state.email = f.email.value.trim();
@@ -388,19 +426,44 @@ const items = modalidades.map((m) => ({
       filas.push(`<div class="resumen__row"><span>Dónde</span><strong>${state.lugar}</strong></div>`);
     filas.push(`<div class="resumen__row"><span>Cuándo</span><strong>${cuando}</strong></div>`);
     filas.push(`<div class="resumen__row"><span>A nombre de</span><strong>${state.nombre}</strong></div>`);
-    filas.push(`<div class="resumen__row resumen__row--total"><span>Total a pagar</span><strong>${m.precio}</strong></div>`);
+    // La web cobra una seña, no el total: lo dejamos explícito para que nadie
+    // llegue a la consulta creyendo que ya pagó todo.
+    if (m.sena != null) {
+      filas.push(`<div class="resumen__row"><span>Valor de la consulta</span><strong>${m.precio}</strong></div>`);
+      filas.push(`<div class="resumen__row resumen__row--total"><span>Seña para reservar</span><strong>${m.senaLabel}</strong></div>`);
+      if (m.saldoLabel)
+        filas.push(`<p class="resumen__nota">El saldo de ${m.saldoLabel} lo abonás en la consulta.</p>`);
+    } else {
+      filas.push(`<div class="resumen__row resumen__row--total"><span>Total</span><strong>${m.precio}</strong></div>`);
+    }
     $('#resumen').innerHTML = filas.join('');
 
     // El Club (membresía anual) no tiene pago online: solo el camino de coordinar.
     const esMemb = !!m.esMembresia;
     const mpBtn = $('#confirmar'), mpHint = $('#hint-mp'), sep = $('#pay-sep');
-    if (mpBtn) mpBtn.hidden = esMemb;
+    if (mpBtn) {
+      mpBtn.hidden = esMemb;
+      mpBtn.textContent = `Pagar seña de ${m.senaLabel ?? ''} con MercadoPago`;
+    }
     if (mpHint) mpHint.hidden = esMemb;
     if (sep) sep.hidden = esMemb;
+    const trustSena = $('#trust-sena');
+    if (trustSena) {
+      trustSena.hidden = esMemb;
+      if (!esMemb)
+        trustSena.textContent = m.saldoLabel
+          ? `Reservás con una seña de ${m.senaLabel}; el saldo de ${m.saldoLabel} lo abonás en la consulta`
+          : `Reservás con una seña de ${m.senaLabel}`;
+    }
+    const coordBtn = $('#coordinar');
+    if (coordBtn)
+      coordBtn.textContent = esMemb ? 'Reservar y coordinar con Ceci' : 'Reservar y señar por transferencia';
     const coordHint = $('#hint-coord');
     if (coordHint) coordHint.textContent = esMemb
       ? 'Registramos tu interés y Ceci coordina con vos. Le avisás por WhatsApp.'
-      : 'Ceci confirma tu turno y te avisa. Podés escribirle por WhatsApp.';
+      : hayBanco
+        ? 'Te mostramos los datos bancarios y le avisás a Ceci por WhatsApp. Confirma tu turno al ver el pago.'
+        : 'Ceci te pasa los datos por WhatsApp y confirma tu turno al ver el pago.';
   }
 
   function waMensajeCompartir() {
@@ -412,7 +475,12 @@ const items = modalidades.map((m) => ({
     if (!m.esMembresia) l.push(`• Día y hora: ${state.fechaLabel} · ${state.hora} h`);
     l.push(`• A nombre de: ${state.nombre}`);
     if (state.email) l.push(`• Email: ${state.email}`);
-    l.push('Queda sujeto a tu confirmación. ¡Gracias!');
+    if (m.esMembresia) {
+      l.push('Queda sujeto a tu confirmación. ¡Gracias!');
+    } else {
+      l.push(`Voy a señar ${m.senaLabel} por transferencia.`);
+      l.push(hayBanco ? 'Te paso el comprobante para confirmar. ¡Gracias!' : '¿Me pasás los datos de la cuenta? ¡Gracias!');
+    }
     return l.join('\n');
   }
 
@@ -533,7 +601,10 @@ const items = modalidades.map((m) => ({
     const hint = $('#done-hint');
     if (hint) hint.textContent = m.esMembresia
       ? 'Ceci coordina con vos a la brevedad. Avisale por WhatsApp con el botón de abajo.'
-      : 'Ceci confirma tu turno a la brevedad. Podés avisarle por WhatsApp con el botón de abajo.';
+      : `Tu cupo queda retenido 2 horas. Transferí la seña de ${m.senaLabel} y avisale a Ceci: cuando vea el pago te llega la confirmación por mail.`;
+    // Los datos para transferir solo aplican a un turno, no a la membresía.
+    const banco = $('#datos-banco');
+    if (banco) banco.hidden = !!m.esMembresia;
     goTo(5);
   });
 
@@ -552,7 +623,9 @@ const items = modalidades.map((m) => ({
       const btn = $('#confirmar');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Proceder al pago';
+        btn.textContent = state.modalidad?.senaLabel
+          ? `Pagar seña de ${state.modalidad.senaLabel} con MercadoPago`
+          : 'Pagar la seña con MercadoPago';
       }
     }
   });
@@ -745,6 +818,32 @@ const items = modalidades.map((m) => ({
   }
   .done h2 small { color: var(--ink-soft); font-size: 0.9rem; }
   .done p { margin-bottom: 1rem; }
+  /* Los tres botones del cierre comparten ancho y centrado (antes cada uno
+     tenía el suyo y quedaban desalineados). */
+  .done__acciones { display: grid; gap: 0.7rem; justify-items: center; margin-top: 1.6rem; }
+
+  /* Datos para señar por transferencia */
+  .banco {
+    background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
+    padding: 1.3rem 1.5rem; max-width: 460px; margin: 0 auto; text-align: left;
+  }
+  .banco[hidden] { display: none; }
+  .banco__t {
+    font-family: var(--font-serif); font-size: 1.08rem; color: var(--ink);
+    margin: 0 0 0.9rem; text-align: center;
+  }
+  .banco__list { margin: 0; display: grid; gap: 0.45rem; }
+  .banco__row { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .banco__row dt { color: var(--ink-soft); font-size: 0.88rem; }
+  .banco__row dd {
+    margin: 0; color: var(--ink); font-weight: 600; text-align: right;
+    /* Los números de cuenta se copian a mano: que se puedan leer dígito a dígito. */
+    font-variant-numeric: tabular-nums; user-select: all;
+  }
+  .banco__fallback, .banco__nota {
+    font-size: 0.85rem; color: var(--ink-soft); line-height: 1.55; margin: 0;
+  }
+  .banco__nota { margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px solid var(--sand); }
 </style>
 
 <!-- Estilos para elementos creados por JS (globales solo en esta página → sí aplican) -->
@@ -822,4 +921,6 @@ const items = modalidades.map((m) => ({
   .resumen__row strong { color: var(--ink); text-align: right; }
   .resumen__row--total { border-top: 1px solid var(--sand); margin-top: 0.4rem; padding-top: 0.9rem; }
   .resumen__row--total strong { font-family: var(--font-serif); font-size: 1.3rem; }
+  /* Aclaración del saldo: la crea el JS del resumen → tiene que ser global. */
+  .resumen__nota { margin: 0.5rem 0 0; font-size: 0.84rem; color: var(--ink-soft); line-height: 1.5; }
 </style>
