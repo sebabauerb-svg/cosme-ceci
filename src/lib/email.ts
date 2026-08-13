@@ -211,6 +211,34 @@ export async function notificarReserva(d: Datos) {
 }
 
 /**
+ * Recordatorio del turno de mañana, a la paciente. Lo dispara el cron diario.
+ * Solo datos operativos (cuándo, dónde, saldo): nada de promesas ni consejos
+ * clínicos por mail. Nunca lanza error.
+ */
+export async function notificarRecordatorio(d: Datos & { saldo?: number | null }) {
+  try {
+    if (!d.email) return;
+    const cuando = d.fechaLabel ? `${d.fechaLabel}${d.hora ? ' · ' + d.hora + ' h' : ''}` : null;
+    const saldo =
+      d.saldo != null && d.saldo > 0
+        ? `<p style="font-family:system-ui;color:#2a302b">Te queda un saldo de <strong>$${esc(d.saldo)}</strong> para abonar en la consulta.</p>`
+        : '';
+    await enviar(
+      d.email,
+      cuando ? `⏰ Recordatorio: tu turno es ${cuando}` : '⏰ Recordatorio de tu turno',
+      `<h2 style="font-family:Georgia,serif;color:#2a302b">Te esperamos</h2>
+       <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, te recordamos tu turno:</p>
+       ${bloqueDetalle(d)}
+       ${saldo}
+       <p style="font-family:system-ui;color:#55605a">Si necesitás reprogramar, escribinos por WhatsApp lo antes posible así liberamos el horario.</p>
+       ${bloquePolitica()}`
+    );
+  } catch {
+    /* el cron no debe caerse por un error de email */
+  }
+}
+
+/**
  * Alerta urgente a Ceci: hay un pago acreditado que NO pudo confirmar el turno
  * (cupo ocupado por otra reserva, o monto distinto). Hay que reembolsar o
  * reacomodar a la clienta a mano. Nunca lanza error.

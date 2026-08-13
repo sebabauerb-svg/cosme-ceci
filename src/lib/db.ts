@@ -83,6 +83,30 @@ export async function ensureHorarioSemanal(sql: any) {
  *  - el índice de cupo único pasa a bloquear también 'a_confirmar' (se recrea con
  *    otro nombre para no dropear/crear en cada request).
  */
+/**
+ * Panel de gestión de Ceci (idempotente). Separa lo que se acordó de lo que se
+ * cobró, que es lo que `monto_cobrado`/`pagado` no distinguían:
+ *  - total_acordado: el precio final de ESTA consulta. Puede diferir del precio
+ *    de lista (descuentos, bonificación por contratar protocolo el mismo día).
+ *  - sena_pagada: cuánto entró efectivamente como seña. El saldo se deriva
+ *    (total_acordado - sena_pagada), no se guarda: así nunca queda desfasado.
+ *  - forma_pago: 'mercadopago' | 'transferencia' | 'efectivo'.
+ *  - recordatorio_at: cuándo se le avisó del turno, para no recordar dos veces.
+ *  - notas: apunte libre de Ceci sobre el caso.
+ */
+export async function ensureGestion(sql: any) {
+  await sql`alter table reservas add column if not exists total_acordado numeric(10,2)`;
+  await sql`alter table reservas add column if not exists sena_pagada numeric(10,2)`;
+  await sql`alter table reservas add column if not exists forma_pago text`;
+  await sql`alter table reservas add column if not exists recordatorio_at timestamptz`;
+  await sql`alter table reservas add column if not exists notas text`;
+  // Backfill: lo que Ceci ya había marcado como cobrado era, de hecho, la seña.
+  await sql`
+    update reservas set sena_pagada = monto_cobrado
+     where sena_pagada is null and pagado is true and monto_cobrado is not null
+  `;
+}
+
 export async function ensureConfirmacion(sql: any) {
   await sql`alter type reserva_estado add value if not exists 'a_confirmar'`;
   await sql`alter table reservas add column if not exists monto_cobrado numeric(10,2)`;
