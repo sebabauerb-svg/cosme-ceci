@@ -2,15 +2,19 @@
 
 ## 🔴 Lo primero de la próxima sesión (actualizado 12/8 · noche)
 
+**Todo está en producción** (`ecdede7`). Quedan dos cosas:
+
 1. **Cargar `CRON_SECRET` en Vercel (Production)** — hasta que exista, el cron de
-   recordatorios NO manda nada (fail-closed a propósito).
-2. **Probar la rama `feat/panel-gestion`** (`e163ed1`) con datos reales: es la
-   única parte sin verificar end-to-end, porque el panel necesita base de datos
-   y login que no hay en local.
-3. **Astro 7 YA ESTÁ EN PRODUCCIÓN** (`2da1987`). Las alertas de GitHub bajaron
-   de 28 a 1. El build de Astro 7 **ahora corre en la PC de Sebas**: el bloqueo
-   de Windows App Control desapareció, así que ya no hace falta el preview para
-   verificarlo.
+   recordatorios NO manda nada. Verificado en producción: hoy devuelve 401
+   "secret no configurado", que es el fail-closed funcionando.
+2. **Primera pasada por el panel de gestión con datos reales.** Se mergeó sin
+   verificación end-to-end (acordado con Sebas): necesita base de datos y login,
+   que no hay en local. Si algo falla, mirar primero la sincronía entre
+   `sena_pagada` y el toggle `pagado` de la tabla de reservas.
+
+**Astro 7 en producción** (`2da1987`): alertas de GitHub de 28 → 1. El build de
+Astro 7 **ahora corre en la PC de Sebas** — el bloqueo de Windows App Control
+desapareció, así que ya no hace falta el preview de Vercel para verificarlo.
 
 ## Lo anterior
 
