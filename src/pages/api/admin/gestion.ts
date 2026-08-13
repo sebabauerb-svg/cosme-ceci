@@ -135,6 +135,25 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       const n = typeof body.notas === 'string' ? body.notas.slice(0, 2000) : null;
       await sql`update reservas set notas = ${n || null} where id = ${id}`;
     }
+    // Datos de contacto: Ceci corrige un nombre mal escrito o carga el email de
+    // una reserva vieja (las de antes del email obligatorio no lo tienen, y sin
+    // email no hay confirmación ni recordatorio automático).
+    if ('nombre' in body) {
+      const n = String(body.nombre ?? '').trim();
+      if (n.length < 2 || n.length > 120) return json({ ok: false, error: 'Nombre inválido' }, 400);
+      await sql`update reservas set nombre = ${n} where id = ${id}`;
+    }
+    if ('telefono' in body) {
+      const t = String(body.telefono ?? '').trim();
+      if (t.length < 5 || t.length > 40) return json({ ok: false, error: 'Teléfono inválido' }, 400);
+      await sql`update reservas set telefono = ${t} where id = ${id}`;
+    }
+    if ('email' in body) {
+      const e = String(body.email ?? '').trim();
+      if (e && (e.length > 160 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)))
+        return json({ ok: false, error: 'Email inválido' }, 400);
+      await sql`update reservas set email = ${e || null} where id = ${id}`;
+    }
     if (body?.recordado === true) {
       await sql`update reservas set recordatorio_at = now() where id = ${id}`;
     } else if (body?.recordado === false) {

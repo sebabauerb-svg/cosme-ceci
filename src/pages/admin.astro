@@ -167,13 +167,39 @@ if (authed) {
           <section class="card">
             <div class="card__head">
               <div>
-                <h2>Gestión de turnos</h2>
-                <p class="muted">Turnos confirmados de acá en adelante: cuánto se acordó, cuánto entró de seña y qué saldo queda. Desde acá también armás el mensaje de WhatsApp y marcás a quién ya recordaste.</p>
+                <h2>Gestión de turnos <span class="gs-cuenta" id="gs-cuenta"></span></h2>
+                <p class="muted">Tocá un turno para abrirlo: cuánto se acordó, cuánto entró de seña y qué saldo queda. Desde ahí armás el mensaje de WhatsApp, corregís datos y marcás a quién ya recordaste.</p>
               </div>
-              <div class="gs-filtros">
-                <label class="gs-filtro"><input type="checkbox" id="gs-solo-deuda" /> Solo con saldo</label>
-                <label class="gs-filtro"><input type="checkbox" id="gs-solo-pronto" /> Próximos 7 días</label>
-              </div>
+            </div>
+            <div class="gs-filtros">
+              <label class="gs-filtro">Período
+                <select id="gs-dias">
+                  <option value="7">Próximos 7 días</option>
+                  <option value="15">Próximos 15 días</option>
+                  <option value="30" selected>Próximos 30 días</option>
+                  <option value="60">Próximos 60 días</option>
+                  <option value="90">Próximos 90 días</option>
+                </select>
+              </label>
+              <label class="gs-filtro">Lugar
+                <select id="gs-sede">
+                  <option value="">Todos</option>
+                  <option value="Montevideo">Montevideo</option>
+                  <option value="San José">San José</option>
+                  <option value="Online">Online</option>
+                </select>
+              </label>
+              <label class="gs-filtro">Cobro
+                <select id="gs-estado">
+                  <option value="">Todos</option>
+                  <option value="sin">Sin seña</option>
+                  <option value="parcial">Señado</option>
+                  <option value="full">Pago completo</option>
+                </select>
+              </label>
+              <label class="gs-filtro gs-filtro--buscar">Buscar
+                <input type="search" id="gs-buscar" placeholder="Nombre de la paciente" />
+              </label>
             </div>
             <div id="gestion"><p class="ag-vacia">Cargando…</p></div>
           </section>
@@ -784,10 +810,22 @@ if (authed) {
     const cont = document.getElementById('gestion');
     if (!cont) return;
     const CLS: Record<string, string> = { Montevideo: 'mv', 'San José': 'sj' };
-    const $$ = (n: number | null) => (n == null ? '—' : '$' + n.toLocaleString('es-UY'));
+    const plata = (n: number | null) => (n == null ? '—' : '$' + n.toLocaleString('es-UY'));
+    const el = (id: string) => document.getElementById(id) as any;
     let datos: any[] = [];
+    let dias = 30;
 
-    /** Guarda un campo suelto. Devuelve false y avisa si no se pudo. */
+    const fechaCorta = (iso: string) => {
+      try {
+        return new Date(iso + 'T12:00:00Z').toLocaleDateString('es-UY', {
+          weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+        });
+      } catch { return iso; }
+    };
+    // El estado de cobro se deriva, nunca se guarda: así no puede quedar desfasado.
+    const estadoDe = (r: any) => (r.senaPagada == null || r.senaPagada === 0 ? 'sin' : r.saldo === 0 ? 'full' : 'parcial');
+    const LABEL: Record<string, string> = { sin: 'Sin seña', parcial: 'Señado', full: 'Pago completo' };
+
     async function guardar(id: string, campos: Record<string, unknown>): Promise<boolean> {
       try {
         const res = await fetch('/api/admin/gestion', {
@@ -801,61 +839,89 @@ if (authed) {
       } catch { alert('Sin conexión: no se pudo guardar.'); return false; }
     }
 
+    /** Campo que guarda al salir, y marca el borde en rojo si el guardado falló. */
+    function campo(label: string, valor: any, tipo: string, onSave: (v: any) => Promise<boolean>) {
+      const w = document.createElement('label'); w.className = 'gs-campo';
+      const t = document.createElement('span'); t.textContent = label;
+      const i = document.createElement('input');
+      i.type = tipo; i.placeholder = '—';
+      if (tipo === 'number') { i.min = '0'; i.step = '1'; }
+      if (valor != null && valor !== '') i.value = tipo === 'number' ? String(Math.round(Number(valor))) : String(valor);
+      i.addEventListener('change', async () => {
+        const v = tipo === 'number' ? (i.value === '' ? null : Number(i.value)) : i.value.trim();
+        i.classList.toggle('is-err', !(await onSave(v)));
+      });
+      w.append(t, i);
+      return w;
+    }
+
     function item(r: any) {
-      const el = document.createElement('div');
-      el.className = 'gs-item gs--' + (CLS[r.sede] || 'on');
+      const wrap = document.createElement('details');
+      wrap.className = 'gs-item gs--' + (CLS[r.sede] || 'on');
 
-      const head = document.createElement('div'); head.className = 'gs-item__head';
-      const cuando = document.createElement('span'); cuando.className = 'gs-item__cuando';
-      cuando.textContent = `${r.fechaLarga || r.fecha}${r.hora ? ' · ' + r.hora + ' h' : ''}`;
-      const sede = document.createElement('span'); sede.className = 'gs-item__sede';
+      // --- Fila compacta: lo que Ceci necesita ver de un vistazo, sin abrir ---
+      const sum = document.createElement('summary'); sum.className = 'gs-row';
+      const cuando = document.createElement('span'); cuando.className = 'gs-row__cuando';
+      cuando.textContent = fechaCorta(r.fecha) + (r.hora ? ' · ' + r.hora : '');
+      const nom = document.createElement('span'); nom.className = 'gs-row__nom';
+      const sede = document.createElement('span'); sede.className = 'gs-row__sede';
       sede.textContent = r.sede || 'Online';
-      head.append(cuando, sede);
+      const estado = document.createElement('span');
+      const saldo = document.createElement('span'); saldo.className = 'gs-row__saldo';
+      const rec = document.createElement('span'); rec.className = 'gs-row__rec';
 
-      const nom = document.createElement('div'); nom.className = 'gs-item__nom';
-      nom.textContent = r.nombre;
-      const sub = document.createElement('div'); sub.className = 'gs-item__sub';
-      sub.textContent = r.modalidad;
-      if (r.telefono && r.telefono !== '—') {
-        sub.append(' · ');
-        const a = document.createElement('a');
-        a.className = 'tel-link'; a.target = '_blank'; a.rel = 'noopener';
-        a.href = `https://wa.me/598${String(r.telefono).replace(/\D/g, '').replace(/^(598|0)/, '')}`;
-        a.textContent = r.telefono;
-        sub.appendChild(a);
+      const pintar = () => {
+        r.saldo = r.total != null ? Math.max(0, r.total - (r.senaPagada ?? 0)) : null;
+        const e = estadoDe(r);
+        nom.textContent = r.nombre;
+        estado.className = 'gs-estado gs-estado--' + e;
+        estado.textContent = LABEL[e];
+        saldo.textContent = r.saldo ? plata(r.saldo) : '';
+        rec.textContent = r.recordatorioAt ? '✓' : '';
+        rec.title = r.recordatorioAt ? 'Ya recordada' : '';
+      };
+      sum.append(cuando, nom, sede, estado, saldo, rec);
+
+      const cuerpo = document.createElement('div'); cuerpo.className = 'gs-cuerpo';
+
+      const servicio = document.createElement('p'); servicio.className = 'gs-servicio';
+      servicio.textContent = r.modalidad;
+      if (!r.email) {
+        const aviso = document.createElement('span'); aviso.className = 'gs-aviso';
+        aviso.textContent = 'sin email: no recibe confirmación ni recordatorio';
+        servicio.append(' · ', aviso);
       }
 
-      // --- Cobro: total acordado, seña recibida, forma de pago, saldo ---
-      const cobro = document.createElement('div'); cobro.className = 'gs-cobro';
-      const campo = (label: string, valor: number | null, onSave: (v: number | null) => void) => {
-        const w = document.createElement('label'); w.className = 'gs-campo';
-        const t = document.createElement('span'); t.textContent = label;
-        const i = document.createElement('input');
-        i.type = 'number'; i.min = '0'; i.step = '1'; i.placeholder = '—';
-        if (valor != null) i.value = String(Math.round(valor));
-        i.addEventListener('change', () => onSave(i.value === '' ? null : Number(i.value)));
-        w.append(t, i);
-        return w;
-      };
-
-      const saldoEl = document.createElement('div'); saldoEl.className = 'gs-saldo';
-      const estadoEl = document.createElement('span'); estadoEl.className = 'gs-estado';
-      const pintarEstado = () => {
-        const total = r.total, sena = r.senaPagada;
-        r.saldo = total != null ? Math.max(0, total - (sena ?? 0)) : null;
-        saldoEl.innerHTML = `<span>Saldo</span><strong>${$$(r.saldo)}</strong>`;
-        const clase = sena == null || sena === 0 ? 'sin' : r.saldo === 0 ? 'full' : 'parcial';
-        estadoEl.className = 'gs-estado gs-estado--' + clase;
-        estadoEl.textContent = clase === 'sin' ? 'Sin seña' : clase === 'full' ? 'Pago completo' : 'Señado';
-      };
-
-      cobro.appendChild(campo('Total acordado', r.total, async (v) => {
-        if (await guardar(r.id, { total_acordado: v })) { r.total = v; pintarEstado(); }
+      // --- Datos de contacto, editables (corregir un nombre, cargar un email) ---
+      const datosG = document.createElement('div'); datosG.className = 'gs-grupo';
+      datosG.appendChild(campo('Nombre', r.nombre, 'text', async (v) => {
+        const ok = await guardar(r.id, { nombre: v });
+        if (ok) { r.nombre = v; pintar(); }
+        return ok;
       }));
-      cobro.appendChild(campo('Seña recibida', r.senaPagada, async (v) => {
-        if (await guardar(r.id, { sena_pagada: v })) { r.senaPagada = v; pintarEstado(); }
+      datosG.appendChild(campo('WhatsApp', r.telefono, 'text', async (v) => {
+        const ok = await guardar(r.id, { telefono: v });
+        if (ok) r.telefono = v;
+        return ok;
+      }));
+      datosG.appendChild(campo('Email', r.email, 'email', async (v) => {
+        const ok = await guardar(r.id, { email: v });
+        if (ok) r.email = v;
+        return ok;
       }));
 
+      // --- Cobro ---
+      const cobro = document.createElement('div'); cobro.className = 'gs-grupo';
+      cobro.appendChild(campo('Total acordado', r.total, 'number', async (v) => {
+        const ok = await guardar(r.id, { total_acordado: v });
+        if (ok) { r.total = v; pintar(); }
+        return ok;
+      }));
+      cobro.appendChild(campo('Seña recibida', r.senaPagada, 'number', async (v) => {
+        const ok = await guardar(r.id, { sena_pagada: v });
+        if (ok) { r.senaPagada = v; pintar(); }
+        return ok;
+      }));
       const formaW = document.createElement('label'); formaW.className = 'gs-campo';
       const formaT = document.createElement('span'); formaT.textContent = 'Cómo pagó';
       const forma = document.createElement('select');
@@ -865,9 +931,8 @@ if (authed) {
       forma.addEventListener('change', () => guardar(r.id, { forma_pago: forma.value || null }));
       formaW.append(formaT, forma);
       cobro.appendChild(formaW);
-      cobro.appendChild(saldoEl);
 
-      // --- Generador de mensajes ---
+      // --- Mensajes ---
       const msg = document.createElement('div'); msg.className = 'gs-msg';
       const sel = document.createElement('select'); sel.className = 'gs-msg__sel';
       [['confirmacion', 'Confirmación de turno'], ['transferencia', 'Datos para transferir'],
@@ -879,7 +944,13 @@ if (authed) {
       const acc = document.createElement('div'); acc.className = 'gs-msg__acc';
       const copiar = document.createElement('button'); copiar.className = 'btn btn--primary btn--sm'; copiar.textContent = 'Copiar';
       const waBtn = document.createElement('a'); waBtn.className = 'btn btn--ghost btn--sm'; waBtn.target = '_blank'; waBtn.rel = 'noopener'; waBtn.textContent = 'Abrir WhatsApp';
-      acc.append(copiar, waBtn);
+      const recBtn = document.createElement('button'); recBtn.className = 'gs-rec';
+      const pintarRec = () => {
+        recBtn.textContent = r.recordatorioAt ? '✓ recordada' : 'marcar como recordada';
+        recBtn.classList.toggle('is-on', !!r.recordatorioAt);
+        rec.textContent = r.recordatorioAt ? '✓' : '';
+      };
+      acc.append(copiar, waBtn, recBtn);
       caja.append(ta, acc);
 
       gen.addEventListener('click', async () => {
@@ -899,47 +970,47 @@ if (authed) {
         finally { gen.disabled = false; gen.textContent = 'Generar mensaje'; }
       });
       copiar.addEventListener('click', async () => {
-        // El texto puede haberse editado a mano antes de copiar: se copia el textarea.
+        // Se copia el textarea, no el original: Ceci puede haberlo editado.
         try { await navigator.clipboard.writeText(ta.value); }
         catch { ta.select(); document.execCommand('copy'); }
         copiar.textContent = '¡Copiado!';
         setTimeout(() => { copiar.textContent = 'Copiar'; }, 1600);
       });
-      // Al mandar el WhatsApp damos por recordada a la paciente: es el mismo
-      // registro que usa el cron, así que no le llega el mail duplicado.
+      // Mandar el recordatorio por WhatsApp la marca como recordada: es el mismo
+      // registro que mira el cron, así que no le llega además el mail.
       waBtn.addEventListener('click', () => {
         if (sel.value !== 'recordatorio' || r.recordatorioAt) return;
         guardar(r.id, { recordado: true }).then((ok) => { if (ok) { r.recordatorioAt = new Date().toISOString(); pintarRec(); } });
       });
-
-      const pie = document.createElement('div'); pie.className = 'gs-pie';
-      const rec = document.createElement('button'); rec.className = 'gs-rec';
-      const pintarRec = () => {
-        rec.textContent = r.recordatorioAt ? '✓ recordada' : 'marcar como recordada';
-        rec.classList.toggle('is-on', !!r.recordatorioAt);
-      };
-      rec.addEventListener('click', async () => {
+      recBtn.addEventListener('click', async () => {
         const nuevo = !r.recordatorioAt;
         if (await guardar(r.id, { recordado: nuevo })) { r.recordatorioAt = nuevo ? new Date().toISOString() : null; pintarRec(); }
       });
       pintarRec();
-      pie.append(estadoEl, rec);
 
       msg.append(sel, gen, caja);
-      el.append(head, nom, sub, cobro, msg, pie);
-      pintarEstado();
-      return el;
+      cuerpo.append(servicio, datosG, cobro, msg);
+      wrap.append(sum, cuerpo);
+      pintar();
+      return wrap;
     }
 
     function render() {
-      const soloDeuda = (document.getElementById('gs-solo-deuda') as HTMLInputElement)?.checked;
-      const soloPronto = (document.getElementById('gs-solo-pronto') as HTMLInputElement)?.checked;
-      const limite = new Date(Date.now() - 3 * 3600 * 1000 + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const sede = el('gs-sede')?.value || '';
+      const estado = el('gs-estado')?.value || '';
+      const q = (el('gs-buscar')?.value || '').trim().toLowerCase();
       const lista = datos.filter((r) => {
-        if (soloDeuda && !(r.saldo != null && r.saldo > 0)) return false;
-        if (soloPronto && r.fecha > limite) return false;
+        if (sede && (r.sede || 'Online') !== sede) return false;
+        if (estado && estadoDe(r) !== estado) return false;
+        if (q && !String(r.nombre).toLowerCase().includes(q)) return false;
         return true;
       });
+      const cuenta = document.getElementById('gs-cuenta');
+      if (cuenta) {
+        cuenta.textContent = lista.length === datos.length
+          ? datos.length + (datos.length === 1 ? ' turno' : ' turnos')
+          : lista.length + ' de ' + datos.length;
+      }
       cont.innerHTML = '';
       if (!lista.length) {
         cont.innerHTML = '<p class="ag-vacia">No hay turnos que mostrar con estos filtros.</p>';
@@ -948,20 +1019,31 @@ if (authed) {
       for (const r of lista) cont.appendChild(item(r));
     }
 
-    document.getElementById('gs-solo-deuda')?.addEventListener('change', render);
-    document.getElementById('gs-solo-pronto')?.addEventListener('change', render);
+    async function cargar() {
+      cont.innerHTML = '<p class="ag-vacia">Cargando…</p>';
+      try {
+        const res = await fetch('/api/admin/gestion?dias=' + dias);
+        if (res.status === 401) { cont.innerHTML = '<p class="ag-vacia">Ingresá de nuevo para ver esto.</p>'; return; }
+        const d = await res.json();
+        if (!d.ok) { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; return; }
+        datos = d.reservas || [];
+        if (!datos.length) { cont.innerHTML = '<p class="ag-vacia">No hay turnos confirmados en ese período.</p>'; return; }
+        render();
+      } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; }
+    }
 
-    try {
-      const res = await fetch('/api/admin/gestion');
-      if (res.status === 401) { cont.innerHTML = '<p class="ag-vacia">Ingresá de nuevo para ver esto.</p>'; return; }
-      const d = await res.json();
-      if (!d.ok) { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; return; }
-      datos = d.reservas || [];
-      if (!datos.length) { cont.innerHTML = '<p class="ag-vacia">No hay turnos confirmados próximos.</p>'; return; }
-      render();
-    } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; }
+    // El rango de días se resuelve en el servidor (trae otra tanda); el resto de
+    // los filtros trabaja en memoria, sin volver a la base.
+    el('gs-dias')?.addEventListener('change', (e: any) => {
+      dias = Number(e.target.value) || 30;
+      cargar();
+    });
+    el('gs-sede')?.addEventListener('change', render);
+    el('gs-estado')?.addEventListener('change', render);
+    el('gs-buscar')?.addEventListener('input', render);
+
+    cargar();
   })();
-
   // ---------- Borrar reserva (tabla) ----------
   document.querySelectorAll('.del').forEach((b) => {
     b.addEventListener('click', async () => {
@@ -1246,33 +1328,64 @@ if (authed) {
   .pc-ok__acc { display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem; margin-top: 0.7rem; }
 
   /* ---------- Gestión de turnos ---------- */
-  .gs-filtros { display: flex; flex-wrap: wrap; gap: 0.9rem; }
-  .gs-filtro { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--ink-soft); cursor: pointer; }
+  .gs-cuenta { font-family: var(--font-sans); font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); }
+  .gs-filtros {
+    display: flex; flex-wrap: wrap; gap: 0.7rem 0.9rem; align-items: end;
+    margin: 1.1rem 0 1.3rem; padding: 0.9rem 1rem; background: var(--cream-deep); border-radius: var(--radius-sm);
+  }
+  .gs-filtro { display: grid; gap: 0.25rem; font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); }
+  .gs-filtro select, .gs-filtro input {
+    font: inherit; font-size: 0.86rem; font-weight: 400; padding: 0.4rem 0.55rem;
+    border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
+  }
+  .gs-filtro--buscar { flex: 1 1 14rem; }
+  .gs-filtro--buscar input { width: 100%; }
+
+  /* Cada turno es un acordeón: cerrado ocupa una línea, abierto trae todo. */
   .gs-item {
     border: 1px solid var(--sand); border-left: 3px solid var(--c, var(--sand));
-    border-radius: var(--radius-sm); padding: 0.9rem 1.1rem; margin-bottom: 0.8rem; background: var(--white);
+    border-radius: var(--radius-sm); margin-bottom: 0.45rem; background: var(--white);
   }
   .gs-item.gs--mv { --c: var(--sage); }
   .gs-item.gs--sj { --c: var(--clay); }
   .gs-item.gs--on { --c: #6d8299; }
-  .gs-item__head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; }
-  .gs-item__cuando { font-size: 0.85rem; color: var(--ink-soft); text-transform: capitalize; }
-  .gs-item__sede { font-size: 0.66rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); }
-  .gs-item__nom { font-weight: 600; color: var(--ink); margin-top: 0.15rem; }
-  .gs-item__sub { font-size: 0.82rem; color: var(--ink-soft); }
+  .gs-item[open] { box-shadow: 0 1px 3px rgba(42, 48, 43, 0.07); }
 
-  .gs-cobro {
-    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.8rem;
-    margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--sand);
+  .gs-row {
+    display: grid; align-items: center; gap: 0.5rem 0.8rem; cursor: pointer;
+    grid-template-columns: 8.5rem 1fr auto auto 4.5rem 1rem;
+    padding: 0.6rem 0.9rem; list-style: none;
   }
+  .gs-row::-webkit-details-marker { display: none; }
+  .gs-row:hover { background: color-mix(in srgb, var(--cream-deep) 55%, var(--white)); }
+  .gs-row__cuando { font-size: 0.82rem; color: var(--ink-soft); text-transform: capitalize; font-variant-numeric: tabular-nums; }
+  .gs-row__nom { font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gs-row__sede { font-size: 0.66rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--c); }
+  .gs-row__saldo { font-size: 0.85rem; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+  .gs-row__rec { color: var(--sage-deep); font-size: 0.8rem; text-align: center; }
+
+  .gs-cuerpo { padding: 0.2rem 0.9rem 0.9rem; border-top: 1px solid var(--sand); }
+  .gs-servicio { font-size: 0.82rem; color: var(--ink-soft); margin: 0.7rem 0 0; }
+  .gs-aviso { color: var(--clay-deep); }
+  .gs-grupo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.7rem; margin-top: 0.7rem; }
   .gs-campo { display: grid; gap: 0.2rem; font-size: 0.75rem; color: var(--ink-soft); }
   .gs-campo input, .gs-campo select {
     font: inherit; font-size: 0.88rem; padding: 0.35rem 0.5rem; border: 1px solid var(--sand);
     border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
   }
-  .gs-campo input { width: 6.5em; font-variant-numeric: tabular-nums; }
-  .gs-saldo { display: grid; gap: 0.2rem; font-size: 0.75rem; color: var(--ink-soft); margin-left: auto; text-align: right; }
-  .gs-saldo strong { font-size: 1.05rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .gs-campo input[type='number'] { width: 6.5em; font-variant-numeric: tabular-nums; }
+  .gs-campo input[type='text'], .gs-campo input[type='email'] { width: 11em; }
+  .gs-campo input.is-err { border-color: var(--clay); background: color-mix(in srgb, var(--clay) 7%, var(--white)); }
+
+  @media (max-width: 700px) {
+    .gs-row { grid-template-columns: 1fr auto auto; }
+    .gs-row__cuando { grid-column: 1 / -1; }
+    .gs-row__sede { display: none; }
+    /* Los cuatro filtros apilados comen media pantalla: van de a dos. */
+    .gs-filtros { display: grid; grid-template-columns: 1fr 1fr; }
+    .gs-filtro--buscar { grid-column: 1 / -1; }
+    .gs-filtro select, .gs-filtro input { width: 100%; }
+  }
 
   .gs-msg { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.8rem; }
   .gs-msg__sel {
@@ -1287,8 +1400,7 @@ if (authed) {
   }
   .gs-msg__acc { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
-  .gs-pie { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.8rem; }
-  .gs-estado { font-size: 0.72rem; font-weight: 600; border-radius: 999px; padding: 0.15rem 0.65rem; }
+  .gs-estado { font-size: 0.72rem; font-weight: 600; border-radius: 999px; padding: 0.15rem 0.65rem; white-space: nowrap; }
   .gs-estado--sin { color: var(--clay-deep); background: color-mix(in srgb, var(--clay) 12%, var(--white)); border: 1px solid color-mix(in srgb, var(--clay) 26%, var(--white)); }
   .gs-estado--parcial { color: var(--sage-deep); background: color-mix(in srgb, var(--sage) 12%, var(--white)); border: 1px solid color-mix(in srgb, var(--sage) 30%, var(--white)); }
   .gs-estado--full { color: var(--cream); background: var(--sage); border: 1px solid var(--sage); }
@@ -1298,6 +1410,5 @@ if (authed) {
 
   @media (max-width: 560px) {
     .ag-sede { grid-template-columns: 1fr; gap: 0.2rem; }
-    .gs-saldo { margin-left: 0; text-align: left; }
   }
 </style>
