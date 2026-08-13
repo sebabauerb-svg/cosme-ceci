@@ -2,12 +2,14 @@
 
 ## 🔴 Lo primero de la próxima sesión
 
-1. **Completar `src/data/pago.ts`** con los datos bancarios reales de Ceci
-   (están en su planilla). Sin eso, el camino de transferencia funciona pero le
-   pide los datos a Ceci por WhatsApp en vez de mostrarlos.
-2. **Decidir el deploy de la rama `claude/project-improvements-57cc24`**: cambia
-   el cobro de la web de $1.800 a una **seña de $700**. Es un cambio de plata en
-   un sitio con MercadoPago en producción → no se mergeó sin visto bueno.
+**Decidir el deploy de la rama `claude/project-improvements-57cc24`** (commit
+`3e4ce64`): cambia el cobro de la web de $1.800 a una **seña de $700**. Es un
+cambio de plata en un sitio con MercadoPago en producción → no se mergeó sin
+visto bueno. Los datos de Ceci ya están cargados y validados por Sebas.
+
+Después del deploy, lo que no se pudo verificar antes: **los mails reales**
+(necesitan una reserva de verdad con Resend) y el **checkout de MercadoPago
+cobrando $700** (las credenciales son de producción: probarlo cobra en serio).
 
 ## ✅ Novedades de esta sesión (12/8/2026)
 
@@ -21,8 +23,14 @@
     `reservas.precio_uyu` guarda **la seña** — el webhook de MP valida contra
     esa columna, así que ambos lados salen de `senaOnline()`.
   - Camino transferencia: la web muestra los datos bancarios de
-    `src/data/pago.ts` y arma el WhatsApp. Si el archivo está vacío, degrada
-    solo (dice que Ceci pasa los datos).
+    `src/data/pago.ts` (cuenta BROU, titular **Maria Gutierrez** — es correcto,
+    no es Cecilia) con el concepto ya armado ("Seña + nombre"), y arma el
+    WhatsApp. Si el archivo se vacía, degrada solo (dice que Ceci pasa los datos).
+  - **Política de cancelación** (24 h; después la seña no se reintegra) visible
+    en el paso de confirmar, ANTES de pagar, y en los dos emails.
+  - `src/data/sedes.ts`: direcciones de las dos sedes (San José: Treinta y Tres
+    esq. Larrañaga, Escritorio Duca & Aldaz · Montevideo: Maldonado 1321/402).
+    Van al mail de confirmación y al evento de Calendar.
   - **Email obligatorio** en `/reservar`: era la única forma de garantizar la
     confirmación con día y hora. El asunto del mail lleva fecha y hora.
   - **Admin**: al confirmar aparece "Avisar por WhatsApp" con el mensaje ya
