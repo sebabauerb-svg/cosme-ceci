@@ -65,7 +65,10 @@ function bloqueCuando(d: DatosMensaje): string[] {
 
 function bloqueBanco(nombre: string): string[] {
   if (!hayDatosTransferencia()) return [];
-  const l = [`💳 Banco: ${transferencia.banco}`, `🔢 Nº de cuenta: ${transferencia.cuenta}`];
+  // Las dos formas del mismo número: desde el propio BROU va con guión, desde
+  // otro banco todo junto. Ponerlas las dos evita el ida y vuelta por WhatsApp.
+  const l = [`💳 Banco: ${transferencia.banco}`, `🔢 Nº de cuenta: ${transferencia.cuentaBrou}`];
+  if (transferencia.cuentaOtrosBancos) l.push(`🔢 Desde otros bancos: ${transferencia.cuentaOtrosBancos}`);
   if (transferencia.titular) l.push(`👤 Titular: ${transferencia.titular}`);
   if (transferencia.ci) l.push(`🪪 Cédula: ${transferencia.ci}`);
   l.push(`📌 Concepto: ${CONCEPTO_PREFIJO} ${nombre}`);
