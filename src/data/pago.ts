@@ -8,7 +8,7 @@
  * Los datos salen del mensaje que Ceci le manda hoy a cada paciente: la web
  * automatiza ese mismo mensaje, así que tienen que decir exactamente lo mismo.
  *
- * Si `transferencia.cuenta` queda vacío, la web NO muestra el bloque bancario:
+ * Si `transferencia.cuentaBrou` queda vacío, la web NO muestra el bloque bancario:
  * le dice a la paciente que Ceci le pasa los datos por WhatsApp. El resto del
  * flujo (reserva, hold del cupo, confirmación) funciona igual.
  *
@@ -21,8 +21,13 @@ export const transferencia = {
   banco: 'BROU',
   /** Titular de la cuenta, como figura en el banco. */
   titular: 'Maria Gutierrez',
-  /** Número de cuenta (con sucursal si corresponde). */
-  cuenta: '001217532-00004',
+  /**
+   * Es la MISMA cuenta escrita de dos formas: desde el propio BROU se usa con
+   * guión, desde otro banco va todo junto. Mostramos las dos para que nadie
+   * tenga que preguntar (y para que nadie transfiera a un número mal copiado).
+   */
+  cuentaBrou: '001217532-00004',
+  cuentaOtrosBancos: '00121753200004',
   /** Tipo/moneda de la cuenta. Ej: 'Caja de ahorro en pesos'. Opcional. */
   tipo: '',
   /** Cédula del titular, si el banco la pide para transferir. Opcional. */
@@ -45,7 +50,7 @@ export const POLITICA_CANCELACION =
 
 /** ¿Hay datos bancarios cargados como para mostrarlos en la web? */
 export function hayDatosTransferencia(): boolean {
-  return Boolean(transferencia.banco && transferencia.cuenta);
+  return Boolean(transferencia.banco && transferencia.cuentaBrou);
 }
 
 /** Filas a mostrar (solo las cargadas), listas para render. */
@@ -53,7 +58,8 @@ export function filasTransferencia(): Array<{ label: string; valor: string }> {
   return [
     { label: 'Banco', valor: transferencia.banco },
     { label: 'Titular', valor: transferencia.titular },
-    { label: 'Cuenta', valor: transferencia.cuenta },
+    { label: 'Cuenta (desde BROU)', valor: transferencia.cuentaBrou },
+    { label: 'Desde otros bancos', valor: transferencia.cuentaOtrosBancos },
     { label: 'Tipo', valor: transferencia.tipo },
     { label: 'Cédula', valor: transferencia.ci },
   ].filter((f) => f.valor);
