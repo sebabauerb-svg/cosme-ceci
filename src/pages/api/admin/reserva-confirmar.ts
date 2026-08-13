@@ -4,6 +4,7 @@ import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { notificarReservaConfirmada } from '../../../lib/email';
 import { SENA_UYU, saldoEnConsulta } from '../../../lib/precios';
+import { sedeConDireccion } from '../../../data/sedes';
 
 export const prerender = false;
 
@@ -92,7 +93,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         resumen: `${nombreModalidad} — ${d.nombre}`,
         descripcion: [
           `Servicio: ${nombreModalidad}`,
-          sedeNombre ? `Sede: ${sedeNombre}` : 'Online',
+          sedeNombre ? `Sede: ${sedeConDireccion(sedeNombre)}` : 'Online',
           `Cliente: ${d.nombre}`,
           `WhatsApp: ${d.telefono}`,
           d.email ? `Email: ${d.email}` : '',

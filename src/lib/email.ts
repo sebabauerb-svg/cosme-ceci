@@ -4,7 +4,13 @@
  * Variables: RESEND_API_KEY, RESEND_FROM (remitente), CECI_NOTIF_EMAIL (a dónde le llega a Ceci).
  */
 
-import { filasTransferencia, hayDatosTransferencia } from '../data/pago';
+import {
+  CONCEPTO_PREFIJO,
+  POLITICA_CANCELACION,
+  filasTransferencia,
+  hayDatosTransferencia,
+} from '../data/pago';
+import { sedeConDireccion } from '../data/sedes';
 
 const FROM_DEFAULT = 'Cecilia Gutiérrez · Cosmetología Médica <onboarding@resend.dev>';
 
@@ -51,7 +57,9 @@ const esc = (s: unknown) =>
 function bloqueDetalle(d: Datos) {
   const filas = [
     `<strong>Servicio:</strong> ${esc(d.modalidad)}`,
-    d.sede ? `<strong>Sede:</strong> ${esc(d.sede)}` : '',
+    // Con dirección: el mail tiene que decirle a la paciente adónde ir, igual
+    // que el mensaje que Ceci manda a mano.
+    d.sede ? `<strong>Dónde:</strong> ${esc(sedeConDireccion(d.sede))}` : '',
     d.fechaLabel ? `<strong>Cuándo:</strong> ${esc(d.fechaLabel)}${d.hora ? ' · ' + esc(d.hora) + ' h' : ''}` : '',
     `<strong>A nombre de:</strong> ${esc(d.nombre)}`,
     `<strong>WhatsApp:</strong> ${esc(d.telefono)}`,
@@ -116,7 +124,8 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
            }:</p>
            ${detalle}
            ${bloqueCobro(d)}
-           <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Si necesitás reprogramar, escribinos por WhatsApp.</p>`
+           <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Si necesitás reprogramar, escribinos por WhatsApp.</p>
+           ${bloquePolitica()}`
         )
       );
     }
@@ -130,17 +139,28 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
  * Datos bancarios para señar por transferencia. Vacío si todavía no se cargaron
  * en `src/data/pago.ts` (ahí el copy le dice que Ceci se los pasa por WhatsApp).
  */
-function bloqueTransferencia(sena?: number | null) {
+function bloqueTransferencia(d: Datos) {
   if (!hayDatosTransferencia()) return '';
-  const filas = filasTransferencia()
+  // El concepto lleva el nombre para que Ceci pueda identificar la transferencia.
+  const filas = [
+    ...filasTransferencia(),
+    { label: 'Concepto', valor: `${CONCEPTO_PREFIJO} ${d.nombre}` },
+  ]
     .map((f) => `<p style="margin:4px 0"><strong>${esc(f.label)}:</strong> ${esc(f.valor)}</p>`)
     .join('');
   return `<div style="background:#f6f4ef;border-radius:10px;padding:14px 18px;margin:16px 0">
     <p style="font-family:system-ui,sans-serif;font-weight:600;color:#2a302b;margin:0 0 8px">
-      Datos para transferir${sena != null ? ` la seña de $${esc(sena)}` : ''}
+      Datos para transferir${d.sena != null ? ` la seña de $${esc(d.sena)}` : ''}
     </p>
     <div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas}</div>
   </div>`;
+}
+
+/** Política de cancelación, con el mismo texto que usa la web. */
+function bloquePolitica() {
+  return `<p style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.6;color:#55605a;margin:18px 0 0;padding-top:14px;border-top:1px solid #e4e0d8">
+    ${esc(POLITICA_CANCELACION)}
+  </p>`;
 }
 
 /** Notifica a Ceci y (si dejó email) a la clienta. Nunca lanza error. */
@@ -182,8 +202,9 @@ export async function notificarReserva(d: Datos) {
           `<h2 style="font-family:Georgia,serif;color:#2a302b">${coordinar ? '¡Reserva recibida! (a confirmar)' : '¡Reserva recibida!'}</h2>
            <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, registramos tu reserva:</p>
            ${detalle}
-           ${coordinar ? bloqueTransferencia(d.sena) : ''}
-           <p style="font-family:system-ui;color:#55605a">${notaClienta}</p>`
+           ${coordinar ? bloqueTransferencia(d) : ''}
+           <p style="font-family:system-ui;color:#55605a">${notaClienta}</p>
+           ${bloquePolitica()}`
         )
       );
     }

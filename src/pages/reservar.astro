@@ -6,7 +6,12 @@ import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
 import { site, whatsappLink } from '../data/site';
 import { SENA_UYU, senaOnline, saldoEnConsulta } from '../lib/precios';
-import { hayDatosTransferencia, filasTransferencia } from '../data/pago';
+import {
+  CONCEPTO_PREFIJO,
+  POLITICA_CANCELACION,
+  hayDatosTransferencia,
+  filasTransferencia,
+} from '../data/pago';
 
 const waReprogramar = whatsappLink('Hola Ceci! Necesito reprogramar mi turno reservado por la web.');
 
@@ -131,6 +136,8 @@ const senaLabel = fmt(SENA_UYU);
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
         <button class="btn btn--ghost pay" id="coordinar">Reservar y señar por transferencia</button>
         <p class="step__hint center" id="hint-coord">Te mostramos los datos bancarios y le avisás a Ceci por WhatsApp. Confirma tu turno al ver el pago.</p>
+        {/* Condición del pago → tiene que verse ANTES de pagar, no después. */}
+        <p class="politica" id="politica">{POLITICA_CANCELACION}</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -155,6 +162,11 @@ const senaLabel = fmt(SENA_UYU);
                     <dd>{f.valor}</dd>
                   </div>
                 ))}
+                {/* El concepto lleva el nombre de quien reserva: lo completa el JS. */}
+                <div class="banco__row">
+                  <dt>Concepto</dt>
+                  <dd id="banco-concepto">{CONCEPTO_PREFIJO}</dd>
+                </div>
               </dl>
             ) : (
               <p class="banco__fallback">Ceci te pasa los datos de la cuenta por WhatsApp. Escribile con el botón de acá abajo y te responde con todo.</p>
@@ -167,6 +179,7 @@ const senaLabel = fmt(SENA_UYU);
             <a id="wa-link" class="btn btn--ghost pay" target="_blank" rel="noopener" hidden>Avisar a Ceci por WhatsApp</a>
             <a href="/reservar" class="btn btn--ghost pay">Hacer otra reserva</a>
           </div>
+          <p class="politica">{POLITICA_CANCELACION}</p>
         </div>
       </section>
     </div>
@@ -176,7 +189,7 @@ const senaLabel = fmt(SENA_UYU);
   <WhatsappFloat />
 </Base>
 
-<script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0 }}>
+<script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0, conceptoPrefijo: CONCEPTO_PREFIJO }}>
   const state = { modalidad: null, sedeSlug: 'online', lugar: null, fecha: null, fechaLabel: null, hora: null, nombre: '', tel: '', email: '' };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -447,6 +460,9 @@ const senaLabel = fmt(SENA_UYU);
     }
     if (mpHint) mpHint.hidden = esMemb;
     if (sep) sep.hidden = esMemb;
+    // La política es sobre la seña: no aplica al Club, que se coordina aparte.
+    const politica = $('#politica');
+    if (politica) politica.hidden = esMemb;
     const trustSena = $('#trust-sena');
     if (trustSena) {
       trustSena.hidden = esMemb;
@@ -605,6 +621,9 @@ const senaLabel = fmt(SENA_UYU);
     // Los datos para transferir solo aplican a un turno, no a la membresía.
     const banco = $('#datos-banco');
     if (banco) banco.hidden = !!m.esMembresia;
+    // El concepto lleva el nombre para que Ceci identifique la transferencia.
+    const concepto = $('#banco-concepto');
+    if (concepto) concepto.textContent = `${conceptoPrefijo} ${state.nombre}`;
     goTo(5);
   });
 
@@ -798,6 +817,13 @@ const senaLabel = fmt(SENA_UYU);
   .pay-sep { display: flex; align-items: center; gap: 0.8rem; max-width: 460px; margin: 0.5rem auto; color: var(--ink-soft); font-size: 0.8rem; }
   .pay-sep[hidden] { display: none; }
   .pay-sep::before, .pay-sep::after { content: ''; flex: 1; height: 1px; background: var(--sand); }
+
+  /* Política de cancelación: es una condición del pago, así que acompaña a los
+     botones sin competir con ellos. */
+  .politica {
+    max-width: 460px; margin: 1.3rem auto 0;
+    font-size: 0.8rem; line-height: 1.6; color: var(--ink-soft); text-align: center;
+  }
 
   .done { text-align: center; padding: 2rem 0; }
   .done__check {

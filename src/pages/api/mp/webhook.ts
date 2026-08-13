@@ -8,6 +8,7 @@ import {
 import { notificarReservaConfirmada, alertarPagoSinTurno } from '../../../lib/email';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { saldoEnConsulta } from '../../../lib/precios';
+import { sedeConDireccion } from '../../../data/sedes';
 
 export const prerender = false;
 
@@ -186,7 +187,7 @@ export const POST: APIRoute = async ({ request }) => {
               resumen: `${nombreModalidad} — ${d.nombre}`,
               descripcion: [
                 `Servicio: ${nombreModalidad}`,
-                d.sede ? `Sede: ${d.sede}` : 'Online',
+                d.sede ? `Sede: ${sedeConDireccion(d.sede)}` : 'Online',
                 `Cliente: ${d.nombre}`,
                 `WhatsApp: ${d.telefono}`,
                 d.email ? `Email: ${d.email}` : '',
