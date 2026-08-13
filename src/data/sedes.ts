@@ -8,13 +8,13 @@
  * La clave es el nombre de la sede tal como está en la tabla `sedes` de la base
  * ('Montevideo', 'San José'), que es lo que viaja hasta los emails.
  *
- * ⚠️ FALTA la dirección de Montevideo. Mientras esté vacía, el mail nombra la
- *    sede sin dirección (no inventa nada).
+ * Si una sede queda sin dirección, el mail la nombra igual pero sin dirección:
+ * nunca se inventa una.
  */
 
 export const direcciones: Record<string, string> = {
   'San José': 'Treinta y Tres esquina Larrañaga (Escritorio Duca & Aldaz)',
-  Montevideo: '',
+  Montevideo: 'Maldonado 1321/402',
 };
 
 /** Dirección de la sede, o null si no la tenemos cargada. */
