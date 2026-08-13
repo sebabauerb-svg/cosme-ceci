@@ -7,7 +7,6 @@ import {
 } from '../../../lib/mercadopago';
 import { notificarReservaConfirmada, alertarPagoSinTurno } from '../../../lib/email';
 import { crearEventoReserva } from '../../../lib/calendar';
-import { saldoEnConsulta } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
 
 export const prerender = false;
@@ -174,7 +173,6 @@ export const POST: APIRoute = async ({ request }) => {
             email: d.email,
             // Lo cobrado por la web es la seña; el resto se abona en la consulta.
             sena: montoPagado ?? precioEsperado,
-            saldo: saldoEnConsulta(d.modalidad),
           });
 
           // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).

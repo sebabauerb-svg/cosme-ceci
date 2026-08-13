@@ -5,7 +5,7 @@ import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
 import { site, whatsappLink } from '../data/site';
-import { SENA_UYU, senaOnline, saldoEnConsulta } from '../lib/precios';
+import { SENA_UYU, senaOnline } from '../lib/precios';
 import {
   CONCEPTO_PREFIJO,
   POLITICA_CANCELACION,
@@ -25,11 +25,12 @@ const items = modalidades.map((m) => ({
   precio: m.precio ?? 'A coordinar',
   precioNota: m.precioNota ?? '',
   esMembresia: m.id === 'club', // el Club es membresía anual, no turno suelto
-  // La web cobra una seña, no el total: el saldo se abona en la consulta.
+  // La web cobra una seña, no el total: el saldo se abona en la consulta. No se
+  // muestra la cifra del saldo porque el valor final puede cambiar (ej. la
+  // consulta se bonifica al contratar un protocolo el mismo día).
   // El Club no tiene seña (se coordina y cobra aparte) → sena null.
   sena: senaOnline(m.id),
   senaLabel: senaOnline(m.id) != null ? fmt(SENA_UYU) : null,
-  saldoLabel: (saldoEnConsulta(m.id) ?? 0) > 0 ? fmt(saldoEnConsulta(m.id)!) : null,
 }));
 
 // Datos bancarios para señar por transferencia. Si todavía no se cargaron en
@@ -129,17 +130,22 @@ const senaLabel = fmt(SENA_UYU);
           <li id="trust-sena">Reservás con una seña; el saldo lo abonás en la consulta</li>
           <li>Pagando con MercadoPago tu turno queda confirmado al instante</li>
           <li>O señás por transferencia y Ceci confirma tu turno al ver el pago</li>
-          <li>¿Necesitás reprogramar? <a href={waReprogramar} target="_blank" rel="noopener">Escribinos por WhatsApp</a> y lo vemos sin problema</li>
         </ul>
         <button class="btn btn--primary pay" id="confirmar">Pagar la seña con MercadoPago</button>
         <p class="step__hint center" id="hint-mp">Pago seguro con MercadoPago. Tu turno queda confirmado al instante.</p>
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
         <button class="btn btn--ghost pay" id="coordinar">Reservar y señar por transferencia</button>
         <p class="step__hint center" id="hint-coord">Te mostramos los datos bancarios y le avisás a Ceci por WhatsApp. Confirma tu turno al ver el pago.</p>
-        {/* Condición del pago → tiene que verse ANTES de pagar, no después. */}
-        <p class="politica" id="politica">{POLITICA_CANCELACION}</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
+        </div>
+        {/* Letra chica al cierre: la política es condición del pago y se ve en
+            esta misma pantalla, antes de confirmar. */}
+        <div class="pie">
+          <p class="politica" id="politica">{POLITICA_CANCELACION}</p>
+          <p class="pie__wa">
+            ¿Necesitás reprogramar? <a href={waReprogramar} target="_blank" rel="noopener">Escribile a Ceci por WhatsApp</a> y lo vemos sin problema.
+          </p>
         </div>
       </section>
 
@@ -444,8 +450,7 @@ const senaLabel = fmt(SENA_UYU);
     if (m.sena != null) {
       filas.push(`<div class="resumen__row"><span>Valor de la consulta</span><strong>${m.precio}</strong></div>`);
       filas.push(`<div class="resumen__row resumen__row--total"><span>Seña para reservar</span><strong>${m.senaLabel}</strong></div>`);
-      if (m.saldoLabel)
-        filas.push(`<p class="resumen__nota">El saldo de ${m.saldoLabel} lo abonás en la consulta.</p>`);
+      filas.push(`<p class="resumen__nota">El saldo lo abonás en la consulta.</p>`);
     } else {
       filas.push(`<div class="resumen__row resumen__row--total"><span>Total</span><strong>${m.precio}</strong></div>`);
     }
@@ -467,9 +472,7 @@ const senaLabel = fmt(SENA_UYU);
     if (trustSena) {
       trustSena.hidden = esMemb;
       if (!esMemb)
-        trustSena.textContent = m.saldoLabel
-          ? `Reservás con una seña de ${m.senaLabel}; el saldo de ${m.saldoLabel} lo abonás en la consulta`
-          : `Reservás con una seña de ${m.senaLabel}`;
+        trustSena.textContent = `Reservás con una seña de ${m.senaLabel}; el saldo lo abonás en la consulta`;
     }
     const coordBtn = $('#coordinar');
     if (coordBtn)
@@ -811,7 +814,10 @@ const senaLabel = fmt(SENA_UYU);
     background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
     padding: 1.4rem 1.6rem; margin-bottom: 1.4rem; max-width: 460px; margin-inline: auto;
   }
-  .pay { width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; }
+  /* display:flex (no inline-flex, que es lo que trae .btn): un botón inline no
+     se centra con margin auto y quedaba corrido a la izquierda respecto del
+     resumen y del separador. */
+  .pay { display: flex; width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; }
   .pay:disabled { opacity: 0.7; cursor: default; }
   /* Separador "o" entre pagar ahora y coordinar con Ceci */
   .pay-sep { display: flex; align-items: center; gap: 0.8rem; max-width: 460px; margin: 0.5rem auto; color: var(--ink-soft); font-size: 0.8rem; }
@@ -824,6 +830,11 @@ const senaLabel = fmt(SENA_UYU);
     max-width: 460px; margin: 1.3rem auto 0;
     font-size: 0.8rem; line-height: 1.6; color: var(--ink-soft); text-align: center;
   }
+  /* Letra chica al pie del paso de confirmar */
+  .pie { max-width: 460px; margin: 2.2rem auto 0; padding-top: 1.4rem; border-top: 1px solid var(--sand); }
+  .pie .politica { margin-top: 0; }
+  .pie__wa { font-size: 0.82rem; line-height: 1.6; color: var(--ink-soft); text-align: center; margin: 0.7rem 0 0; }
+  .pie__wa a { color: var(--sage-deep); font-weight: 600; }
 
   .done { text-align: center; padding: 2rem 0; }
   .done__check {

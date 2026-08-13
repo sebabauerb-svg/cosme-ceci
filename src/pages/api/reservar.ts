@@ -3,7 +3,7 @@ import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion } from '..
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
-import { senaOnline, saldoEnConsulta } from '../../lib/precios';
+import { senaOnline } from '../../lib/precios';
 
 export const prerender = false;
 
@@ -253,7 +253,6 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         pagoOnline: !!initPoint,
         via,
         sena: precioNum,
-        saldo: saldoEnConsulta(modalidad),
       });
 
       return json({ ok: true, id: reservaId, initPoint, via });

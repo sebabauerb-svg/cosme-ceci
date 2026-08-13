@@ -43,8 +43,6 @@ type Datos = {
   via?: 'pagar' | 'coordinar';
   /** seña que reserva el turno (lo único que se cobra por la web) */
   sena?: number | null;
-  /** saldo que queda para abonar en la consulta */
-  saldo?: number | null;
 };
 
 /** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
@@ -68,17 +66,15 @@ function bloqueDetalle(d: Datos) {
 }
 
 /**
- * Línea de cobro para la clienta: qué señó y qué le queda por abonar. Se omite
- * si no hay seña registrada (ej. el Club, que se coordina aparte).
+ * Línea de cobro para la clienta: qué señó y que el resto se abona en la
+ * consulta. Sin cifra del saldo a propósito — el valor final puede cambiar
+ * (ej. la consulta se bonifica al contratar un protocolo el mismo día).
+ * Se omite si no hay seña registrada (ej. el Club, que se coordina aparte).
  */
 function bloqueCobro(d: Datos) {
   if (d.sena == null) return '';
-  const saldo =
-    d.saldo != null && d.saldo > 0
-      ? ` · <strong>Saldo a abonar en la consulta:</strong> $${esc(d.saldo)}`
-      : '';
   return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:14px 0 0">
-    <strong>Seña abonada:</strong> $${esc(d.sena)}${saldo}
+    <strong>Seña abonada:</strong> $${esc(d.sena)} · El saldo lo abonás en la consulta.
   </p>`;
 }
 

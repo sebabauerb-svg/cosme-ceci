@@ -41,10 +41,3 @@ export function senaOnline(modalidad: unknown): number | null {
   if (precioTotal(modalidad) == null) return null;
   return SENA_UYU;
 }
-
-/** Saldo que queda para abonar en la consulta, o null si no aplica. */
-export function saldoEnConsulta(modalidad: unknown): number | null {
-  const total = precioTotal(modalidad);
-  if (total == null) return null;
-  return Math.max(0, total - SENA_UYU);
-}

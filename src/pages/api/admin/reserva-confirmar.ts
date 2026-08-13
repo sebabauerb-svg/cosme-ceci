@@ -3,7 +3,7 @@ import { getSql, ensureConfirmacion, ensureGoogleEventId } from '../../../lib/db
 import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { notificarReservaConfirmada } from '../../../lib/email';
-import { SENA_UYU, saldoEnConsulta } from '../../../lib/precios';
+import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
 
 export const prerender = false;
@@ -81,7 +81,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         // Solo hablamos de seña abonada si Ceci marcó que ya pagó: puede
         // confirmar un turno sin haber visto el pago todavía.
         sena: pagado ? (montoCobrado ?? SENA_UYU) : null,
-        saldo: pagado ? saldoEnConsulta(d.modalidad) : null,
       },
       { online: false }
     );
