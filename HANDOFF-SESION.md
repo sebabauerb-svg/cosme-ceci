@@ -1,4 +1,38 @@
-# Handoff — estado del proyecto (actualizado 12/7/2026 · sesión Fase 2)
+# Handoff — estado del proyecto (actualizado 12/8/2026 · sesión seña + mobile)
+
+## 🔴 Lo primero de la próxima sesión
+
+1. **Completar `src/data/pago.ts`** con los datos bancarios reales de Ceci
+   (están en su planilla). Sin eso, el camino de transferencia funciona pero le
+   pide los datos a Ceci por WhatsApp en vez de mostrarlos.
+2. **Decidir el deploy de la rama `claude/project-improvements-57cc24`**: cambia
+   el cobro de la web de $1.800 a una **seña de $700**. Es un cambio de plata en
+   un sitio con MercadoPago en producción → no se mergeó sin visto bueno.
+
+## ✅ Novedades de esta sesión (12/8/2026)
+
+- **Rediseño mobile de la home: EN PRODUCCIÓN** (`ea702ba`). Scroll de 18.165 px
+  a 11.120 px con acordeones (`<details>`) y carruseles scroll-snap. Desktop
+  intacto (verificado: categorías abiertas, grilla de 2 columnas, sin overflow).
+- **Reservas — modelo de seña** (rama `claude/project-improvements-57cc24`,
+  commit `1d9eb8f`, **sin mergear**):
+  - La web cobra **$700 de seña**, no el total. Fuente de verdad:
+    `src/lib/precios.ts` (`SENA_UYU`, `senaOnline`, `saldoEnConsulta`).
+    `reservas.precio_uyu` guarda **la seña** — el webhook de MP valida contra
+    esa columna, así que ambos lados salen de `senaOnline()`.
+  - Camino transferencia: la web muestra los datos bancarios de
+    `src/data/pago.ts` y arma el WhatsApp. Si el archivo está vacío, degrada
+    solo (dice que Ceci pasa los datos).
+  - **Email obligatorio** en `/reservar`: era la única forma de garantizar la
+    confirmación con día y hora. El asunto del mail lleva fecha y hora.
+  - **Admin**: al confirmar aparece "Avisar por WhatsApp" con el mensaje ya
+    escrito al número de la paciente (link `wa.me`, sin API ni costo).
+  - Paso 5 de `/reservar`: los tres botones ya comparten ancho y centrado
+    (el bug de alineación que estaba anotado acá abajo, resuelto).
+
+---
+
+# Handoff anterior (12/7/2026 · sesión Fase 2)
 
 Contexto para continuar en una sesión nueva. El sitio de **Cecilia Gutiérrez ·
 Cosmetología Médica** (Astro 5 SSR en Vercel, dominio `cgcosmetologiamedica.com`)
