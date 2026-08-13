@@ -148,4 +148,36 @@ const [destacado, ...resto] = testimonios;
       grid-template-columns: 1fr;
     }
   }
+
+  /* Mobile: las tres citas se recorren en horizontal, con la siguiente asomando. */
+  @media (max-width: 760px) {
+    .testi__head { margin-bottom: 1.6rem; }
+    .testi__grid {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: 86%;
+      gap: 0.9rem;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      margin-inline: calc(-1 * clamp(1.25rem, 5vw, 2.5rem));
+      padding-inline: clamp(1.25rem, 5vw, 2.5rem);
+      padding-bottom: 0.4rem;
+      scrollbar-width: none;
+    }
+    .testi__grid::-webkit-scrollbar { display: none; }
+    /* Los dos testimonios de apoyo pasan a ser slides hermanos del destacado. */
+    .testi__rest { display: contents; }
+    .testi__feature,
+    .testi__item { scroll-snap-align: center; }
+    .testi__feature { padding: 2.2rem 1.4rem 1.5rem; }
+    .testi__quote { font-size: 1.18rem; margin: 1rem 0 1.1rem; }
+    .testi__item {
+      border-top: 0;
+      background: var(--white);
+      border: 1px solid var(--sand);
+      border-radius: var(--radius);
+      padding: 1.5rem 1.4rem;
+    }
+    .testi__item p { font-size: 1.02rem; }
+  }
 </style>

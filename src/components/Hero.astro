@@ -122,4 +122,18 @@ const heroImg = imagenes.hero;
     .hero__inner { grid-template-columns: 1fr; }
     .hero__art { order: -1; max-width: 340px; margin-inline: auto; width: 100%; }
   }
+
+  /* Mobile: el hero entra en una pantalla — foto contenida y jerarquía más compacta. */
+  @media (max-width: 760px) {
+    .hero__inner { gap: 1.5rem; padding-block: 1.9rem 2.6rem; }
+    .hero__art { max-width: 236px; min-height: 0; }
+    .hero h1 { font-size: 2.05rem; margin: 0.5rem 0 1rem; }
+    .hero__cta { margin-top: 1.4rem; }
+    .hero__trust {
+      margin-top: 1.6rem;
+      padding-top: 1.2rem;
+      gap: 0.45rem 1.4rem;
+      font-size: 0.88rem;
+    }
+  }
 </style>

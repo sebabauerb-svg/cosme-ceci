@@ -99,4 +99,12 @@ const p = site.profesional;
     .sobre__inner { grid-template-columns: 1fr; }
     .sobre__foto { max-width: 360px; }
   }
+
+  /* Mobile: la foto pasa a formato apaisado (menos alto de scroll, mismo encuadre del rostro). */
+  @media (max-width: 760px) {
+    .sobre__inner { gap: 1.6rem; }
+    .sobre__foto { max-width: none; aspect-ratio: 3 / 2; }
+    .sobre__foto img { object-position: 50% 22%; }
+    .sobre__quote { font-size: 1.22rem; padding-top: 1.8rem; margin: 1.3rem 0 1.5rem; }
+  }
 </style>

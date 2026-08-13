@@ -113,6 +113,14 @@ img { max-width: 100%; display: block; }
   scroll-margin-top: 88px;
 }
 
+/* En mobile el aire vertical se acota: la página completa debe poder recorrerse
+   sin que cada sección ocupe pantallas enteras de padding. */
+@media (max-width: 760px) {
+  :root {
+    --space: 3rem;
+  }
+}
+
 .section--alt {
   background: var(--cream-deep);
 }

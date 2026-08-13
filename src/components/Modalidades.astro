@@ -13,7 +13,7 @@ import { modalidades } from '../data/modalidades';
       </p>
     </div>
 
-    <div class="mod__grid">
+    <div class="mod__grid" tabindex="0" aria-label="Modalidades de atención (deslizá para recorrerlas)">
       {modalidades.map((m) => {
         // El Club tiene su propia sección detallada más abajo: la tarjeta lleva ahí.
         // El resto lleva al flujo de reserva con la modalidad ya preseleccionada.
@@ -43,8 +43,55 @@ import { modalidades } from '../data/modalidades';
         );
       })}
     </div>
+
+    <div class="mod__dots">
+      {modalidades.map((m, i) => (
+        <button type="button" class={`mod__dot ${i === 0 ? 'is-active' : ''}`} aria-label={`Ir a ${m.nombre}`}></button>
+      ))}
+    </div>
   </div>
 </section>
+
+<!-- Sincroniza los puntos del carrusel mobile; en desktop los puntos no se muestran. -->
+<script is:inline>
+  (() => {
+    const scroller = document.querySelector('#modalidades .mod__grid');
+    const dots = Array.from(document.querySelectorAll('#modalidades .mod__dot'));
+    if (!scroller || !dots.length) return;
+    const cards = Array.from(scroller.querySelectorAll('.mod__card'));
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const setActive = (i) => dots.forEach((d, j) => d.classList.toggle('is-active', i === j));
+    let ticking = false;
+    scroller.addEventListener(
+      'scroll',
+      () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+          ticking = false;
+          const mid = scroller.scrollLeft + scroller.clientWidth / 2;
+          let best = 0;
+          let bestDist = Infinity;
+          cards.forEach((c, i) => {
+            const dist = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+            if (dist < bestDist) { bestDist = dist; best = i; }
+          });
+          setActive(best);
+        });
+      },
+      { passive: true }
+    );
+    // scrollTo explícito: scrollIntoView(smooth) se aborta en contenedores con snap mandatory.
+    dots.forEach((d, i) =>
+      d.addEventListener('click', () => {
+        const card = cards[i];
+        const left = card.offsetLeft - (scroller.clientWidth - card.offsetWidth) / 2;
+        scroller.scrollTo({ left, behavior: reduce ? 'auto' : 'smooth' });
+        setActive(i);
+      })
+    );
+  })();
+</script>
 
 <style>
   .mod__head { text-align: center; max-width: 760px; margin-inline: auto; }
@@ -85,7 +132,59 @@ import { modalidades } from '../data/modalidades';
   .mod__precio { display: flex; flex-direction: column; }
   .mod__monto { font-family: var(--font-serif); font-size: 1.7rem; color: var(--ink); }
   .mod__nota { font-size: 0.82rem; color: var(--ink-soft); max-width: 22ch; }
+  .mod__dots { display: none; }
+
+  /* Mobile: carrusel horizontal con snap — una modalidad por vista, la siguiente asoma. */
   @media (max-width: 760px) {
-    .mod__grid { grid-template-columns: 1fr; }
+    .mod__grid {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: 86%;
+      gap: 0.9rem;
+      margin-top: 2rem;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      margin-inline: calc(-1 * clamp(1.25rem, 5vw, 2.5rem));
+      padding-inline: clamp(1.25rem, 5vw, 2.5rem);
+      padding-bottom: 0.4rem;
+      scrollbar-width: none;
+    }
+    .mod__grid::-webkit-scrollbar { display: none; }
+    .mod__card { scroll-snap-align: center; padding: 1.25rem; }
+    .mod__desc { font-size: 0.97rem; }
+    .mod__alcance { font-size: 0.88rem; padding: 0.8rem 0.95rem; margin-bottom: 1.1rem; }
+    .mod__monto { font-size: 1.5rem; }
+    .mod__dots {
+      display: flex;
+      justify-content: center;
+      gap: 0.35rem;
+      margin-top: 0.9rem;
+    }
+    .mod__dot {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      background: transparent;
+      border: 0;
+      padding: 0;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mod__dot::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--sand);
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .mod__dot.is-active::after {
+      background: var(--sage-deep);
+      transform: scale(1.35);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mod__dot::after { transition: none; }
+    }
   }
 </style>

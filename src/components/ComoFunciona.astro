@@ -121,4 +121,12 @@ const pasos = [
       gap: clamp(2rem, 8vw, 2.8rem);
     }
   }
+
+  /* Mobile: mismos tres pasos, menos aire entre ellos. */
+  @media (max-width: 760px) {
+    .cf__inner { gap: 1.7rem; }
+    .cf__lead { margin-bottom: 1.4rem; }
+    .cf__step { padding-block: 1.1rem; }
+    .cf__num { font-size: 1.6rem; }
+  }
 </style>

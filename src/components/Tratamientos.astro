@@ -16,12 +16,13 @@ import { whatsappLink } from '../data/site';
 
     <div class="trat__cats">
       {categoriasTratamientos.map((cat) => (
-        <div class="trat__cat reveal">
-          <div class="trat__catHead">
+        <details class="trat__cat reveal" open>
+          <summary class="trat__catHead">
             <span class="trat__grupo">{cat.grupo}</span>
             <h3>{cat.titulo}</h3>
             <p>{cat.intro}</p>
-          </div>
+            <span class="trat__chev" aria-hidden="true">+</span>
+          </summary>
           <ul class="trat__list">
             {cat.tratamientos.map((t) => (
               <li>
@@ -30,7 +31,7 @@ import { whatsappLink } from '../data/site';
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       ))}
     </div>
 
@@ -42,6 +43,30 @@ import { whatsappLink } from '../data/site';
     </div>
   </div>
 </section>
+
+<!-- En mobile el catálogo arranca plegado; sin JS queda todo abierto (open en el server). -->
+<script is:inline>
+  (() => {
+    const mq = window.matchMedia('(max-width: 760px)');
+    const cats = document.querySelectorAll('#tratamientos .trat__cat');
+    const apply = (mobile) => {
+      cats.forEach((d) => {
+        if (mobile) d.removeAttribute('open');
+        else d.setAttribute('open', '');
+      });
+    };
+    let last = mq.matches;
+    apply(last);
+    const onChange = () => {
+      if (mq.matches === last) return;
+      last = mq.matches;
+      apply(last);
+    };
+    mq.addEventListener('change', onChange);
+    // Fallback: algunos navegadores no disparan 'change' de matchMedia al redimensionar.
+    window.addEventListener('resize', onChange, { passive: true });
+  })();
+</script>
 
 <style>
   .trat__head { text-align: center; max-width: 760px; margin-inline: auto; }
@@ -63,9 +88,11 @@ import { whatsappLink } from '../data/site';
     color: var(--clay);
     font-weight: 600;
   }
+  .trat__catHead { list-style: none; }
+  .trat__catHead::-webkit-details-marker { display: none; }
   .trat__catHead h3 { margin: 0.4rem 0 0.6rem; }
   .trat__catHead p { font-size: 0.95rem; }
-  .trat__catHead { position: sticky; top: 100px; }
+  .trat__chev { display: none; }
   .trat__list {
     list-style: none;
     display: grid;
@@ -94,11 +121,57 @@ import { whatsappLink } from '../data/site';
     justify-items: center;
   }
   .trat__cta p { font-size: 1.05rem; color: var(--ink); }
-  @media (max-width: 860px) {
+
+  /* Desktop y tablet: el details se comporta como el bloque estático de siempre. */
+  @media (min-width: 761px) {
+    .trat__catHead { pointer-events: none; position: sticky; top: 100px; }
+  }
+  @media (min-width: 761px) and (max-width: 860px) {
     .trat__cat { grid-template-columns: 1fr; gap: 1.2rem; }
     .trat__catHead { position: static; }
   }
-  @media (max-width: 560px) {
-    .trat__list { grid-template-columns: 1fr; }
+
+  /* Mobile: cada categoría es un acordeón; el catálogo entero cabe en una pantalla. */
+  @media (max-width: 760px) {
+    .trat__cats { gap: 0.8rem; margin-top: 2rem; }
+    .trat__cat {
+      display: block;
+      background: var(--white);
+      border: 1px solid var(--sand);
+      border-radius: var(--radius-sm);
+      padding: 0;
+    }
+    /* El :first-child del layout desktop anula el border-top; acá lo recupera. */
+    .trat__cat:first-child { padding-top: 0; border-top: 1px solid var(--sand); }
+    .trat__catHead {
+      position: relative;
+      cursor: pointer;
+      padding: 1.05rem 3rem 1.05rem 1.2rem;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .trat__catHead h3 { margin: 0.25rem 0 0; font-size: 1.2rem; }
+    .trat__catHead p { display: none; margin-top: 0.5rem; }
+    .trat__cat[open] .trat__catHead p { display: block; }
+    .trat__chev {
+      display: block;
+      position: absolute;
+      top: 1.05rem;
+      right: 1.2rem;
+      font-size: 1.5rem;
+      line-height: 1.4;
+      color: var(--sage);
+      transition: transform 0.2s ease;
+    }
+    .trat__cat[open] .trat__chev { transform: rotate(45deg); }
+    .trat__list {
+      grid-template-columns: 1fr;
+      gap: 0.7rem;
+      padding: 0 1.2rem 1.2rem;
+    }
+    .trat__list li { background: var(--cream); border-color: color-mix(in srgb, var(--sand) 60%, transparent); }
+    .trat__cta { margin-top: 2rem; }
+    @media (prefers-reduced-motion: reduce) {
+      .trat__chev { transition: none; }
+    }
   }
 </style>
