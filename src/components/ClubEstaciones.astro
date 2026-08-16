@@ -19,6 +19,12 @@ import { whatsappLink } from '../data/site';
       </a>
     </div>
 
+    <!-- Solo en mobile: el detalle del Club (las estaciones y qué incluye) arranca
+         plegado. Sin JS queda todo visible, y en desktop el botón ni aparece. -->
+    <button class="club__toggle" type="button" hidden aria-expanded="true">
+      Ver las cuatro estaciones y qué incluye
+    </button>
+
     <div class="club__estaciones">
       {club.estaciones.map((e) => (
         <div class="club__est reveal">
@@ -55,6 +61,38 @@ import { whatsappLink } from '../data/site';
     </div>
   </div>
 </section>
+
+<!-- En mobile el Club arranca plegado; sin JS queda todo abierto. -->
+<script is:inline>
+  (() => {
+    const sec = document.getElementById('club');
+    const btn = sec?.querySelector('.club__toggle');
+    if (!sec || !btn) return;
+    const mq = window.matchMedia('(max-width: 760px)');
+    const TXT_VER = 'Ver las cuatro estaciones y qué incluye';
+    const plegar = (si) => {
+      sec.classList.toggle('is-plegado', si);
+      btn.setAttribute('aria-expanded', String(!si));
+      btn.textContent = si ? TXT_VER : 'Ver menos';
+    };
+    const aplicar = (mobile) => {
+      if (mobile) btn.removeAttribute('hidden');
+      else btn.setAttribute('hidden', '');
+      plegar(mobile);
+    };
+    let last = mq.matches;
+    aplicar(last);
+    const onChange = () => {
+      if (mq.matches === last) return;
+      last = mq.matches;
+      aplicar(last);
+    };
+    mq.addEventListener('change', onChange);
+    // Algunos navegadores no disparan 'change' de matchMedia al redimensionar.
+    window.addEventListener('resize', onChange, { passive: true });
+    btn.addEventListener('click', () => plegar(!sec.classList.contains('is-plegado')));
+  })();
+</script>
 
 <style>
   .club {
@@ -139,8 +177,27 @@ import { whatsappLink } from '../data/site';
     .club__plan { grid-template-columns: 1fr; }
   }
 
+  .club__toggle {
+    display: none;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: none;
+    border: 1px solid rgba(250, 246, 240, 0.3);
+    border-radius: 999px;
+    color: var(--cream);
+    padding: 0.6rem 1.3rem;
+    margin: 1.4rem auto 0;
+    cursor: pointer;
+  }
+
   /* Mobile: las estaciones quedan en 2×2 compacto y el plan pierde aire sobrante. */
   @media (max-width: 760px) {
+    .club__toggle { display: block; }
+    /* Plegado: quedan la presentación, el precio y el botón de contacto. */
+    .club.is-plegado .club__estaciones,
+    .club.is-plegado .club__incluye { display: none; }
+    .club.is-plegado .club__plan { padding-top: 0; border: 0; background: none; }
     .club__more { margin-top: 1rem; }
     .club__estaciones { gap: 0.7rem; margin-top: 2rem; }
     .club__est { padding: 0.95rem; }
