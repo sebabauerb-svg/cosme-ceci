@@ -133,5 +133,51 @@ const articleLd = article
         els.forEach((el) => io.observe(el));
       }
     </script>
+
+    <!--
+      Secciones plegables en mobile. Cada botón declara qué sección pliega y con
+      qué textos; la sección decide por CSS qué se esconde con `.is-plegado`.
+      Sin JS queda todo desplegado, y en desktop el botón ni siquiera aparece.
+    -->
+    <script is:inline>
+      (() => {
+        const botones = document.querySelectorAll('[data-plegar]');
+        if (!botones.length) return;
+        const mq = window.matchMedia('(max-width: 760px)');
+
+        const plegar = (btn, sec, si) => {
+          sec.classList.toggle('is-plegado', si);
+          btn.setAttribute('aria-expanded', String(!si));
+          btn.textContent = si ? btn.dataset.verMas || 'Ver más' : btn.dataset.verMenos || 'Ver menos';
+        };
+
+        const aplicar = (mobile) => {
+          botones.forEach((btn) => {
+            const sec = document.querySelector(btn.dataset.plegar);
+            if (!sec) return;
+            if (mobile) btn.removeAttribute('hidden');
+            else btn.setAttribute('hidden', '');
+            plegar(btn, sec, mobile);
+          });
+        };
+
+        botones.forEach((btn) => {
+          const sec = document.querySelector(btn.dataset.plegar);
+          if (!sec) return;
+          btn.addEventListener('click', () => plegar(btn, sec, !sec.classList.contains('is-plegado')));
+        });
+
+        let last = mq.matches;
+        aplicar(last);
+        const onChange = () => {
+          if (mq.matches === last) return;
+          last = mq.matches;
+          aplicar(last);
+        };
+        mq.addEventListener('change', onChange);
+        // Algunos navegadores no disparan 'change' de matchMedia al redimensionar.
+        window.addEventListener('resize', onChange, { passive: true });
+      })();
+    </script>
   </body>
 </html>

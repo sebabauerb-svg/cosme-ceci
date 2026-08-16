@@ -21,7 +21,15 @@ import { whatsappLink } from '../data/site';
 
     <!-- Solo en mobile: el detalle del Club (las estaciones y qué incluye) arranca
          plegado. Sin JS queda todo visible, y en desktop el botón ni aparece. -->
-    <button class="club__toggle" type="button" hidden aria-expanded="true">
+    <button
+      class="club__toggle plegar"
+      type="button"
+      hidden
+      aria-expanded="true"
+      data-plegar="#club"
+      data-ver-mas="Ver las cuatro estaciones y qué incluye"
+      data-ver-menos="Ver menos"
+    >
       Ver las cuatro estaciones y qué incluye
     </button>
 
@@ -62,37 +70,6 @@ import { whatsappLink } from '../data/site';
   </div>
 </section>
 
-<!-- En mobile el Club arranca plegado; sin JS queda todo abierto. -->
-<script is:inline>
-  (() => {
-    const sec = document.getElementById('club');
-    const btn = sec?.querySelector('.club__toggle');
-    if (!sec || !btn) return;
-    const mq = window.matchMedia('(max-width: 760px)');
-    const TXT_VER = 'Ver las cuatro estaciones y qué incluye';
-    const plegar = (si) => {
-      sec.classList.toggle('is-plegado', si);
-      btn.setAttribute('aria-expanded', String(!si));
-      btn.textContent = si ? TXT_VER : 'Ver menos';
-    };
-    const aplicar = (mobile) => {
-      if (mobile) btn.removeAttribute('hidden');
-      else btn.setAttribute('hidden', '');
-      plegar(mobile);
-    };
-    let last = mq.matches;
-    aplicar(last);
-    const onChange = () => {
-      if (mq.matches === last) return;
-      last = mq.matches;
-      aplicar(last);
-    };
-    mq.addEventListener('change', onChange);
-    // Algunos navegadores no disparan 'change' de matchMedia al redimensionar.
-    window.addEventListener('resize', onChange, { passive: true });
-    btn.addEventListener('click', () => plegar(!sec.classList.contains('is-plegado')));
-  })();
-</script>
 
 <style>
   .club {

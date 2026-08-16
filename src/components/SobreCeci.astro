@@ -37,6 +37,18 @@ const p = site.profesional;
         Porque una piel saludable siempre será la mejor versión de una piel bonita.
       </blockquote>
 
+      <button
+        class="sobre__toggle"
+        type="button"
+        hidden
+        aria-expanded="true"
+        data-plegar="#sobre-ceci"
+        data-ver-mas="Leer más"
+        data-ver-menos="Leer menos"
+      >
+        Leer más
+      </button>
+
       <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
         Agendá tu consulta
       </a>
@@ -100,8 +112,26 @@ const p = site.profesional;
     .sobre__foto { max-width: 360px; }
   }
 
+  .sobre__toggle {
+    display: none;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: none;
+    border: 0;
+    color: var(--sage-deep);
+    text-decoration: underline;
+    padding: 0.2rem 0;
+    margin-bottom: 1.1rem;
+    cursor: pointer;
+  }
+
   /* Mobile: la foto pasa a formato apaisado (menos alto de scroll, mismo encuadre del rostro). */
   @media (max-width: 760px) {
+    .sobre__toggle { display: block; }
+    /* Plegado queda el primer párrafo, que ya dice quién es y qué hace. */
+    #sobre-ceci.is-plegado .sobre__copy p:nth-of-type(2),
+    #sobre-ceci.is-plegado .sobre__quote { display: none; }
     .sobre__inner { gap: 1.6rem; }
     .sobre__foto { max-width: none; aspect-ratio: 3 / 2; }
     .sobre__foto img { object-position: 50% 22%; }

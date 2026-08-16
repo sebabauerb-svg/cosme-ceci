@@ -33,6 +33,17 @@ const pasos = [
         profesional. Ahí está la diferencia.
       </p>
       <a href="/reservar" class="btn btn--primary cf__cta">Agendá tu valoración</a>
+      <button
+        class="cf__toggle"
+        type="button"
+        hidden
+        aria-expanded="true"
+        data-plegar="#forma-de-trabajar"
+        data-ver-mas="Ver el detalle de cada paso"
+        data-ver-menos="Ver menos"
+      >
+        Ver el detalle de cada paso
+      </button>
     </header>
 
     <ol class="cf__steps stagger">
@@ -123,7 +134,25 @@ const pasos = [
   }
 
   /* Mobile: mismos tres pasos, menos aire entre ellos. */
+  .cf__toggle {
+    display: none;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: none;
+    border: 1px solid rgba(250, 246, 240, 0.3);
+    border-radius: 999px;
+    color: var(--cream);
+    padding: 0.55rem 1.2rem;
+    margin-top: 1rem;
+    cursor: pointer;
+  }
+
   @media (max-width: 760px) {
+    .cf__toggle { display: inline-block; }
+    /* Plegado quedan los tres títulos, que ya cuentan el proceso de punta a punta. */
+    #forma-de-trabajar.is-plegado .cf__step-text { display: none; }
+    #forma-de-trabajar.is-plegado .cf__step { padding-block: 0.7rem; }
     .cf__inner { gap: 1.7rem; }
     .cf__lead { margin-bottom: 1.4rem; }
     .cf__step { padding-block: 1.1rem; }
