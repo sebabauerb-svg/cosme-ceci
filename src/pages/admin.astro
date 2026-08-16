@@ -79,7 +79,15 @@ if (authed) {
 
           {dbError && <p class="login__err">Error de base de datos: {dbError}</p>}
 
-          <section class="card">
+          <!-- Una tarea por pestaña: cargar horarios, confirmar pacientes, y
+               seguimiento de cobros y mensajes. -->
+          <nav class="tabs" aria-label="Secciones del panel">
+            <button class="tab" data-ir="agenda" aria-current="true">Agenda</button>
+            <button class="tab" data-ir="reservas">Reservas</button>
+            <button class="tab" data-ir="seguimiento">Seguimiento</button>
+          </nav>
+
+          <section class="card" data-tab="agenda">
             <h2>Tu disponibilidad</h2>
             <p class="muted">Elegí un lugar, tocá los días del calendario y abrí tus horarios. Las clientas solo verán lo que dejes abierto.</p>
 
@@ -154,7 +162,7 @@ if (authed) {
             </div>
           </section>
 
-          <section class="card">
+          <section class="card" data-tab="reservas">
             <div class="card__head">
               <div>
                 <h2>Reservas a confirmar</h2>
@@ -164,7 +172,7 @@ if (authed) {
             <div id="por-confirmar"><p class="ag-vacia">Cargando…</p></div>
           </section>
 
-          <section class="card">
+          <section class="card" data-tab="seguimiento">
             <div class="card__head">
               <div>
                 <h2>Gestión de turnos <span class="gs-cuenta" id="gs-cuenta"></span></h2>
@@ -204,7 +212,7 @@ if (authed) {
             <div id="gestion"><p class="ag-vacia">Cargando…</p></div>
           </section>
 
-          <section class="card">
+          <section class="card" data-tab="agenda">
             <div class="card__head">
               <div>
                 <h2>Agenda de las próximas semanas</h2>
@@ -219,7 +227,7 @@ if (authed) {
             <div id="agenda"><p class="muted">Cargando…</p></div>
           </section>
 
-          <section class="card">
+          <section class="card" data-tab="reservas">
             <h2>Reservas ({reservas.length})</h2>
             {reservas.length === 0 ? (
               <p class="muted">Todavía no hay reservas.</p>
@@ -259,6 +267,31 @@ if (authed) {
 </Base>
 
 <script>
+  // ---------- Pestañas del panel ----------
+  // Recuerda la última pestaña: Ceci suele entrar a hacer lo mismo varias veces
+  // seguidas (cargar horarios, o confirmar una tanda de reservas).
+  (() => {
+    const tabs = document.querySelectorAll<HTMLButtonElement>('.tab');
+    const cards = document.querySelectorAll<HTMLElement>('.card[data-tab]');
+    if (!tabs.length || !cards.length) return;
+    const CLAVE = 'cg_admin_tab';
+
+    const mostrar = (tab: string) => {
+      cards.forEach((c) => c.classList.toggle('is-oculta', c.dataset.tab !== tab));
+      tabs.forEach((t) => t.setAttribute('aria-current', String(t.dataset.ir === tab)));
+      try { localStorage.setItem(CLAVE, tab); } catch { /* modo privado */ }
+    };
+
+    tabs.forEach((t) => t.addEventListener('click', () => mostrar(t.dataset.ir!)));
+
+    let inicial = 'agenda';
+    try {
+      const guardada = localStorage.getItem(CLAVE);
+      if (guardada && [...tabs].some((t) => t.dataset.ir === guardada)) inicial = guardada;
+    } catch { /* modo privado */ }
+    mostrar(inicial);
+  })();
+
   // ---------- Login ----------
   const lf = document.getElementById('login-form') as HTMLFormElement | null;
   lf?.addEventListener('submit', async (e) => {
@@ -1101,6 +1134,24 @@ if (authed) {
   .login__label { display: grid; gap: 0.35rem; font-size: 0.9rem; font-weight: 600; color: var(--ink); text-align: left; }
   .login__err { color: var(--clay-deep); font-size: 0.9rem; margin-top: 0.8rem; }
 
+  /* Pestañas del panel: una por tarea de Ceci. */
+  .tabs {
+    display: flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.3rem; margin-bottom: 1.8rem;
+    background: var(--cream-deep); border-radius: var(--radius);
+  }
+  .tab {
+    font: inherit; font-weight: 600; font-size: 0.92rem; padding: 0.6rem 1.3rem;
+    border: 0; border-radius: 10px; background: none; color: var(--ink-soft); cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-current='true'] {
+    background: var(--white); color: var(--sage-deep); box-shadow: 0 1px 3px rgba(42, 48, 43, 0.08);
+  }
+  .tab:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+  /* Sin JS no hay pestañas: se ve todo, que es mejor que no ver nada. */
+  .card[data-tab].is-oculta { display: none; }
+
   .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
   .panel__head h1 { font-size: clamp(1.6rem, 3vw, 2rem); }
   .muted { color: var(--ink-soft); font-size: 0.9rem; margin: 0.3rem 0 0; line-height: 1.6; }
@@ -1343,7 +1394,7 @@ if (authed) {
 
   /* Cada turno es un acordeón: cerrado ocupa una línea, abierto trae todo. */
   .gs-item {
-    border: 1px solid var(--sand); border-left: 3px solid var(--c, var(--sand));
+    border: 1px solid var(--sand);
     border-radius: var(--radius-sm); margin-bottom: 0.45rem; background: var(--white);
   }
   .gs-item.gs--mv { --c: var(--sage); }
