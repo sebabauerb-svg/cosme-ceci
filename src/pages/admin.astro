@@ -475,8 +475,15 @@ if (authed) {
         const lbl = document.createElement('span'); lbl.className = 'turno__h'; lbl.textContent = hora;
         t.appendChild(lbl);
         if (res) {
-          const n = document.createElement('span'); n.className = 'turno__nom';
+          const n = document.createElement(res.estado === 'confirmada' && res.id ? 'button' : 'span');
+          n.className = 'turno__nom';
           n.textContent = res.modalidad === 'manual' ? res.nombre : `${res.nombre} (web)`;
+          if (n instanceof HTMLButtonElement) {
+            // Tocar el nombre abre la ficha completa del turno (cobro, datos,
+            // mensajes, mover), la misma de Seguimiento.
+            n.type = 'button'; n.classList.add('turno__nom--link'); n.title = 'Ver y editar el turno';
+            n.addEventListener('click', () => (window as any).cgAbrirTurno?.(res.id, sel));
+          }
           t.appendChild(n);
           if (res.modalidad === 'manual') {
             const lib = document.createElement('button'); lib.className = 'turno__lib'; lib.textContent = 'Liberar';
@@ -1073,6 +1080,7 @@ if (authed) {
 
     function item(r: any) {
       const wrap = document.createElement('details');
+      wrap.dataset.id = r.id;
       wrap.className = 'gs-item gs--' + (CLS[r.sede] || 'on');
 
       // --- Fila compacta: lo que Ceci necesita ver de un vistazo, sin abrir ---
@@ -1293,6 +1301,30 @@ if (authed) {
     el('gs-sede')?.addEventListener('change', render);
     el('gs-estado')?.addEventListener('change', render);
     el('gs-buscar')?.addEventListener('input', render);
+
+    /**
+     * Desde la Agenda: abre la ficha de un turno en Seguimiento. Amplía el
+     * período si hace falta, filtra ese día y despliega la ficha.
+     */
+    (window as any).cgAbrirTurno = async (id: string, fecha: string) => {
+      const hasta = Math.ceil((Date.parse(fecha + 'T12:00:00Z') - Date.now()) / 86400000) + 1;
+      const periodo = [7, 15, 30, 60, 90].find((n) => n >= hasta) ?? 90;
+      // Siempre se relee: desde la Agenda se pudo haber movido el turno.
+      dias = Math.max(dias, periodo);
+      if (el('gs-dias')) el('gs-dias').value = String(dias);
+      await cargar();
+      if (el('gs-sede')) el('gs-sede').value = '';
+      if (el('gs-estado')) el('gs-estado').value = '';
+      if (el('gs-buscar')) el('gs-buscar').value = '';
+      if (el('gs-dia')) el('gs-dia').value = datos.some((r) => r.fecha === fecha) ? fecha : '';
+      render();
+      (document.querySelector('.tab[data-ir="seguimiento"]') as HTMLButtonElement | null)?.click();
+      const ficha = cont.querySelector<HTMLDetailsElement>(`details[data-id="${CSS.escape(id)}"]`);
+      if (ficha) {
+        ficha.open = true;
+        ficha.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
 
     cargar();
   })();
@@ -1658,6 +1690,12 @@ if (authed) {
   }
 
   .gs-nota { color: var(--sage-deep); }
+  button.turno__nom--link {
+    font: inherit; font-size: 0.85rem; text-align: left; background: none; border: 0; padding: 0;
+    color: var(--clay-deep); cursor: pointer; text-decoration: underline; text-decoration-color: transparent;
+    text-underline-offset: 3px; transition: text-decoration-color 0.15s ease;
+  }
+  button.turno__nom--link:hover, button.turno__nom--link:focus-visible { text-decoration-color: currentColor; }
   .turno { flex-wrap: wrap; }
   .gs-mover.turno__mover { flex: 1 1 100%; margin-top: 0; padding-top: 0; border-top: 0; display: none; }
   .turno--abierto > .gs-mover.turno__mover { display: block; }
