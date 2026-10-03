@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensureGoogleEventId } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensureGoogleEventId, ensureGestion } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { notificarReservaConfirmada } from '../../../lib/email';
 import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
+import { linkAutogestion } from '../../../lib/reprogramar';
 
 export const prerender = false;
 
@@ -48,14 +49,19 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const sql = getSql();
     await ensureConfirmacion(sql);
     await ensureGoogleEventId(sql);
+    await ensureGestion(sql);
 
     const upd = (await sql`
       update reservas
          set estado = 'confirmada', expira_at = null,
-             monto_cobrado = ${montoCobrado}, pagado = ${pagado}
+             monto_cobrado = ${montoCobrado}, pagado = ${pagado},
+             -- Si Ceci marcó que ya pagó, eso es la seña (por transferencia,
+             -- que es el único camino sin MercadoPago que llega acá).
+             sena_pagada = ${pagado ? (montoCobrado ?? SENA_UYU) : null},
+             forma_pago = ${pagado ? 'transferencia' : null}
        where id = ${id} and estado = 'a_confirmar'
        returning modalidad, sede_id, fecha::text as fecha, to_char(hora,'HH24:MI') as hora,
-                 nombre, telefono, email, duracion_min
+                 nombre, telefono, email, duracion_min, token_gestion
     `) as any[];
     if (!upd.length)
       return json({ ok: false, error: 'Esa reserva ya no está a confirmar (quizá venció o ya se resolvió).' }, 409);
@@ -81,6 +87,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         // Solo hablamos de seña abonada si Ceci marcó que ya pagó: puede
         // confirmar un turno sin haber visto el pago todavía.
         sena: pagado ? (montoCobrado ?? SENA_UYU) : null,
+        linkCambio: linkAutogestion(d.token_gestion),
       },
       { online: false }
     );

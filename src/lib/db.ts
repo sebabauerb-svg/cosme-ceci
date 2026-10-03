@@ -105,6 +105,34 @@ export async function ensureGestion(sql: any) {
     update reservas set sena_pagada = monto_cobrado
      where sena_pagada is null and pagado is true and monto_cobrado is not null
   `;
+  // Backfill: hasta oct-2026 el webhook confirmaba el turno pero no anotaba la
+  // seña, así que esos turnos figuraban "sin seña" y el recordatorio cobraba el
+  // total. Lo que MercadoPago aprobó por el monto esperado ES la seña.
+  await sql`
+    update reservas
+       set sena_pagada = precio_uyu, pagado = true, forma_pago = coalesce(forma_pago, 'mercadopago')
+     where sena_pagada is null and estado = 'confirmada' and mp_estado = 'approved'
+       and precio_uyu is not null
+  `;
+  await ensureAutogestion(sql);
+}
+
+/**
+ * Autogestión de la paciente (idempotente): cada reserva lleva un código secreto
+ * que va en el link "cambiar mi horario" de los mails y mensajes. Con ese link
+ * la paciente reprograma sola, sin login.
+ *  - token_gestion: 32 hex al azar. El default volátil hace que Postgres le
+ *    asigne uno distinto a cada reserva existente al crear la columna, y a cada
+ *    reserva nueva al insertarla (no hace falta tocar el INSERT de /reservar).
+ *  - cambios_paciente: cuántas veces reprogramó ella; tope en src/lib/reprogramar.ts.
+ */
+export async function ensureAutogestion(sql: any) {
+  await sql`
+    alter table reservas add column if not exists token_gestion text
+      default replace(gen_random_uuid()::text, '-', '')
+  `;
+  await sql`alter table reservas add column if not exists cambios_paciente integer not null default 0`;
+  await sql`create unique index if not exists reservas_token_gestion on reservas (token_gestion)`;
 }
 
 export async function ensureConfirmacion(sql: any) {

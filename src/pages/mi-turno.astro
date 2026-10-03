@@ -1,0 +1,266 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import { site } from '../data/site';
+import { POLITICA_CANCELACION } from '../data/pago';
+
+// Página de autogestión: la paciente llega con el link de su mail de
+// confirmación (/mi-turno?c=<código>) y cambia el horario sola, sin escribirle
+// a Ceci. Es estática: todo lo resuelve /api/mi-turno con el código del link.
+---
+
+<Base title="Tu turno" description="Cambiá el horario de tu turno con Cecilia Gutiérrez · Cosmetología Médica." path="/mi-turno" noindex>
+  <Nav />
+  <main id="contenido" class="section mt">
+    <div class="container mt__wrap">
+      <header class="mt__head">
+        <span class="eyebrow">Tu turno</span>
+        <h1>Cambiar el horario</h1>
+      </header>
+
+      <div id="mt-alert" class="mt__alert" role="alert" hidden></div>
+
+      <div id="mt-cargando" class="mt__msg">Buscando tu turno…</div>
+
+      <section id="mt-turno" class="mt__card" hidden>
+        <p class="mt__saludo" id="mt-saludo"></p>
+        <dl class="mt__datos" id="mt-datos"></dl>
+      </section>
+
+      <section id="mt-elegir" hidden>
+        <h2 class="mt__t">Elegí el nuevo día y horario</h2>
+        <p class="mt__sub" id="mt-restantes"></p>
+        <p class="mt__label">Días disponibles</p>
+        <div class="cal__days" id="mt-dias"></div>
+        <p class="mt__label" id="mt-horas-label" hidden>Horarios</p>
+        <div class="cal__slots" id="mt-horas"></div>
+        <div class="mt__confirmar" id="mt-confirmar" hidden>
+          <p id="mt-resumen"></p>
+          <button class="btn btn--primary" id="mt-ok">Confirmar el cambio</button>
+        </div>
+      </section>
+
+      <section id="mt-no" class="mt__card mt__card--aviso" hidden>
+        <p id="mt-no-txt"></p>
+      </section>
+
+      <section id="mt-listo" class="mt__done" hidden>
+        <span class="mt__check" aria-hidden="true">✓</span>
+        <h2>¡Listo, cambiamos tu turno!</h2>
+        <p id="mt-listo-txt"></p>
+        <p class="mt__sub">Te mandamos un mail con el nuevo horario.</p>
+      </section>
+
+      <p class="mt__wa">
+        ¿Preferís hablarlo? <a id="mt-wa" target="_blank" rel="noopener">Escribile a Ceci por WhatsApp</a>
+      </p>
+      <p class="mt__politica">{POLITICA_CANCELACION}</p>
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<script define:vars={{ whatsapp: site.contacto.whatsapp }}>
+  const $ = (id) => document.getElementById(id);
+  const codigo = new URLSearchParams(location.search).get('c') || '';
+  let turno = null;
+  let elegido = null; // { fecha, label, hora }
+
+  const waLink = (msg) => `https://wa.me/${whatsapp}?text=${encodeURIComponent(msg)}`;
+  $('mt-wa').href = waLink('Hola Ceci! Te escribo por mi turno reservado por la web.');
+
+  const capital = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  function alerta(txt) {
+    const a = $('mt-alert');
+    a.textContent = txt || '';
+    a.hidden = !txt;
+  }
+
+  function pintarTurno(t) {
+    turno = t;
+    $('mt-saludo').textContent = `Hola, ${t.nombre}. Este es tu turno:`;
+    const filas = [
+      ['Servicio', t.modalidad],
+      ['Dónde', t.sede || 'Online (videollamada)'],
+      ['Día', capital(t.fechaLarga || '')],
+      ['Hora', t.hora ? t.hora + ' h' : ''],
+    ].filter(([, v]) => v);
+    const dl = $('mt-datos');
+    dl.innerHTML = '';
+    for (const [k, v] of filas) {
+      const row = document.createElement('div'); row.className = 'mt__row';
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      row.append(dt, dd); dl.appendChild(row);
+    }
+    $('mt-turno').hidden = false;
+    $('mt-wa').href = waLink(`Hola Ceci! Soy ${t.nombre}, te escribo por mi turno del ${t.fechaLarga} a las ${t.hora} h.`);
+  }
+
+  const MOTIVOS = {
+    menos_24h: 'Faltan menos de 24 horas para tu turno, así que ya no se puede cambiar desde acá. Si te surgió algo, escribile a Ceci por WhatsApp.',
+    tope_cambios: 'Ya cambiaste este turno las veces permitidas desde acá. Si necesitás moverlo otra vez, escribile a Ceci por WhatsApp y lo coordinan.',
+    cancelado: 'Este turno fue cancelado. Si querés agendar uno nuevo, podés hacerlo desde la web o escribiéndole a Ceci.',
+    no_confirmado: 'Este turno todavía no está confirmado. Cuando se confirme vas a poder cambiar el horario desde acá.',
+  };
+  function mostrarNo(motivo) {
+    $('mt-elegir').hidden = true;
+    $('mt-no-txt').textContent = MOTIVOS[motivo] || 'Este turno no se puede cambiar desde acá. Escribile a Ceci por WhatsApp.';
+    $('mt-no').hidden = false;
+  }
+
+  function pintarDias(slots) {
+    const dias = $('mt-dias');
+    dias.innerHTML = '';
+    $('mt-horas').innerHTML = '';
+    $('mt-horas-label').hidden = true;
+    $('mt-confirmar').hidden = true;
+    if (!slots.length) {
+      dias.innerHTML = '<p class="mt__msg">Por ahora no hay otros horarios libres en tu sede. Escribile a Ceci por WhatsApp y lo coordinan.</p>';
+      return;
+    }
+    for (const s of slots) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'cal__day'; b.textContent = s.label;
+      b.addEventListener('click', () => {
+        dias.querySelectorAll('.cal__day').forEach((x) => x.classList.toggle('is-sel', x === b));
+        pintarHoras(s);
+      });
+      dias.appendChild(b);
+    }
+  }
+
+  function pintarHoras(s) {
+    const horas = $('mt-horas');
+    horas.innerHTML = '';
+    $('mt-horas-label').hidden = false;
+    $('mt-confirmar').hidden = true;
+    for (const h of s.horas) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'cal__slot'; b.textContent = h;
+      b.addEventListener('click', () => {
+        horas.querySelectorAll('.cal__slot').forEach((x) => x.classList.toggle('is-sel', x === b));
+        elegido = { fecha: s.fecha, label: s.label, hora: h };
+        $('mt-resumen').textContent = `Tu turno pasa al ${s.label} a las ${h} h.`;
+        $('mt-confirmar').hidden = false;
+        $('mt-confirmar').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+      horas.appendChild(b);
+    }
+  }
+
+  async function cargar() {
+    if (!/^[0-9a-f]{32}$/.test(codigo)) {
+      $('mt-cargando').hidden = true;
+      alerta('El link no es válido. Usá el que te llegó en el mail de confirmación, o escribile a Ceci por WhatsApp.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/mi-turno?c=' + codigo);
+      const d = await res.json().catch(() => ({}));
+      $('mt-cargando').hidden = true;
+      if (!res.ok || !d.ok) { alerta(d.error || 'No pudimos cargar tu turno.'); return; }
+      pintarTurno(d.turno);
+      if (!d.puedeCambiar) { mostrarNo(d.motivo); return; }
+      const n = d.turno.cambiosRestantes;
+      $('mt-restantes').textContent = `Podés cambiarlo hasta 24 h antes del turno (${n === 1 ? 'te queda 1 cambio' : `te quedan ${n} cambios`}). Solo se muestran los horarios libres de tu misma sede.`;
+      pintarDias(d.slots || []);
+      $('mt-elegir').hidden = false;
+    } catch {
+      $('mt-cargando').hidden = true;
+      alerta('Sin conexión. Probá de nuevo en un momento.');
+    }
+  }
+
+  $('mt-ok').addEventListener('click', async () => {
+    if (!elegido) return;
+    const btn = $('mt-ok');
+    btn.disabled = true; btn.textContent = 'Cambiando…';
+    alerta('');
+    try {
+      const res = await fetch('/api/mi-turno', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ c: codigo, fecha: elegido.fecha, hora: elegido.hora }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.ok) {
+        pintarTurno(d.turno);
+        $('mt-elegir').hidden = true;
+        $('mt-listo-txt').textContent = `Te esperamos el ${d.turno.fechaLarga} a las ${d.turno.hora} h.`;
+        $('mt-listo').hidden = false;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      alerta(d.error || 'No pudimos cambiar tu turno.');
+      // Si el horario se ocupó mientras elegía, recargamos los libres.
+      if (d.code === 'SLOT_TOMADO' || d.motivo) { elegido = null; await cargar(); }
+    } catch {
+      alerta('Sin conexión. Probá de nuevo en un momento.');
+    }
+    btn.disabled = false; btn.textContent = 'Confirmar el cambio';
+  });
+
+  cargar();
+</script>
+
+<style>
+  .mt__wrap { max-width: 620px; margin-inline: auto; }
+  .mt__head { text-align: center; margin-bottom: 2rem; }
+  .mt__head h1 { margin: 0.3rem 0 0; font-size: clamp(1.9rem, 4.2vw, 2.6rem); }
+  .mt__card {
+    background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
+    padding: 1.3rem 1.5rem; margin-bottom: 2rem;
+  }
+  .mt__card--aviso { background: var(--cream-deep); }
+  .mt__card--aviso p { margin: 0; line-height: 1.6; }
+  .mt__saludo { margin: 0 0 0.9rem; font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); }
+  .mt__datos { margin: 0; display: grid; gap: 0.45rem; }
+  .mt__t { font-size: 1.35rem; margin-bottom: 0.3rem; }
+  .mt__sub { color: var(--ink-soft); font-size: 0.9rem; line-height: 1.6; margin: 0 0 1.2rem; }
+  .mt__label { font-weight: 600; font-size: 0.9rem; margin: 1.2rem 0 0.7rem; color: var(--ink); }
+  .mt__msg { color: var(--ink-soft); font-size: 0.92rem; text-align: center; }
+  .mt__confirmar {
+    margin-top: 1.6rem; padding-top: 1.3rem; border-top: 1px solid var(--sand); text-align: center;
+  }
+  .mt__confirmar p { font-weight: 600; margin: 0 0 0.9rem; }
+  .mt__alert {
+    background: color-mix(in srgb, var(--clay) 12%, var(--cream));
+    border: 1px solid color-mix(in srgb, var(--clay) 40%, var(--cream));
+    color: var(--clay-deep); border-radius: var(--radius-sm);
+    padding: 0.85rem 1.1rem; margin-bottom: 1.6rem; font-size: 0.92rem;
+  }
+  .mt__done { text-align: center; padding: 1rem 0 2rem; }
+  .mt__check {
+    width: 64px; height: 64px; border-radius: 50%; background: var(--sage); color: var(--cream);
+    display: grid; place-items: center; font-size: 2rem; margin: 0 auto 1.2rem;
+  }
+  .mt__wa { text-align: center; font-size: 0.9rem; color: var(--ink-soft); margin: 2.2rem 0 0; }
+  .mt__wa a { color: var(--sage-deep); font-weight: 600; }
+  .mt__politica {
+    font-size: 0.8rem; line-height: 1.6; color: var(--ink-soft); text-align: center;
+    max-width: 460px; margin: 1rem auto 0;
+  }
+  [hidden] { display: none !important; }
+</style>
+
+<!-- Elementos creados por JS: estilos globales (mismo look que /reservar). -->
+<style is:global>
+  .mt .mt__row { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  .mt .mt__row dt { color: var(--ink-soft); font-size: 0.88rem; }
+  .mt .mt__row dd { margin: 0; color: var(--ink); font-weight: 600; text-align: right; }
+  .mt .cal__days, .mt .cal__slots { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .mt .cal__day {
+    background: var(--white); border: 1px solid var(--sand); border-radius: 999px;
+    padding: 0.7rem 1.05rem; cursor: pointer; font: inherit; font-size: 0.88rem; text-transform: capitalize;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .mt .cal__day:hover { border-color: var(--sage); }
+  .mt .cal__day.is-sel, .mt .cal__slot.is-sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  .mt .cal__slot {
+    background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm);
+    padding: 0.6rem 1.1rem; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink);
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .mt .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+</style>
