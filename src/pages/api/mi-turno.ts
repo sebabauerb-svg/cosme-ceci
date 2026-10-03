@@ -11,6 +11,7 @@ import {
   ANTICIPACION_MIN_H,
 } from '../../lib/reprogramar';
 import { notificarReprogramacion } from '../../lib/email';
+import { enviarWhatsApp } from '../../lib/whatsapp';
 
 export const prerender = false;
 
@@ -148,6 +149,15 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       },
       { porPaciente: true }
     );
+    // Confirmación del cambio también por WhatsApp (si está activo).
+    await enviarWhatsApp('movido', t.telefono, {
+      nombre: t.nombre,
+      servicio: t.nombreModalidad,
+      fechaLarga: fechaLarga(t.fecha),
+      hora: t.hora,
+      sede: t.sede,
+      token: t.token,
+    });
 
     const nuevo = await buscar(sql, body.c);
     const p2 = puedeCambiar(nuevo);
