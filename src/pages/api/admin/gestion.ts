@@ -50,7 +50,7 @@ export const GET: APIRoute = async ({ request, cookies }) => {
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
              r.nombre, r.telefono, r.email, r.estado,
              r.precio_uyu, r.total_acordado, r.sena_pagada, r.forma_pago,
-             r.recordatorio_at, r.notas
+             r.recordatorio_at, r.notas, r.cambios_paciente
         from reservas r left join sedes s on s.id = r.sede_id
        where r.estado = 'confirmada' and r.fecha is not null
          and r.fecha >= ${hoyUY}::date
@@ -80,6 +80,10 @@ export const GET: APIRoute = async ({ request, cookies }) => {
         formaPago: r.forma_pago,
         recordatorioAt: r.recordatorio_at,
         notas: r.notas,
+        // 'montevideo' | 'san-jose' | 'online': lo usa el panel para buscar
+        // horarios libres al mover el turno.
+        sedeSlug: r.sede === 'Montevideo' ? 'montevideo' : r.sede === 'San José' ? 'san-jose' : 'online',
+        cambiosPaciente: Number(r.cambios_paciente ?? 0),
       };
     });
     return json({ ok: true, reservas });

@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureGoogleEventId } from '../../../lib/db';
+import { getSql, ensureGoogleEventId, ensureConfirmacion, ensureGestion } from '../../../lib/db';
 import {
   obtenerPago,
   verificarFirmaWebhook,
@@ -8,6 +8,7 @@ import {
 import { notificarReservaConfirmada, alertarPagoSinTurno } from '../../../lib/email';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { sedeConDireccion } from '../../../data/sedes';
+import { linkAutogestion } from '../../../lib/reprogramar';
 
 export const prerender = false;
 
@@ -88,6 +89,8 @@ export const POST: APIRoute = async ({ request }) => {
     if (!reservaId) return new Response('ok', { status: 200 });
 
     const sql = getSql();
+    await ensureConfirmacion(sql);
+    await ensureGestion(sql);
 
     if (estado === 'approved') {
       // Integridad de monto: el pago debe coincidir con el precio que registramos
@@ -121,12 +124,18 @@ export const POST: APIRoute = async ({ request }) => {
       }
 
       // Confirmar solo si todavía no estaba confirmada (idempotente + un solo email).
+      // Lo que entró por MercadoPago es la seña: queda anotada como tal, así el
+      // panel la muestra "Señado · MercadoPago" y el recordatorio cobra solo el saldo.
+      const sena = montoPagado ?? precioEsperado;
       let upd: any[];
       try {
         upd = await sql`
           update reservas
              set estado = 'confirmada', expira_at = null,
-                 mp_payment_id = ${String(paymentId)}, mp_estado = ${estado}
+                 mp_payment_id = ${String(paymentId)}, mp_estado = ${estado},
+                 sena_pagada = coalesce(sena_pagada, ${sena}), pagado = true,
+                 monto_cobrado = coalesce(monto_cobrado, ${sena}),
+                 forma_pago = coalesce(forma_pago, 'mercadopago')
            where id = ${reservaId} and estado in ('pendiente_pago', 'expirada')
            returning id
         `;
@@ -156,7 +165,7 @@ export const POST: APIRoute = async ({ request }) => {
         const r = (await sql`
           select r.modalidad, coalesce(s.nombre, '') as sede,
                  r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
-                 r.nombre, r.telefono, r.email, r.duracion_min
+                 r.nombre, r.telefono, r.email, r.duracion_min, r.token_gestion
           from reservas r left join sedes s on s.id = r.sede_id
           where r.id = ${reservaId}
         `) as any[];
@@ -172,7 +181,8 @@ export const POST: APIRoute = async ({ request }) => {
             telefono: d.telefono,
             email: d.email,
             // Lo cobrado por la web es la seña; el resto se abona en la consulta.
-            sena: montoPagado ?? precioEsperado,
+            sena,
+            linkCambio: linkAutogestion(d.token_gestion),
           });
 
           // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).

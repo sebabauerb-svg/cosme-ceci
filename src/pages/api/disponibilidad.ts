@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { getSql, ensureFranjas, ensureConfirmacion } from '../../lib/db';
-import { ahoraUY, labelFecha, sedeKeyDeSlug } from '../../lib/agenda';
+import { sedeKeyDeSlug, turnosLibres } from '../../lib/agenda';
 
 export const prerender = false;
 
@@ -21,37 +21,7 @@ export const GET: APIRoute = async ({ url }) => {
     await ensureFranjas(sql);
     await ensureConfirmacion(sql);
     const sedeKey = await sedeKeyDeSlug(sql, sede);
-    const { hoy, hora: ahora } = ahoraUY();
-
-    const franjas = (await sql`
-      select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora
-      from franjas
-      where coalesce(sede_id::text, 'online') = ${sedeKey} and fecha >= ${hoy}
-      order by fecha, hora
-    `) as { fecha: string; hora: string }[];
-
-    const ocupadas = (await sql`
-      select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora
-      from reservas
-      where (estado = 'confirmada'
-             or (estado in ('pendiente_pago','a_confirmar') and (expira_at is null or expira_at > now())))
-        and fecha >= ${hoy}
-        and coalesce(sede_id::text, 'online') = ${sedeKey}
-    `) as { fecha: string; hora: string }[];
-    const tomadas = new Set(ocupadas.map((o) => `${o.fecha} ${o.hora}`));
-
-    const porFecha = new Map<string, string[]>();
-    for (const f of franjas) {
-      if (tomadas.has(`${f.fecha} ${f.hora}`)) continue;
-      if (f.fecha === hoy && f.hora <= ahora) continue; // hora de hoy ya pasada
-      const arr = porFecha.get(f.fecha) ?? [];
-      arr.push(f.hora);
-      porFecha.set(f.fecha, arr);
-    }
-
-    const slots = [...porFecha.entries()]
-      .filter(([, horas]) => horas.length)
-      .map(([fecha, horas]) => ({ fecha, label: labelFecha(fecha), horas }));
+    const slots = await turnosLibres(sql, sedeKey);
 
     return json({ ok: true, sede, slots, llenas: [] });
   } catch (e) {

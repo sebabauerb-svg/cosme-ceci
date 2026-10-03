@@ -53,4 +53,47 @@ export async function duracionDeTurno(
   return r[0].duracion_min != null ? Number(r[0].duracion_min) : 30;
 }
 
+/**
+ * Turnos libres de una sede, de ahora en adelante, agrupados por día: los que
+ * Ceci abrió (franjas) menos los tomados por una reserva vigente. Es lo que ve
+ * la paciente al reservar y al reprogramar, y lo que le ofrece el panel a Ceci
+ * para mover un turno. Requiere ensureFranjas + ensureConfirmacion antes.
+ */
+export async function turnosLibres(
+  sql: any,
+  sedeKey: string
+): Promise<Array<{ fecha: string; label: string; horas: string[] }>> {
+  const { hoy, hora: ahora } = ahoraUY();
+
+  const franjas = (await sql`
+    select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora
+    from franjas
+    where coalesce(sede_id::text, 'online') = ${sedeKey} and fecha >= ${hoy}
+    order by fecha, hora
+  `) as { fecha: string; hora: string }[];
+
+  const ocupadas = (await sql`
+    select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora
+    from reservas
+    where (estado = 'confirmada'
+           or (estado in ('pendiente_pago','a_confirmar') and (expira_at is null or expira_at > now())))
+      and fecha >= ${hoy}
+      and coalesce(sede_id::text, 'online') = ${sedeKey}
+  `) as { fecha: string; hora: string }[];
+  const tomadas = new Set(ocupadas.map((o) => `${o.fecha} ${o.hora}`));
+
+  const porFecha = new Map<string, string[]>();
+  for (const f of franjas) {
+    if (tomadas.has(`${f.fecha} ${f.hora}`)) continue;
+    if (f.fecha === hoy && f.hora <= ahora) continue; // hora de hoy ya pasada
+    const arr = porFecha.get(f.fecha) ?? [];
+    arr.push(f.hora);
+    porFecha.set(f.fecha, arr);
+  }
+
+  return [...porFecha.entries()]
+    .filter(([, horas]) => horas.length)
+    .map(([fecha, horas]) => ({ fecha, label: labelFecha(fecha), horas }));
+}
+
 export { ensureFranjas, ensureDuracionMin };

@@ -16,7 +16,7 @@
 import { transferencia, hayDatosTransferencia, CONCEPTO_PREFIJO, POLITICA_CANCELACION } from '../data/pago';
 import { sedeConDireccion } from '../data/sedes';
 
-export type PlantillaId = 'confirmacion' | 'transferencia' | 'recordatorio' | 'reprogramar';
+export type PlantillaId = 'confirmacion' | 'transferencia' | 'recordatorio' | 'reprogramar' | 'reprogramado';
 
 export type DatosMensaje = {
   nombre: string;
@@ -32,6 +32,8 @@ export type DatosMensaje = {
   senaPagada?: number | null;
   /** saldo a abonar en la consulta */
   saldo?: number | null;
+  /** link /mi-turno para que la paciente cambie el horario sola */
+  linkCambio?: string | null;
 };
 
 export const PLANTILLAS: Array<{ id: PlantillaId; nombre: string; ayuda: string }> = [
@@ -39,6 +41,7 @@ export const PLANTILLAS: Array<{ id: PlantillaId; nombre: string; ayuda: string 
   { id: 'transferencia', nombre: 'Datos para transferir', ayuda: 'Para quien escribe por WhatsApp sin pasar por la web.' },
   { id: 'recordatorio', nombre: 'Recordatorio', ayuda: 'Para mandar el día anterior a la consulta.' },
   { id: 'reprogramar', nombre: 'Reprogramar', ayuda: 'Cuando hay que mover el turno y ofrecer alternativas.' },
+  { id: 'reprogramado', nombre: 'Turno movido', ayuda: 'Después de mover el turno: le avisa el día y la hora nuevos.' },
 ];
 
 const $ = (n: number) => '$' + n.toLocaleString('es-UY');
@@ -76,6 +79,23 @@ function bloqueBanco(nombre: string): string[] {
   return l;
 }
 
+/**
+ * Lo que queda por pagar, para el recordatorio. Si ya señó se lo decimos con la
+ * cifra: así el saldo no se lee como un cobro de más.
+ */
+function bloqueSaldo(d: DatosMensaje): string[] {
+  const seno = d.senaPagada != null && d.senaPagada > 0;
+  if (d.saldo == null) return [];
+  if (d.saldo === 0) return seno ? ['✅ Tu consulta ya está abonada.'] : [];
+  if (seno) return [`💰 Seña recibida: ${$(d.senaPagada!)} ✅`, `💵 Saldo a abonar en la consulta: ${$(d.saldo)}`];
+  return [`💵 A abonar en la consulta: ${$(d.saldo)}`];
+}
+
+/** Link para cambiar el horario sin escribirle a Ceci. */
+function bloqueCambio(d: DatosMensaje): string[] {
+  return d.linkCambio ? [`Si necesitás cambiar el horario, podés hacerlo desde acá hasta 24 h antes: ${d.linkCambio}`] : [];
+}
+
 /** Junta líneas dejando una en blanco donde haya un null (separador de párrafo). */
 function armar(lineas: Array<string | null>): string {
   return lineas
@@ -101,6 +121,8 @@ export function generarMensaje(plantilla: PlantillaId, d: DatosMensaje): string 
       ...cuando,
       null,
       POLITICA_CANCELACION,
+      null,
+      ...bloqueCambio(d),
       null,
       cierre,
     ]);
@@ -133,9 +155,25 @@ export function generarMensaje(plantilla: PlantillaId, d: DatosMensaje): string 
       null,
       ...cuando,
       null,
+      ...bloqueSaldo(d),
+      null,
       'Si necesitás reprogramar, avisanos lo antes posible así liberamos el horario.',
       null,
       cierre,
+    ]);
+  }
+
+  if (plantilla === 'reprogramado') {
+    return armar([
+      `¡Hola, ${nom}!`,
+      'Te avisamos que tu turno quedó para este nuevo horario:',
+      null,
+      ...cuando,
+      null,
+      d.senaPagada != null && d.senaPagada > 0 ? 'Tu seña queda vigente para el nuevo turno.' : null,
+      ...bloqueCambio(d),
+      null,
+      'Disculpanos el cambio y gracias por la paciencia. ¡Nos vemos pronto! ✨',
     ]);
   }
 

@@ -43,6 +43,8 @@ type Datos = {
   via?: 'pagar' | 'coordinar';
   /** seña que reserva el turno (lo único que se cobra por la web) */
   sena?: number | null;
+  /** link /mi-turno para que la paciente cambie el horario sola */
+  linkCambio?: string | null;
 };
 
 /** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
@@ -75,6 +77,18 @@ function bloqueCobro(d: Datos) {
   if (d.sena == null) return '';
   return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:14px 0 0">
     <strong>Seña abonada:</strong> $${esc(d.sena)} · El saldo lo abonás en la consulta.
+  </p>`;
+}
+
+/**
+ * Link para que la paciente cambie el horario sola. Va con la condición de las
+ * 24 h a la vista: es la misma política de cancelación, no una regla nueva.
+ */
+function bloqueCambio(d: Datos) {
+  if (!d.linkCambio) return '';
+  return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:16px 0 0">
+    ¿Necesitás cambiar el horario? Podés elegir otro vos misma hasta 24 h antes del turno:
+    <a href="${esc(d.linkCambio)}" style="color:#5d7a63;font-weight:600">cambiar mi horario</a>.
   </p>`;
 }
 
@@ -120,7 +134,8 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
            }:</p>
            ${detalle}
            ${bloqueCobro(d)}
-           <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Si necesitás reprogramar, escribinos por WhatsApp.</p>
+           ${bloqueCambio(d)}
+           <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Por cualquier duda, escribinos por WhatsApp.</p>
            ${bloquePolitica()}`
         )
       );
@@ -215,13 +230,17 @@ export async function notificarReserva(d: Datos) {
  * Solo datos operativos (cuándo, dónde, saldo): nada de promesas ni consejos
  * clínicos por mail. Nunca lanza error.
  */
-export async function notificarRecordatorio(d: Datos & { saldo?: number | null }) {
+export async function notificarRecordatorio(
+  d: Datos & { saldo?: number | null; senaPagada?: number | null }
+) {
   try {
     if (!d.email) return;
     const cuando = d.fechaLabel ? `${d.fechaLabel}${d.hora ? ' · ' + d.hora + ' h' : ''}` : null;
+    // Si ya señó, se lo decimos: así el saldo no se lee como un cobro de más.
+    const yaSeno = d.senaPagada != null && d.senaPagada > 0 ? ` (ya recibimos tu seña de $${esc(d.senaPagada)})` : '';
     const saldo =
       d.saldo != null && d.saldo > 0
-        ? `<p style="font-family:system-ui;color:#2a302b">Te queda un saldo de <strong>$${esc(d.saldo)}</strong> para abonar en la consulta.</p>`
+        ? `<p style="font-family:system-ui;color:#2a302b">Te queda un saldo de <strong>$${esc(d.saldo)}</strong> para abonar en la consulta${yaSeno}.</p>`
         : '';
     await enviar(
       d.email,
@@ -230,11 +249,59 @@ export async function notificarRecordatorio(d: Datos & { saldo?: number | null }
        <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, te recordamos tu turno:</p>
        ${bloqueDetalle(d)}
        ${saldo}
-       <p style="font-family:system-ui;color:#55605a">Si necesitás reprogramar, escribinos por WhatsApp lo antes posible así liberamos el horario.</p>
+       <p style="font-family:system-ui;color:#55605a">Si necesitás reprogramar, avisanos lo antes posible así liberamos el horario.</p>
        ${bloquePolitica()}`
     );
   } catch {
     /* el cron no debe caerse por un error de email */
+  }
+}
+
+/**
+ * Turno movido a otro día/hora. A la paciente (si tiene email) siempre que se
+ * pida avisar; a Ceci solo si el cambio lo hizo la paciente desde su link (si
+ * lo hizo Ceci, ya lo sabe). Nunca lanza error.
+ */
+export async function notificarReprogramacion(
+  d: Datos & { antesLabel?: string | null },
+  opts: { porPaciente: boolean; avisarPaciente?: boolean }
+) {
+  try {
+    const cuando = d.fechaLabel ? `${d.fechaLabel}${d.hora ? ' · ' + d.hora + ' h' : ''}` : null;
+    const tareas: Promise<unknown>[] = [];
+    const ceci = process.env.CECI_NOTIF_EMAIL;
+    if (opts.porPaciente && ceci) {
+      tareas.push(
+        enviar(
+          ceci,
+          `🔁 ${d.nombre} cambió su turno${cuando ? ': ' + cuando : ''}`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">Turno reprogramado por la paciente</h2>
+           ${d.antesLabel ? `<p style="font-family:system-ui;color:#55605a">Antes: ${esc(d.antesLabel)}</p>` : ''}
+           ${bloqueDetalle(d)}
+           <p style="color:#55605a">El horario anterior quedó libre. La seña y el cobro siguen igual.</p>`
+        )
+      );
+    }
+    if (d.email && opts.avisarPaciente !== false) {
+      tareas.push(
+        enviar(
+          d.email,
+          cuando ? `🔁 Tu turno cambió: ${cuando}` : '🔁 Tu turno cambió de horario',
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">Tu turno tiene nuevo horario</h2>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, ${
+             opts.porPaciente ? 'registramos el cambio de tu turno' : 'tuvimos que mover tu turno. Disculpá el cambio'
+           }. Así queda:</p>
+           ${bloqueDetalle(d)}
+           ${d.sena != null && d.sena > 0 ? '<p style="font-family:system-ui;line-height:1.7;color:#2a302b">Tu seña sigue vigente para el nuevo horario.</p>' : ''}
+           ${bloqueCambio(d)}
+           <p style="font-family:system-ui;color:#55605a">Por cualquier duda, escribinos por WhatsApp.</p>
+           ${bloquePolitica()}`
+        )
+      );
+    }
+    await Promise.allSettled(tareas);
+  } catch {
+    /* no bloquear por un error de email */
   }
 }
 

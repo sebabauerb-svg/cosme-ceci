@@ -4,6 +4,7 @@ import { isAdmin } from '../../../lib/admin';
 import { SENA_UYU, precioTotal } from '../../../lib/precios';
 import { generarMensaje, linkWhatsApp, PLANTILLAS, type PlantillaId } from '../../../lib/mensajes';
 import { fechaLarga } from './gestion';
+import { linkAutogestion } from '../../../lib/reprogramar';
 
 export const prerender = false;
 
@@ -42,7 +43,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const rows = (await sql`
       select r.modalidad, coalesce(s.nombre, '') as sede,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
-             r.nombre, r.telefono, r.total_acordado, r.sena_pagada
+             r.nombre, r.telefono, r.total_acordado, r.sena_pagada, r.token_gestion
         from reservas r left join sedes s on s.id = r.sede_id
        where r.id = ${id}
     `) as any[];
@@ -60,6 +61,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       sena: SENA_UYU,
       senaPagada,
       saldo: total != null ? Math.max(0, total - (senaPagada ?? 0)) : null,
+      linkCambio: linkAutogestion(r.token_gestion),
     });
 
     return json({

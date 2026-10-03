@@ -80,6 +80,7 @@ export const GET: APIRoute = async ({ request }) => {
         telefono: r.telefono,
         email: r.email,
         saldo: total != null ? Math.max(0, total - (sena ?? 0)) : null,
+        senaPagada: sena,
       });
       // Se marca aunque el mail falle: notificarRecordatorio no lanza, y preferimos
       // un recordatorio perdido antes que reenviarlo en loop al día siguiente.
