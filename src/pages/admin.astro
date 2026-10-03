@@ -4,6 +4,10 @@ export const prerender = false;
 import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
 import { getSql, ensureFranjas, ensureDuracionMin, ensureConfirmacion } from '../lib/db';
+import { whatsappConfigurado } from '../lib/whatsapp';
+
+// WhatsApp automático: cambia los textos del panel ("te avisamos por WhatsApp").
+const waAuto = whatsappConfigurado();
 
 const authed = isAdmin(Astro.cookies);
 
@@ -71,7 +75,7 @@ if (authed) {
           <p id="login-error" class="login__err" hidden></p>
         </div>
       ) : (
-        <div class="panel">
+        <div class="panel" data-wa-auto={waAuto ? '1' : '0'}>
           <header class="panel__head">
             <h1>Panel de Ceci</h1>
             <button id="logout" class="btn btn--ghost">Salir</button>
@@ -329,7 +333,7 @@ if (authed) {
     // reservas: 'fecha hora' -> datos de la reserva (id y contacto para poder moverla)
     let reservasMap = new Map<string, any>();
     // Aviso del último turno movido (con el WhatsApp ya escrito), que sobrevive al re-render.
-    let movido: { texto: string; wa: string | null; nombre: string } | null = null;
+    let movido: { texto: string; wa: string | null; nombre: string; waEnviado: boolean } | null = null;
     let sel: string | null = null; // fecha seleccionada
     let sucio = false;
     const base = new Date(hoyUY + 'T12:00:00Z');
@@ -443,7 +447,7 @@ if (authed) {
       if (movido) {
         const av = document.createElement('div'); av.className = 'dia-movido';
         const tx = document.createElement('span');
-        tx.textContent = `✓ Turno de ${movido.nombre} movido.`;
+        tx.textContent = `✓ Turno de ${movido.nombre} movido.` + (movido.waEnviado ? ' Le llegó el WhatsApp.' : '');
         av.appendChild(tx);
         if (movido.wa) {
           const a = document.createElement('a'); a.className = 'btn btn--primary btn--sm';
@@ -494,11 +498,11 @@ if (authed) {
           if (res.estado === 'confirmada' && res.id) {
             const mov = document.createElement('button'); mov.className = 'turno__marc'; mov.textContent = 'Mover';
             const box = bloqueMover(
-              { id: res.id, modalidadId: res.modalidad, sedeSlug: sede, email: res.email },
-              async (texto, wa) => {
+              { id: res.id, modalidadId: res.modalidad, sedeSlug: sede, email: res.email, telefono: res.telefono },
+              async (texto, wa, waEnviado) => {
                 // Lo movido cambia franjas y reservas en la base: se relee la sede
                 // entera (y se pierde lo no guardado, por eso se avisa antes).
-                movido = { texto, wa, nombre: res.nombre };
+                movido = { texto, wa, nombre: res.nombre, waEnviado };
                 await cargarSede(sede, true);
               }
             );
@@ -792,11 +796,12 @@ if (authed) {
       const t = document.createElement('div'); t.className = 'pc-ok__t';
       t.textContent = `✓ ${r.nombre}: turno confirmado`;
       const sub = document.createElement('div'); sub.className = 'pc-ok__sub';
-      sub.textContent = `${cuando} · le enviamos el mail de confirmación`;
+      sub.textContent = `${cuando} · le enviamos el mail${r.waEnviado ? ' y el WhatsApp' : ''} de confirmación`;
       el.appendChild(t); el.appendChild(sub);
 
       const acc = document.createElement('div'); acc.className = 'pc-ok__acc';
-      if (r.telefono && r.telefono !== '—') {
+      // Si el WhatsApp ya salió solo, no ofrecemos mandarlo de nuevo a mano.
+      if (r.telefono && r.telefono !== '—' && !r.waEnviado) {
         const msg = [
           `Hola ${r.nombre}! Te confirmo tu turno:`,
           `• ${r.modalidad}`,
@@ -856,7 +861,7 @@ if (authed) {
           });
           if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
           const d = await res.json().catch(() => ({}));
-          if (res.ok && d.ok) { mostrarConfirmada(el, { ...r, ...(d.reserva || {}) }); }
+          if (res.ok && d.ok) { mostrarConfirmada(el, { ...r, ...(d.reserva || {}), waEnviado: !!d.waEnviado }); }
           else { conf.disabled = false; rech.disabled = false; conf.textContent = 'Confirmar'; alert(d.error || 'No se pudo confirmar.'); }
         } catch { conf.disabled = false; rech.disabled = false; conf.textContent = 'Confirmar'; alert('Sin conexión: probá de nuevo.'); }
       });
@@ -900,7 +905,7 @@ if (authed) {
    * que no estaba abierto. Por defecto cierra el horario que se libera: si Ceci
    * mueve es porque ese día no atiende, y no queremos que lo reserve otra.
    */
-  function bloqueMover(r: any, onMovido: (texto: string, wa: string | null) => void) {
+  function bloqueMover(r: any, onMovido: (texto: string, wa: string | null, waEnviado: boolean) => void) {
     const box = document.createElement('div'); box.className = 'gs-mover';
     const abrir = document.createElement('button'); abrir.type = 'button';
     abrir.className = 'btn btn--ghost btn--sm'; abrir.textContent = 'Mover turno';
@@ -941,8 +946,14 @@ if (authed) {
 
     const otro = tilde('Otro horario (no abierto en la agenda)', false);
     const cerrar = tilde('Cerrar el horario que se libera', true);
-    const avisar = tilde(r.email ? 'Avisarle por mail' : 'Avisarle por mail (no tiene email)', !!r.email);
-    if (!r.email) avisar.i.disabled = true;
+    const waAuto = (document.querySelector('.panel') as HTMLElement | null)?.dataset.waAuto === '1';
+    const tieneTel = !!r.telefono && r.telefono !== '—';
+    const canales = [r.email && 'mail', waAuto && tieneTel && 'WhatsApp'].filter(Boolean);
+    const avisar = tilde(
+      canales.length ? `Avisarle por ${canales.join(' y ')}` : 'Avisarle (no tiene email)',
+      canales.length > 0
+    );
+    if (!canales.length) avisar.i.disabled = true;
     const opciones = document.createElement('div'); opciones.className = 'gs-checks';
     opciones.append(otro.w, cerrar.w, avisar.w);
 
@@ -1007,10 +1018,12 @@ if (authed) {
           fecha: d.turno.fecha, fechaLarga: d.turno.fechaLarga, hora: d.turno.hora,
           sede: d.turno.sede, sedeSlug: d.turno.sedeSlug, recordatorioAt: null,
         });
-        aviso.textContent = '✓ Turno movido' + (d.mailEnviado ? ' · le mandamos el mail' : '') + '. Avisale también por WhatsApp ↓';
+        const avisos = [d.mailEnviado && 'el mail', d.waEnviado && 'el WhatsApp'].filter(Boolean);
+        aviso.textContent = '✓ Turno movido' + (avisos.length ? ` · le mandamos ${avisos.join(' y ')}` : '') +
+          (d.waEnviado ? '.' : '. Avisale también por WhatsApp ↓');
         slots = [];
         panel.hidden = true;
-        onMovido(d.texto, d.wa);
+        onMovido(d.texto, d.waEnviado ? null : d.wa, !!d.waEnviado);
       } catch { estadoTxt.textContent = 'Sin conexión: probá de nuevo.'; }
       finally { ok.disabled = false; ok.textContent = 'Mover'; }
     });

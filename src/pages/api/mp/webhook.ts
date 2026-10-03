@@ -8,7 +8,8 @@ import {
 import { notificarReservaConfirmada, alertarPagoSinTurno } from '../../../lib/email';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { sedeConDireccion } from '../../../data/sedes';
-import { linkAutogestion } from '../../../lib/reprogramar';
+import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
+import { enviarWhatsApp } from '../../../lib/whatsapp';
 
 export const prerender = false;
 
@@ -183,6 +184,15 @@ export const POST: APIRoute = async ({ request }) => {
             // Lo cobrado por la web es la seña; el resto se abona en la consulta.
             sena,
             linkCambio: linkAutogestion(d.token_gestion),
+          });
+          // Mismo aviso por WhatsApp, desde el número de Ceci (si está activo).
+          await enviarWhatsApp('confirmado', d.telefono, {
+            nombre: d.nombre,
+            servicio: nombreModalidad,
+            fechaLarga: fechaLarga(d.fecha),
+            hora: d.hora,
+            sede: d.sede || null,
+            token: d.token_gestion,
           });
 
           // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).

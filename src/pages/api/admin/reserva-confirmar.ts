@@ -5,7 +5,8 @@ import { crearEventoReserva } from '../../../lib/calendar';
 import { notificarReservaConfirmada } from '../../../lib/email';
 import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
-import { linkAutogestion } from '../../../lib/reprogramar';
+import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
+import { enviarWhatsApp } from '../../../lib/whatsapp';
 
 export const prerender = false;
 
@@ -92,6 +93,17 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       { online: false }
     );
 
+    // WhatsApp automático a la paciente (si está activo). Se espera: el panel
+    // muestra si salió, y si no, ofrece el botón manual.
+    const wa = await enviarWhatsApp('confirmado', d.telefono, {
+      nombre: d.nombre,
+      servicio: nombreModalidad,
+      fechaLarga: fechaLarga(d.fecha),
+      hora: d.hora,
+      sede: sedeNombre,
+      token: d.token_gestion,
+    });
+
     // Evento en el Google Calendar de Ceci (solo turnos con fecha/hora).
     if (d.fecha && d.hora) {
       const duracionMin = d.duracion_min != null ? Number(d.duracion_min) : sedeNombre === 'Montevideo' ? 45 : 30;
@@ -117,6 +129,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     // a la paciente (además del email automático que ya salió).
     return json({
       ok: true,
+      waEnviado: wa.ok,
       reserva: {
         nombre: d.nombre,
         telefono: d.telefono,

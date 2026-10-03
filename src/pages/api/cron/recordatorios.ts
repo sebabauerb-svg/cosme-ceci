@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { getSql, ensureConfirmacion, ensureGestion } from '../../../lib/db';
 import { notificarRecordatorio } from '../../../lib/email';
 import { precioTotal } from '../../../lib/precios';
+import { enviarWhatsApp, whatsappConfigurado, lineaCobro } from '../../../lib/whatsapp';
 
 export const prerender = false;
 
@@ -57,20 +58,37 @@ export const GET: APIRoute = async ({ request }) => {
       .toISOString()
       .slice(0, 10);
 
+    // Con WhatsApp automático activo también se recuerda a quien no dejó email
+    // (las reservas manuales sin teléfono, '—', quedan afuera).
+    const waOn = whatsappConfigurado();
     const rows = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, '') as sede,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
              r.nombre, r.telefono, r.email, r.total_acordado, r.sena_pagada
         from reservas r left join sedes s on s.id = r.sede_id
        where r.estado = 'confirmada' and r.fecha = ${manana}::date
-         and r.recordatorio_at is null and r.email is not null
+         and r.recordatorio_at is null
+         and (r.email is not null or (${waOn}::boolean and r.telefono <> '—'))
        order by r.hora
     `) as any[];
 
     let enviados = 0;
+    let whatsapps = 0;
     for (const r of rows) {
       const total = r.total_acordado != null ? Number(r.total_acordado) : precioTotal(r.modalidad);
       const sena = r.sena_pagada != null ? Number(r.sena_pagada) : null;
+      const saldo = total != null ? Math.max(0, total - (sena ?? 0)) : null;
+      if (waOn) {
+        const wa = await enviarWhatsApp('recordatorio', r.telefono, {
+          nombre: r.nombre,
+          servicio: NOMBRE_MODALIDAD[r.modalidad] ?? r.modalidad,
+          fechaLarga: labelFecha(r.fecha),
+          hora: r.hora,
+          sede: r.sede || null,
+          cobro: lineaCobro(sena, saldo),
+        });
+        if (wa.ok) whatsapps++;
+      }
       await notificarRecordatorio({
         modalidad: NOMBRE_MODALIDAD[r.modalidad] ?? r.modalidad,
         sede: r.sede || null,
@@ -79,7 +97,7 @@ export const GET: APIRoute = async ({ request }) => {
         nombre: r.nombre,
         telefono: r.telefono,
         email: r.email,
-        saldo: total != null ? Math.max(0, total - (sena ?? 0)) : null,
+        saldo,
         senaPagada: sena,
       });
       // Se marca aunque el mail falle: notificarRecordatorio no lanza, y preferimos
@@ -88,8 +106,8 @@ export const GET: APIRoute = async ({ request }) => {
       enviados++;
     }
 
-    console.log(`cron recordatorios: ${enviados} enviado(s) para ${manana}`);
-    return new Response(JSON.stringify({ ok: true, fecha: manana, enviados }), {
+    console.log(`cron recordatorios: ${enviados} enviado(s) para ${manana} (${whatsapps} por WhatsApp)`);
+    return new Response(JSON.stringify({ ok: true, fecha: manana, enviados, whatsapps }), {
       headers: { 'content-type': 'application/json' },
     });
   } catch (e) {

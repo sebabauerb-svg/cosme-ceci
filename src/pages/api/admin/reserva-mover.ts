@@ -5,6 +5,7 @@ import { sedeKeyDeSlug, labelFecha } from '../../../lib/agenda';
 import { moverReserva, linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
 import { notificarReprogramacion } from '../../../lib/email';
 import { generarMensaje, linkWhatsApp } from '../../../lib/mensajes';
+import { enviarWhatsApp } from '../../../lib/whatsapp';
 
 export const prerender = false;
 
@@ -20,8 +21,9 @@ const SLUGS = ['montevideo', 'san-jose', 'online'];
  * Ceci mueve un turno confirmado a otro día/hora (y, si quiere, a otra sede).
  *  - libre: el horario nuevo no estaba abierto en la agenda (lo agenda igual).
  *  - cerrarAnterior: el horario que se libera deja de ofrecerse en la web.
- *  - avisar: le manda el mail "tu turno cambió" a la paciente.
- * Devuelve el WhatsApp ya escrito para avisarle por ese canal también.
+ *  - avisar: le manda el mail "tu turno cambió" a la paciente y, si el
+ *    WhatsApp automático está activo, también el WhatsApp.
+ * Devuelve el WhatsApp ya escrito por si hay que mandarlo a mano.
  */
 export const POST: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
@@ -72,6 +74,18 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       );
     }
 
+    const wa =
+      body.avisar === true
+        ? await enviarWhatsApp('movido', t.telefono, {
+            nombre: t.nombre,
+            servicio: t.nombreModalidad,
+            fechaLarga: fechaLarga(t.fecha),
+            hora: t.hora,
+            sede: t.sede,
+            token: t.token,
+          })
+        : { ok: false };
+
     const texto = generarMensaje('reprogramado', {
       nombre: t.nombre,
       modalidad: t.nombreModalidad,
@@ -92,6 +106,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         sedeSlug: body.sede,
       },
       mailEnviado: body.avisar === true && !!t.email,
+      waEnviado: wa.ok,
       texto,
       wa: t.telefono && t.telefono !== '—' ? linkWhatsApp(t.telefono, texto) : null,
     });
