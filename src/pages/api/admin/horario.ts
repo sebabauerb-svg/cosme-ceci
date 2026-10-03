@@ -98,7 +98,7 @@ export const GET: APIRoute = async ({ url, cookies }) => {
     `) as any[];
 
     const reservas = (await sql`
-      select fecha::text as fecha, to_char(hora, 'HH24:MI') as hora, nombre, estado
+      select id, fecha::text as fecha, to_char(hora, 'HH24:MI') as hora, nombre, estado, modalidad, email
       from reservas
       where coalesce(sede_id::text, 'online') = ${sedeKey} and fecha >= ${hoy}
         and (estado = 'confirmada' or (estado = 'pendiente_pago' and (expira_at is null or expira_at > now())))

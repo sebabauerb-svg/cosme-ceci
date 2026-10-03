@@ -326,8 +326,10 @@ if (authed) {
     let durSede: Record<string, number> = { montevideo: 45, 'san-jose': 30, online: 30 };
     // dias: fecha -> { horas:Set<string>, duracion:number }
     let dias = new Map<string, { horas: Set<string>; duracion: number }>();
-    // reservas: 'fecha hora' -> { nombre, modalidad }
-    let reservasMap = new Map<string, { nombre: string; modalidad: string }>();
+    // reservas: 'fecha hora' -> datos de la reserva (id y contacto para poder moverla)
+    let reservasMap = new Map<string, any>();
+    // Aviso del último turno movido (con el WhatsApp ya escrito), que sobrevive al re-render.
+    let movido: { texto: string; wa: string | null; nombre: string } | null = null;
     let sel: string | null = null; // fecha seleccionada
     let sucio = false;
     const base = new Date(hoyUY + 'T12:00:00Z');
@@ -360,9 +362,10 @@ if (authed) {
     }
 
     // ---------- Cargar sede ----------
-    async function cargarSede(s: string) {
+    async function cargarSede(s: string, mantenerDia = false) {
       sede = s;
-      sel = null; sucio = false; setMsg('');
+      if (!mantenerDia) { sel = null; movido = null; }
+      sucio = false; setMsg('');
       ($('f-dur') as HTMLInputElement).value = String(durSede[s]);
       try {
         const res = await fetch(`/api/admin/horario?sede=${s}`);
@@ -376,7 +379,7 @@ if (authed) {
             dia.horas.add(f.hora); dia.duracion = Number(f.duracion) || dia.duracion;
             dias.set(f.fecha, dia);
           }
-          for (const r of d.reservas) reservasMap.set(`${r.fecha} ${r.hora}`, { nombre: r.nombre, modalidad: r.modalidad });
+          for (const r of d.reservas) reservasMap.set(`${r.fecha} ${r.hora}`, r);
         }
       } catch { setMsg('No se pudo cargar. Probá de nuevo.', 'dirty'); }
       renderCal(); renderDia(); actualizarPrev();
@@ -437,6 +440,23 @@ if (authed) {
       h.innerHTML = `<strong>${titulo}</strong>`;
       panel.appendChild(h);
 
+      if (movido) {
+        const av = document.createElement('div'); av.className = 'dia-movido';
+        const tx = document.createElement('span');
+        tx.textContent = `✓ Turno de ${movido.nombre} movido.`;
+        av.appendChild(tx);
+        if (movido.wa) {
+          const a = document.createElement('a'); a.className = 'btn btn--primary btn--sm';
+          a.href = movido.wa; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Avisar por WhatsApp';
+          av.appendChild(a);
+        }
+        const x = document.createElement('button'); x.className = 'turno__x'; x.textContent = '✕';
+        x.setAttribute('aria-label', 'Cerrar aviso');
+        x.addEventListener('click', () => { movido = null; av.remove(); });
+        av.appendChild(x);
+        panel.appendChild(av);
+      }
+
       if (!dia || !dia.horas.size) {
         const p = document.createElement('p'); p.className = 'dia-vacio';
         p.textContent = 'Este día está cerrado. Abrilo con el horario de la izquierda:';
@@ -462,6 +482,29 @@ if (authed) {
             const lib = document.createElement('button'); lib.className = 'turno__lib'; lib.textContent = 'Liberar';
             lib.addEventListener('click', () => liberar(hora));
             t.appendChild(lib);
+          }
+          // Solo los confirmados se mueven (los de pago pendiente todavía no son un turno firme).
+          if (res.estado === 'confirmada' && res.id) {
+            const mov = document.createElement('button'); mov.className = 'turno__marc'; mov.textContent = 'Mover';
+            const box = bloqueMover(
+              { id: res.id, modalidadId: res.modalidad, sedeSlug: sede, email: res.email },
+              async (texto, wa) => {
+                // Lo movido cambia franjas y reservas en la base: se relee la sede
+                // entera (y se pierde lo no guardado, por eso se avisa antes).
+                movido = { texto, wa, nombre: res.nombre };
+                await cargarSede(sede, true);
+              }
+            );
+            box.classList.add('turno__mover');
+            const abrirMover = box.querySelector('button') as HTMLButtonElement;
+            abrirMover.hidden = true; // el botón "Mover" de la fila hace de disparador
+            mov.addEventListener('click', () => {
+              if (sucio && !confirm('Tenés cambios sin guardar en la agenda y se van a perder al mover el turno. ¿Seguir?')) return;
+              t.classList.toggle('turno--abierto');
+              abrirMover.click();
+            });
+            t.appendChild(mov);
+            t.appendChild(box);
           }
         } else {
           const marc = document.createElement('button'); marc.className = 'turno__marc'; marc.textContent = 'Marcar reservado';
@@ -843,6 +886,135 @@ if (authed) {
     } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; }
   })();
 
+  // ---------- Mover un turno (lo usan Agenda y Seguimiento) ----------
+  /**
+   * Mover el turno a otro día/hora (ej. se le cae un día entero a Ceci). Ofrece
+   * los horarios libres de la sede elegida; "otro horario" permite agendar uno
+   * que no estaba abierto. Por defecto cierra el horario que se libera: si Ceci
+   * mueve es porque ese día no atiende, y no queremos que lo reserve otra.
+   */
+  function bloqueMover(r: any, onMovido: (texto: string, wa: string | null) => void) {
+    const box = document.createElement('div'); box.className = 'gs-mover';
+    const abrir = document.createElement('button'); abrir.type = 'button';
+    abrir.className = 'btn btn--ghost btn--sm'; abrir.textContent = 'Mover turno';
+    const panel = document.createElement('div'); panel.className = 'gs-mover__panel'; panel.hidden = true;
+
+    const opcion = (sel: HTMLSelectElement, v: string, t: string) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o);
+    };
+    const etiqueta = (txt: string, ctrl: HTMLElement) => {
+      const w = document.createElement('label'); w.className = 'gs-campo';
+      const t = document.createElement('span'); t.textContent = txt;
+      w.append(t, ctrl); return w;
+    };
+    const tilde = (txt: string, on: boolean) => {
+      const w = document.createElement('label'); w.className = 'gs-check';
+      const i = document.createElement('input'); i.type = 'checkbox'; i.checked = on;
+      w.append(i, ' ' + txt); return { w, i };
+    };
+
+    // Sedes posibles según el servicio: presencial va a una sede física, las
+    // consultas online van online, las manuales a cualquiera.
+    const sedeSel = document.createElement('select');
+    const fisicas: Array<[string, string]> = [['montevideo', 'Montevideo'], ['san-jose', 'San José']];
+    const posibles: Array<[string, string]> = r.modalidadId === 'presencial' ? fisicas
+      : r.modalidadId === 'virtual' || r.modalidadId === 'skincare-inteligente' ? [['online', 'Online']]
+      : [...fisicas, ['online', 'Online']];
+    posibles.forEach(([v, t]) => opcion(sedeSel, v, t));
+    sedeSel.value = posibles.some(([v]) => v === r.sedeSlug) ? r.sedeSlug : posibles[0][0];
+
+    const diaSel = document.createElement('select');
+    const horaSel = document.createElement('select');
+    const fechaIn = document.createElement('input'); fechaIn.type = 'date';
+    const horaIn = document.createElement('input'); horaIn.type = 'time'; horaIn.step = '300';
+    const libres = document.createElement('div'); libres.className = 'gs-grupo';
+    libres.append(etiqueta('Lugar', sedeSel), etiqueta('Día', diaSel), etiqueta('Hora', horaSel));
+    const manual = document.createElement('div'); manual.className = 'gs-grupo'; manual.hidden = true;
+    manual.append(etiqueta('Día', fechaIn), etiqueta('Hora', horaIn));
+
+    const otro = tilde('Otro horario (no abierto en la agenda)', false);
+    const cerrar = tilde('Cerrar el horario que se libera', true);
+    const avisar = tilde(r.email ? 'Avisarle por mail' : 'Avisarle por mail (no tiene email)', !!r.email);
+    if (!r.email) avisar.i.disabled = true;
+    const opciones = document.createElement('div'); opciones.className = 'gs-checks';
+    opciones.append(otro.w, cerrar.w, avisar.w);
+
+    const ok = document.createElement('button'); ok.type = 'button';
+    ok.className = 'btn btn--primary btn--sm'; ok.textContent = 'Mover';
+    const estadoTxt = document.createElement('span'); estadoTxt.className = 'gs-mover__msg';
+    const pie = document.createElement('div'); pie.className = 'gs-msg__acc';
+    pie.append(ok, estadoTxt);
+
+    let slots: any[] = [];
+    const pintarHoras = () => {
+      horaSel.innerHTML = '';
+      const s = slots.find((x) => x.fecha === diaSel.value);
+      (s?.horas || []).forEach((h: string) => opcion(horaSel, h, h));
+    };
+    async function cargarLibres() {
+      diaSel.innerHTML = ''; horaSel.innerHTML = '';
+      opcion(diaSel, '', 'Cargando…');
+      try {
+        const res = await fetch('/api/disponibilidad?sede=' + sedeSel.value);
+        const d = await res.json();
+        slots = d.ok ? d.slots || [] : [];
+      } catch { slots = []; }
+      diaSel.innerHTML = '';
+      if (!slots.length) { opcion(diaSel, '', 'Sin horarios libres'); return; }
+      slots.forEach((s) => opcion(diaSel, s.fecha, s.label));
+      pintarHoras();
+    }
+    sedeSel.addEventListener('change', cargarLibres);
+    diaSel.addEventListener('change', pintarHoras);
+    otro.i.addEventListener('change', () => {
+      manual.hidden = !otro.i.checked;
+      diaSel.disabled = horaSel.disabled = otro.i.checked;
+    });
+
+    abrir.addEventListener('click', () => {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden && !slots.length) cargarLibres();
+    });
+
+    ok.addEventListener('click', async () => {
+      const fecha = otro.i.checked ? fechaIn.value : diaSel.value;
+      const hora = otro.i.checked ? horaIn.value : horaSel.value;
+      if (!fecha || !hora) { estadoTxt.textContent = 'Elegí día y hora.'; return; }
+      ok.disabled = true; ok.textContent = 'Moviendo…'; estadoTxt.textContent = '';
+      try {
+        const res = await fetch('/api/admin/reserva-mover', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            id: r.id, sede: sedeSel.value, fecha, hora,
+            libre: otro.i.checked, cerrarAnterior: cerrar.i.checked, avisar: avisar.i.checked,
+          }),
+        });
+        if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) {
+          estadoTxt.textContent = d.error || 'No se pudo mover.';
+          if (d.code === 'SLOT_TOMADO') cargarLibres();
+          return;
+        }
+        Object.assign(r, {
+          fecha: d.turno.fecha, fechaLarga: d.turno.fechaLarga, hora: d.turno.hora,
+          sede: d.turno.sede, sedeSlug: d.turno.sedeSlug, recordatorioAt: null,
+        });
+        aviso.textContent = '✓ Turno movido' + (d.mailEnviado ? ' · le mandamos el mail' : '') + '. Avisale también por WhatsApp ↓';
+        slots = [];
+        panel.hidden = true;
+        onMovido(d.texto, d.wa);
+      } catch { estadoTxt.textContent = 'Sin conexión: probá de nuevo.'; }
+      finally { ok.disabled = false; ok.textContent = 'Mover'; }
+    });
+
+    // Resultado del último movimiento: queda a la vista con el panel cerrado.
+    const aviso = document.createElement('p'); aviso.className = 'gs-mover__msg';
+    panel.append(libres, manual, opciones, pie);
+    box.append(abrir, panel, aviso);
+    return box;
+  }
+
   // ---------- Gestión de turnos (cobro + mensajes + recordatorios) ----------
   (async function cargarGestion() {
     const cont = document.getElementById('gestion');
@@ -1053,134 +1225,6 @@ if (authed) {
       wrap.append(sum, cuerpo);
       pintar();
       return wrap;
-    }
-
-    /**
-     * Mover el turno a otro día/hora (ej. se le cae un día entero a Ceci). Ofrece
-     * los horarios libres de la sede elegida; "otro horario" permite agendar uno
-     * que no estaba abierto. Por defecto cierra el horario que se libera: si Ceci
-     * mueve es porque ese día no atiende, y no queremos que lo reserve otra.
-     */
-    function bloqueMover(r: any, onMovido: (texto: string, wa: string | null) => void) {
-      const box = document.createElement('div'); box.className = 'gs-mover';
-      const abrir = document.createElement('button'); abrir.type = 'button';
-      abrir.className = 'btn btn--ghost btn--sm'; abrir.textContent = 'Mover turno';
-      const panel = document.createElement('div'); panel.className = 'gs-mover__panel'; panel.hidden = true;
-
-      const opcion = (sel: HTMLSelectElement, v: string, t: string) => {
-        const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o);
-      };
-      const etiqueta = (txt: string, ctrl: HTMLElement) => {
-        const w = document.createElement('label'); w.className = 'gs-campo';
-        const t = document.createElement('span'); t.textContent = txt;
-        w.append(t, ctrl); return w;
-      };
-      const tilde = (txt: string, on: boolean) => {
-        const w = document.createElement('label'); w.className = 'gs-check';
-        const i = document.createElement('input'); i.type = 'checkbox'; i.checked = on;
-        w.append(i, ' ' + txt); return { w, i };
-      };
-
-      // Sedes posibles según el servicio: presencial va a una sede física, las
-      // consultas online van online, las manuales a cualquiera.
-      const sedeSel = document.createElement('select');
-      const fisicas: Array<[string, string]> = [['montevideo', 'Montevideo'], ['san-jose', 'San José']];
-      const posibles: Array<[string, string]> = r.modalidadId === 'presencial' ? fisicas
-        : r.modalidadId === 'virtual' || r.modalidadId === 'skincare-inteligente' ? [['online', 'Online']]
-        : [...fisicas, ['online', 'Online']];
-      posibles.forEach(([v, t]) => opcion(sedeSel, v, t));
-      sedeSel.value = posibles.some(([v]) => v === r.sedeSlug) ? r.sedeSlug : posibles[0][0];
-
-      const diaSel = document.createElement('select');
-      const horaSel = document.createElement('select');
-      const fechaIn = document.createElement('input'); fechaIn.type = 'date';
-      const horaIn = document.createElement('input'); horaIn.type = 'time'; horaIn.step = '300';
-      const libres = document.createElement('div'); libres.className = 'gs-grupo';
-      libres.append(etiqueta('Lugar', sedeSel), etiqueta('Día', diaSel), etiqueta('Hora', horaSel));
-      const manual = document.createElement('div'); manual.className = 'gs-grupo'; manual.hidden = true;
-      manual.append(etiqueta('Día', fechaIn), etiqueta('Hora', horaIn));
-
-      const otro = tilde('Otro horario (no abierto en la agenda)', false);
-      const cerrar = tilde('Cerrar el horario que se libera', true);
-      const avisar = tilde(r.email ? 'Avisarle por mail' : 'Avisarle por mail (no tiene email)', !!r.email);
-      if (!r.email) avisar.i.disabled = true;
-      const opciones = document.createElement('div'); opciones.className = 'gs-checks';
-      opciones.append(otro.w, cerrar.w, avisar.w);
-
-      const ok = document.createElement('button'); ok.type = 'button';
-      ok.className = 'btn btn--primary btn--sm'; ok.textContent = 'Mover';
-      const estadoTxt = document.createElement('span'); estadoTxt.className = 'gs-mover__msg';
-      const pie = document.createElement('div'); pie.className = 'gs-msg__acc';
-      pie.append(ok, estadoTxt);
-
-      let slots: any[] = [];
-      const pintarHoras = () => {
-        horaSel.innerHTML = '';
-        const s = slots.find((x) => x.fecha === diaSel.value);
-        (s?.horas || []).forEach((h: string) => opcion(horaSel, h, h));
-      };
-      async function cargarLibres() {
-        diaSel.innerHTML = ''; horaSel.innerHTML = '';
-        opcion(diaSel, '', 'Cargando…');
-        try {
-          const res = await fetch('/api/disponibilidad?sede=' + sedeSel.value);
-          const d = await res.json();
-          slots = d.ok ? d.slots || [] : [];
-        } catch { slots = []; }
-        diaSel.innerHTML = '';
-        if (!slots.length) { opcion(diaSel, '', 'Sin horarios libres'); return; }
-        slots.forEach((s) => opcion(diaSel, s.fecha, s.label));
-        pintarHoras();
-      }
-      sedeSel.addEventListener('change', cargarLibres);
-      diaSel.addEventListener('change', pintarHoras);
-      otro.i.addEventListener('change', () => {
-        manual.hidden = !otro.i.checked;
-        diaSel.disabled = horaSel.disabled = otro.i.checked;
-      });
-
-      abrir.addEventListener('click', () => {
-        panel.hidden = !panel.hidden;
-        if (!panel.hidden && !slots.length) cargarLibres();
-      });
-
-      ok.addEventListener('click', async () => {
-        const fecha = otro.i.checked ? fechaIn.value : diaSel.value;
-        const hora = otro.i.checked ? horaIn.value : horaSel.value;
-        if (!fecha || !hora) { estadoTxt.textContent = 'Elegí día y hora.'; return; }
-        ok.disabled = true; ok.textContent = 'Moviendo…'; estadoTxt.textContent = '';
-        try {
-          const res = await fetch('/api/admin/reserva-mover', {
-            method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              id: r.id, sede: sedeSel.value, fecha, hora,
-              libre: otro.i.checked, cerrarAnterior: cerrar.i.checked, avisar: avisar.i.checked,
-            }),
-          });
-          if (res.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
-          const d = await res.json().catch(() => ({}));
-          if (!res.ok || !d.ok) {
-            estadoTxt.textContent = d.error || 'No se pudo mover.';
-            if (d.code === 'SLOT_TOMADO') cargarLibres();
-            return;
-          }
-          Object.assign(r, {
-            fecha: d.turno.fecha, fechaLarga: d.turno.fechaLarga, hora: d.turno.hora,
-            sede: d.turno.sede, sedeSlug: d.turno.sedeSlug, recordatorioAt: null,
-          });
-          aviso.textContent = '✓ Turno movido' + (d.mailEnviado ? ' · le mandamos el mail' : '') + '. Avisale también por WhatsApp ↓';
-          slots = [];
-          panel.hidden = true;
-          onMovido(d.texto, d.wa);
-        } catch { estadoTxt.textContent = 'Sin conexión: probá de nuevo.'; }
-        finally { ok.disabled = false; ok.textContent = 'Mover'; }
-      });
-
-      // Resultado del último movimiento: queda a la vista con el panel cerrado.
-      const aviso = document.createElement('p'); aviso.className = 'gs-mover__msg';
-      panel.append(libres, manual, opciones, pie);
-      box.append(abrir, panel, aviso);
-      return box;
     }
 
     function render() {
@@ -1614,6 +1658,16 @@ if (authed) {
   }
 
   .gs-nota { color: var(--sage-deep); }
+  .turno { flex-wrap: wrap; }
+  .gs-mover.turno__mover { flex: 1 1 100%; margin-top: 0; padding-top: 0; border-top: 0; display: none; }
+  .turno--abierto > .gs-mover.turno__mover { display: block; }
+  .turno__mover .gs-mover__panel { margin-top: 0.6rem; }
+  .dia-movido {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem;
+    padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); font-size: 0.88rem; color: var(--sage-deep);
+    background: color-mix(in srgb, var(--sage) 10%, var(--white));
+  }
+  .dia-movido span { flex: 1 1 auto; }
   .gs-mover { margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px dashed var(--sand); }
   .gs-mover__panel { margin-top: 0.4rem; }
   .gs-mover__panel .gs-msg__acc { margin-top: 0.8rem; }
