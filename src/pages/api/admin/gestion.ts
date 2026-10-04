@@ -33,10 +33,13 @@ export function fechaLarga(iso?: string | null): string | null {
  * GET /api/admin/gestion?dias=30
  * Turnos confirmados de acá en adelante, con el estado de cobro de cada uno.
  * Es la vista de trabajo de Ceci: a quién le falta pagar, a quién recordarle.
+ * dias negativo (ej. -14) = los días ya pasados, sin hoy: para reprogramar un
+ * día que Ceci suspendió y no llegó a mover a tiempo.
  */
 export const GET: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
-  const dias = Math.min(120, Math.max(1, Number(new URL(request.url).searchParams.get('dias')) || 30));
+  const pedido = Number(new URL(request.url).searchParams.get('dias')) || 30;
+  const dias = pedido < 0 ? Math.max(-60, Math.round(pedido)) : Math.min(120, Math.max(1, pedido));
   try {
     const sql = getSql();
     await ensureConfirmacion(sql);
@@ -53,8 +56,8 @@ export const GET: APIRoute = async ({ request, cookies }) => {
              r.recordatorio_at, r.notas, r.cambios_paciente
         from reservas r left join sedes s on s.id = r.sede_id
        where r.estado = 'confirmada' and r.fecha is not null
-         and r.fecha >= ${hoyUY}::date
-         and r.fecha <= (${hoyUY}::date + ${dias}::int)
+         and r.fecha >= (${hoyUY}::date + ${dias < 0 ? dias : 0}::int)
+         and r.fecha <= (${hoyUY}::date + ${dias < 0 ? -1 : dias}::int)
        order by r.fecha, r.hora
     `) as any[];
 

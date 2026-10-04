@@ -186,6 +186,7 @@ if (authed) {
             <div class="gs-filtros">
               <label class="gs-filtro">Período
                 <select id="gs-dias">
+                  <option value="-14">Días pasados (últimas 2 semanas)</option>
                   <option value="7">Próximos 7 días</option>
                   <option value="15">Próximos 15 días</option>
                   <option value="30" selected>Próximos 30 días</option>
@@ -218,6 +219,7 @@ if (authed) {
                 <input type="search" id="gs-buscar" placeholder="Nombre de la paciente" />
               </label>
             </div>
+            <div id="gs-mover-dia" class="gs-mdia" hidden></div>
             <div id="gestion"><p class="ag-vacia">Cargando…</p></div>
           </section>
 
@@ -1274,6 +1276,100 @@ if (authed) {
       for (const r of lista) cont.appendChild(item(r));
     }
 
+    /**
+     * Con un día filtrado: mover TODOS sus turnos a otra fecha, mismos horarios
+     * y misma sede (ej. Ceci suspende un sábado y lo pasa al siguiente). Sirve
+     * también para días que ya pasaron.
+     */
+    function pintarMoverDia() {
+      const box = document.getElementById('gs-mover-dia');
+      if (!box) return;
+      const dia = el('gs-dia')?.value || '';
+      const sede = el('gs-sede')?.value || '';
+      const delDia = datos.filter((r) => r.fecha === dia && (!sede || (r.sede || 'Online') === sede));
+      box.hidden = !dia || !delDia.length;
+      if (box.hidden) { box.innerHTML = ''; return; }
+      box.innerHTML = '';
+
+      const t = document.createElement('p'); t.className = 'gs-mdia__t';
+      t.textContent = `Mover ${delDia.length === 1 ? 'el turno' : `los ${delDia.length} turnos`} del ${fechaCorta(dia)}${sede ? ' en ' + sede : ''} a otra fecha, con los mismos horarios:`;
+      const fila = document.createElement('div'); fila.className = 'gs-mdia__fila';
+      const fecha = document.createElement('input'); fecha.type = 'date';
+      // Sugerencia: el mismo día de la semana siguiente que todavía no pasó.
+      const hoy = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+      let sug = new Date(dia + 'T12:00:00Z');
+      do { sug = new Date(sug.getTime() + 7 * 86400000); } while (sug.toISOString().slice(0, 10) <= hoy);
+      fecha.value = sug.toISOString().slice(0, 10);
+      fecha.min = hoy;
+      const lblF = document.createElement('label'); lblF.className = 'gs-campo';
+      const sp = document.createElement('span'); sp.textContent = 'Nueva fecha';
+      lblF.append(sp, fecha);
+      const waAuto = (document.querySelector('.panel') as HTMLElement | null)?.dataset.waAuto === '1';
+      const avW = document.createElement('label'); avW.className = 'gs-check';
+      const av = document.createElement('input'); av.type = 'checkbox'; av.checked = true;
+      avW.append(av, waAuto ? ' Avisarles por mail y WhatsApp' : ' Avisarles por mail');
+      const ok = document.createElement('button'); ok.type = 'button';
+      ok.className = 'btn btn--primary btn--sm'; ok.textContent = 'Mover todo el día';
+      fila.append(lblF, avW, ok);
+      const res = document.createElement('div'); res.className = 'gs-mdia__res';
+      box.append(t, fila, res);
+
+      ok.addEventListener('click', async () => {
+        if (!fecha.value) return;
+        const largo = new Date(fecha.value + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+        // confirm() del navegador: el panel es una página normal, no un artifact.
+        if (!confirm(`¿Mover ${delDia.length === 1 ? 'el turno' : `los ${delDia.length} turnos`} al ${largo}, con los mismos horarios?`)) return;
+        ok.disabled = true; ok.textContent = 'Moviendo…'; res.innerHTML = '';
+        try {
+          const r = await fetch('/api/admin/mover-dia', {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              desde: dia, hasta: fecha.value, avisar: av.checked,
+              sede: sede === 'Montevideo' ? 'montevideo' : sede === 'San José' ? 'san-jose' : sede === 'Online' ? 'online' : '',
+            }),
+          });
+          if (r.status === 401) { alert('Tu sesión expiró. Recargá la página e ingresá de nuevo.'); return; }
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok || !d.ok) { res.textContent = d.error || 'No se pudo mover el día.'; return; }
+          pintarResultado(res, d);
+          // Los turnos ya no están en el día filtrado: se relee la lista, pero
+          // el resultado (con los WhatsApp por mandar) queda a la vista.
+          const caja = res;
+          await cargar();
+          const b2 = document.getElementById('gs-mover-dia');
+          if (b2) { b2.hidden = false; b2.innerHTML = ''; b2.appendChild(caja); }
+        } catch { res.textContent = 'Sin conexión: probá de nuevo.'; }
+        finally { ok.disabled = false; ok.textContent = 'Mover todo el día'; }
+      });
+    }
+
+    function pintarResultado(res: HTMLElement, d: any) {
+      res.innerHTML = '';
+      const t = document.createElement('p'); t.className = 'gs-mdia__ok';
+      const fallidos = d.resultados.length - d.movidos;
+      t.textContent = `✓ ${d.movidos === 1 ? '1 turno movido' : `${d.movidos} turnos movidos`} al ${d.hastaLarga}.` +
+        (fallidos ? ` ${fallidos === 1 ? '1 no se pudo mover' : `${fallidos} no se pudieron mover`} (abajo dice por qué).` : '');
+      res.appendChild(t);
+      const lista = document.createElement('ul'); lista.className = 'gs-mdia__lista';
+      for (const x of d.resultados) {
+        const li = document.createElement('li');
+        const txt = document.createElement('span');
+        txt.textContent = `${x.hora} · ${x.nombre}` + (x.ok
+          ? ([x.mailEnviado && 'mail', x.waEnviado && 'WhatsApp'].filter(Boolean).length
+              ? ` · se avisó por ${[x.mailEnviado && 'mail', x.waEnviado && 'WhatsApp'].filter(Boolean).join(' y ')}` : '')
+          : ` · NO se movió: ${x.error}`);
+        if (!x.ok) li.className = 'is-err';
+        li.appendChild(txt);
+        if (x.ok && x.wa && !x.waEnviado) {
+          const a = document.createElement('a'); a.className = 'btn btn--ghost btn--sm';
+          a.href = x.wa; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Avisar por WhatsApp';
+          li.appendChild(a);
+        }
+        lista.appendChild(li);
+      }
+      res.appendChild(lista);
+    }
+
     /** Días con turnos, para filtrar uno y reprogramarlo entero. */
     function llenarDias() {
       const s = el('gs-dia') as HTMLSelectElement | null;
@@ -1301,6 +1397,7 @@ if (authed) {
         llenarDias();
         if (!datos.length) { cont.innerHTML = '<p class="ag-vacia">No hay turnos confirmados en ese período.</p>'; return; }
         render();
+        pintarMoverDia();
       } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar.</p>'; }
     }
 
@@ -1310,8 +1407,8 @@ if (authed) {
       dias = Number(e.target.value) || 30;
       cargar();
     });
-    el('gs-dia')?.addEventListener('change', render);
-    el('gs-sede')?.addEventListener('change', render);
+    el('gs-dia')?.addEventListener('change', () => { render(); pintarMoverDia(); });
+    el('gs-sede')?.addEventListener('change', () => { render(); pintarMoverDia(); });
     el('gs-estado')?.addEventListener('change', render);
     el('gs-buscar')?.addEventListener('input', render);
 
@@ -1703,6 +1800,18 @@ if (authed) {
   }
 
   .gs-nota { color: var(--sage-deep); }
+  .gs-mdia {
+    display: grid; gap: 0.6rem; margin: 0 0 1rem; padding: 0.9rem 1rem;
+    border: 1px solid var(--sand); border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--sage) 7%, var(--white));
+  }
+  .gs-mdia[hidden] { display: none; }
+  .gs-mdia__t { margin: 0; font-size: 0.9rem; color: var(--ink); font-weight: 600; }
+  .gs-mdia__fila { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.8rem; }
+  .gs-mdia__ok { margin: 0.3rem 0 0; font-size: 0.88rem; color: var(--sage-deep); font-weight: 600; }
+  .gs-mdia__lista { list-style: none; margin: 0.3rem 0 0; padding: 0; display: grid; gap: 0.35rem; }
+  .gs-mdia__lista li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; font-size: 0.86rem; color: var(--ink); }
+  .gs-mdia__lista li.is-err { color: var(--clay-deep); }
   button.turno__nom--link {
     font: inherit; font-size: 0.85rem; text-align: left; background: none; border: 0; padding: 0;
     color: var(--clay-deep); cursor: pointer; text-decoration: underline; text-decoration-color: transparent;
