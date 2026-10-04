@@ -119,11 +119,10 @@ export async function moverReserva(
   if ((r.modalidad === 'virtual' || r.modalidad === 'skincare-inteligente') && sedeKey !== 'online')
     return falla(400, 'Una consulta online no va en una sede.');
 
-  let duracion = await duracionDeTurno(sql, sedeKey, fecha, hora);
-  if (duracion == null) {
-    if (!opts.libre) return falla(409, 'Ese horario no está disponible. Elegí otro.', 'SLOT_TOMADO');
-    duracion = r.duracion_min != null ? Number(r.duracion_min) : 30;
-  }
+  const abierta = await duracionDeTurno(sql, sedeKey, fecha, hora);
+  const franjaNueva = abierta == null;
+  if (franjaNueva && !opts.libre) return falla(409, 'Ese horario no está disponible. Elegí otro.', 'SLOT_TOMADO');
+  const duracion: number = abierta ?? (r.duracion_min != null ? Number(r.duracion_min) : 30);
 
   const sedeId = sedeKey === 'online' ? null : sedeKey;
   let upd: any[];
@@ -144,6 +143,19 @@ export async function moverReserva(
     throw e;
   }
   if (!upd.length) return falla(409, 'El turno cambió mientras tanto. Recargá y probá de nuevo.');
+
+  // Un horario que Ceci no había abierto queda cargado en la agenda (y ocupado
+  // por este turno): si no, el panel del día no lo muestra.
+  if (franjaNueva) {
+    await sql`
+      insert into franjas (sede_id, fecha, hora, duracion_min)
+      select ${sedeId}::uuid, ${fecha}::date, ${hora}::time, ${duracion}::int
+       where not exists (
+         select 1 from franjas
+          where coalesce(sede_id::text, 'online') = ${sedeKey} and fecha = ${fecha} and hora = ${hora}
+       )
+    `;
+  }
 
   if (opts.cerrarAnterior) {
     await sql`
