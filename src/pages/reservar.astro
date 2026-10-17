@@ -786,7 +786,8 @@ const senaLabel = fmt(SENA_UYU);
   .form { display: grid; gap: 1rem; max-width: 460px; margin-inline: auto; }
   .form label { display: grid; gap: 0.35rem; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
   .form input {
-    font: inherit; font-weight: 400; padding: 0.7rem 0.9rem; border: 1px solid var(--sand);
+    /* 16px mínimo: con menos, Safari de iPhone hace zoom al enfocar el campo. */
+    font: inherit; font-size: max(1rem, 16px); font-weight: 400; padding: 0.7rem 0.9rem; border: 1px solid var(--sand);
     border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
   }
   .form input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }

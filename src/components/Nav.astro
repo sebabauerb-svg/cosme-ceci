@@ -102,7 +102,11 @@ const links = [
     background: none;
     border: 0;
     cursor: pointer;
-    padding: 6px;
+    /* Área táctil de 44px; el margen negativo mantiene el ícono donde estaba. */
+    min-width: 44px; min-height: 44px;
+    align-items: center; justify-content: center;
+    padding: 10px;
+    margin-right: -10px;
   }
   .nav__toggle span {
     width: 24px; height: 2px;
@@ -118,7 +122,7 @@ const links = [
     border-top: 1px solid var(--sand);
   }
   .nav__mobile a:not(.btn) {
-    padding: 0.7rem 0;
+    padding: 0.8rem 0;
     font-weight: 500;
     border-bottom: 1px solid var(--sand);
   }
@@ -129,14 +133,14 @@ const links = [
        queda solo para los links de secciones. */
     .nav__links { display: none; }
     .nav__inner { gap: 0.8rem; }
-    .nav__cta { padding: 0.5rem 1rem; font-size: 0.85rem; margin-left: auto; white-space: nowrap; }
+    .nav__cta { padding: 0.5rem 1rem; font-size: 0.85rem; margin-left: auto; white-space: nowrap; min-height: 42px; }
     .nav__toggle { display: flex; }
     .nav__mobile[data-open='true'] { display: flex; }
   }
   @media (max-width: 400px) {
     /* En pantallas muy angostas priorizamos marca + CTA */
     .nav__sub { display: none; }
-    .nav__cta { padding: 0.45rem 0.85rem; font-size: 0.8rem; }
+    .nav__cta { padding: 0.45rem 0.85rem; font-size: 0.84rem; }
   }
 </style>
 
