@@ -16,7 +16,7 @@ es entender el pedido, protegerlo del scope creep y derivar a la skill correcta.
      **una de las 4 modalidades**, no la marca.
    - **Voz del dossier tal cual** (Cosmetología Médica, diagnóstico, evaluación clínica): no la
      suavices. Ver `skincare-legal-guardrails`.
-   - **Precios:** solo la Consulta ($1.800) se muestra; tratamientos "según protocolo".
+   - **Precios (oct-2026):** se muestran. Modalidades con su valor y cada tratamiento con valor por sesión (+ paquete de 6) desde `src/data/tratamientos.ts`; lo que falta va como `CONFIRMAR` (en la web: "Valor en consulta").
    - **Estructura:** Filosofía → Modalidades (4) → Tratamientos → Sobre Ceci → Reserva.
 
 ## Mapa de delegación
