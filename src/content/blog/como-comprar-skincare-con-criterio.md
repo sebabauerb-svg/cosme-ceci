@@ -3,7 +3,7 @@ titulo: "Cómo comprar skincare con criterio (y dejar de tirar plata)"
 descripcion: "Tres preguntas simples para saber si un producto vale tu dinero antes de comprarlo."
 fecha: 2026-06-01
 autora: "Ceci"
-publicado: true
+publicado: false
 ---
 
 > Este es un artículo de ejemplo para mostrar cómo se ve el blog. Reemplazalo o
