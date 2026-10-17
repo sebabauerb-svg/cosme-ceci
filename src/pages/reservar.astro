@@ -126,11 +126,13 @@ const senaLabel = fmt(SENA_UYU);
       <section class="step" data-step="4" hidden aria-label="Confirmar reserva">
         <h2 class="step__title">Confirmá tu reserva</h2>
         <div class="resumen" id="resumen"></div>
-        <button class="btn btn--primary pay" id="confirmar">MercadoPago</button>
-        <p class="step__hint center tic" id="hint-mp">Tu turno queda confirmado al instante</p>
-        <div class="pay-sep" id="pay-sep"><span>o</span></div>
-        <button class="btn btn--ghost pay" id="coordinar">Transferencia bancaria</button>
+        {/* Transferencia primero (pedido de Ceci): quien quiere MercadoPago lo
+            elige igual, y así la transferencia gana visibilidad. */}
+        <button class="btn btn--primary pay" id="coordinar">Transferencia desde tu banco</button>
         <p class="step__hint center tic" id="hint-coord">Te mostramos los datos y Ceci confirma al ver el pago</p>
+        <div class="pay-sep" id="pay-sep"><span>o</span></div>
+        <button class="btn btn--ghost pay" id="confirmar">MercadoPago</button>
+        <p class="step__hint center tic" id="hint-mp">Tu turno queda confirmado al instante</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -215,6 +217,16 @@ const senaLabel = fmt(SENA_UYU);
     const nav = document.querySelector('.nav');
     const top = el.getBoundingClientRect().top + window.scrollY - (nav?.offsetHeight ?? 0) - 12;
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }
+
+  function asomarHorarios() {
+    const label = $('#slots-label'), horas = $('#horarios');
+    if (!label || !horas) return;
+    const nav = document.querySelector('.nav')?.offsetHeight ?? 0;
+    const falta = horas.getBoundingClientRect().bottom - window.innerHeight + 16;
+    const tope = label.getBoundingClientRect().top - nav - 12;
+    const delta = Math.min(falta, tope);
+    if (delta > 0) window.scrollTo({ top: window.scrollY + delta, behavior: 'smooth' });
   }
 
   function goTo(step) {
@@ -335,12 +347,29 @@ const senaLabel = fmt(SENA_UYU);
       m++; if (m > 12) { m = 1; y++; }
     }
 
-    meses.forEach(({ y, m }) => {
+    // Un mes a la vista con flechas: apilados (o lado a lado) los meses quedaban
+    // chicos y empujaban los horarios hacia abajo.
+    const wraps = [];
+    const mostrarMes = (i) => wraps.forEach((w, j) => (w.hidden = i !== j));
+    meses.forEach(({ y, m }, idx) => {
       const wrap = document.createElement('div');
       wrap.className = 'cal2';
       const head = document.createElement('div');
       head.className = 'cal2__head';
-      head.textContent = `${MESES[m - 1]} ${y}`;
+      const flecha = (dir) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cal2__nav';
+        b.textContent = dir < 0 ? '‹' : '›';
+        b.setAttribute('aria-label', dir < 0 ? 'Mes anterior' : 'Mes siguiente');
+        const destino = idx + dir;
+        if (destino < 0 || destino >= meses.length) b.disabled = true;
+        else b.addEventListener('click', () => mostrarMes(destino));
+        return b;
+      };
+      const titulo = document.createElement('span');
+      titulo.textContent = `${MESES[m - 1]} ${y}`;
+      head.append(flecha(-1), titulo, flecha(1));
       wrap.appendChild(head);
       const grid = document.createElement('div');
       grid.className = 'cal2__grid';
@@ -379,15 +408,18 @@ const senaLabel = fmt(SENA_UYU);
             state.fecha = iso;
             state.fechaLabel = byFecha[iso].label;
             renderSlots(byFecha[iso].horas);
-            // Con dos meses apilados, los horarios quedan fuera de pantalla.
-            if (esMovil()) scrollA($('#slots-label'));
+            // Bajamos solo lo justo para que entren los horarios, sin perder de
+            // vista el mes (como mucho, hasta dejar "Horarios" arriba).
+            if (esMovil()) asomarHorarios();
           });
         }
         grid.appendChild(cell);
       }
       wrap.appendChild(grid);
       cont.appendChild(wrap);
+      wraps.push(wrap);
     });
+    mostrarMes(0);
     const leg = document.createElement('div');
     leg.className = 'cal2__leg';
     leg.innerHTML =
@@ -475,7 +507,7 @@ const senaLabel = fmt(SENA_UYU);
     const politica = $('#politica');
     if (politica) politica.hidden = esMemb;
     const coordBtn = $('#coordinar');
-    if (coordBtn) coordBtn.textContent = esMemb ? 'Coordinar con Ceci' : 'Transferencia bancaria';
+    if (coordBtn) coordBtn.textContent = esMemb ? 'Coordinar con Ceci' : 'Transferencia desde tu banco';
     const coordHint = $('#hint-coord');
     if (coordHint) coordHint.textContent = esMemb
       ? 'Ceci coordina con vos por WhatsApp'
@@ -908,17 +940,27 @@ const senaLabel = fmt(SENA_UYU);
   }
   .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
   /* Calendario mensual */
-  /* Cada mes es ítem flex de .cal__days: sin flex-basis se encoge a su contenido
-     (celdas de 25px). Así entran dos meses por fila en desktop y uno en celular. */
-  .cal2 { flex: 1 1 260px; max-width: 340px; margin: 0 auto 1.8rem; }
+  /* Un mes visible por vez. width: 100% porque es ítem flex de .cal__days y si
+     no se encoge a su contenido (celdas de 25px en celular). */
+  .cal2 { width: 100%; max-width: 400px; margin: 0 auto 1.2rem; }
+  .cal2[hidden] { display: none; }
   .cal2__head {
-    font-family: var(--font-serif); font-size: 1.15rem; font-weight: 500; text-transform: capitalize;
-    text-align: center; margin-bottom: 0.9rem; color: var(--ink);
+    font-family: var(--font-serif); font-size: 1.25rem; font-weight: 500; text-transform: capitalize;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    margin-bottom: 0.7rem; color: var(--ink);
   }
+  .cal2__nav {
+    width: 44px; height: 44px; flex: none; border-radius: 50%;
+    border: 1px solid var(--sand); background: var(--white); color: var(--ink);
+    font-size: 1.5rem; line-height: 1; cursor: pointer; display: grid; place-items: center;
+    padding-bottom: 3px;
+  }
+  .cal2__nav:hover:not(:disabled) { border-color: var(--sage); }
+  .cal2__nav:disabled { opacity: 0.3; cursor: default; }
   .cal2__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-  .cal2__wd { text-align: center; font-size: 0.66rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: 4px; }
+  .cal2__wd { text-align: center; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); padding-bottom: 4px; }
   .cal2__cell {
-    aspect-ratio: 1; display: grid; place-items: center; font-size: 0.88rem;
+    aspect-ratio: 1; display: grid; place-items: center; font-size: 1rem;
     font-variant-numeric: tabular-nums;
     border-radius: var(--radius-sm); border: 1px solid transparent; font-family: inherit;
   }
@@ -950,7 +992,7 @@ const senaLabel = fmt(SENA_UYU);
     border-color: color-mix(in srgb, var(--sand) 70%, var(--cream));
     color: color-mix(in srgb, var(--ink-soft) 75%, var(--cream)); text-decoration: line-through;
   }
-  .cal2__leg { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.76rem; color: var(--ink-soft); margin-top: 0.8rem; justify-content: center; }
+  .cal2__leg { width: 100%; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.76rem; color: var(--ink-soft); margin-top: 0.8rem; justify-content: center; }
   .cal2__leg span { display: inline-flex; align-items: center; gap: 0.4rem; }
   .cal2__lg { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   .cal2__lg--on { background: color-mix(in srgb, var(--sage) 30%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sage) 50%, var(--cream)); }
