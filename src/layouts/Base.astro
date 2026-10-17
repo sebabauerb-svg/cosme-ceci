@@ -11,8 +11,10 @@ interface Props {
   image?: string;
   /** Excluir del índice de Google (páginas transaccionales, ej: /reservar). */
   noindex?: boolean;
-  /** Si es un artículo del blog: agrega el schema Article. */
-  article?: { fecha: Date; autora: string };
+  /** Si es una entrada del blog: agrega el schema BlogPosting. */
+  article?: { fecha: Date; autora: string; seccion?: string };
+  /** JSON-LD extra propio de la página (ej: el schema Blog del listado). */
+  schema?: Record<string, unknown>;
 }
 
 // Única fuente de verdad del dominio: `site` en astro.config.mjs. El fallback
@@ -26,6 +28,7 @@ const {
   image = '/hero.jpg',
   noindex = false,
   article,
+  schema,
 } = Astro.props;
 
 const marca = `${site.marca.nombre} · ${site.marca.subtitulo}`;
@@ -59,16 +62,25 @@ const jsonLd: Record<string, unknown> = {
   ...(site.contacto.instagramUrl ? { sameAs: [site.contacto.instagramUrl] } : {}),
 };
 
-// Schema Article para las notas del blog.
+// Schema BlogPosting (subtipo de Article) para las entradas del blog.
 const articleLd = article
   ? {
       '@context': 'https://schema.org',
-      '@type': 'Article',
+      '@type': 'BlogPosting',
       headline: title,
       description,
       datePublished: article.fecha.toISOString(),
-      author: { '@type': 'Person', name: article.autora },
-      publisher: { '@type': 'Organization', name: marca },
+      inLanguage: 'es-UY',
+      ...(article.seccion ? { articleSection: article.seccion } : {}),
+      author: {
+        '@type': 'Person',
+        name: article.autora,
+        // "Ceci" es la profesional: se la identifica igual que en el schema del negocio.
+        ...(article.autora === 'Ceci'
+          ? { name: site.profesional.nombre, jobTitle: site.profesional.titulo, url: new URL('/', base).href }
+          : {}),
+      },
+      publisher: { '@type': 'Organization', name: marca, url: new URL('/', base).href },
       mainEntityOfPage: canonical,
       image: ogImage,
     }
@@ -107,6 +119,7 @@ const articleLd = article
 
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     {articleLd && <script type="application/ld+json" set:html={JSON.stringify(articleLd)} />}
+    {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
   </head>
   <body>
     <a href="#contenido" class="skip-link">Saltar al contenido</a>
