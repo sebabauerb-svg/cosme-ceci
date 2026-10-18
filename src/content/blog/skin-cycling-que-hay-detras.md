@@ -1,5 +1,4 @@
 ---
-# BORRADOR DE EJEMPLO — CONFIRMAR con Ceci antes de publicar (texto y fecha).
 titulo: "Skin cycling: qué hay detrás de la tendencia"
 descripcion: "La rutina por ciclos se volvió viral. Qué propone, qué tiene de bueno y por qué conviene evaluarla antes de copiarla."
 fecha: 2026-10-17
