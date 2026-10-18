@@ -5,9 +5,12 @@ import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
 import { getSql, ensureFranjas, ensureDuracionMin, ensureConfirmacion } from '../lib/db';
 import { whatsappConfigurado } from '../lib/whatsapp';
+import { githubConfigurado } from '../lib/novedades';
 
 // WhatsApp automático: cambia los textos del panel ("te avisamos por WhatsApp").
 const waAuto = whatsappConfigurado();
+// Editor de novedades: sin token de GitHub no puede guardar.
+const editorNovedades = githubConfigurado();
 
 const authed = isAdmin(Astro.cookies);
 
@@ -89,6 +92,7 @@ if (authed) {
             <button class="tab" data-ir="agenda" aria-current="true">Agenda</button>
             <button class="tab" data-ir="reservas">Reservas</button>
             <button class="tab" data-ir="seguimiento">Seguimiento</button>
+            <button class="tab" data-ir="novedades">Novedades</button>
           </nav>
 
           <section class="card" data-tab="agenda">
@@ -221,6 +225,53 @@ if (authed) {
             </div>
             <div id="gs-mover-dia" class="gs-mdia" hidden></div>
             <div id="gestion"><p class="ag-vacia">Cargando…</p></div>
+          </section>
+
+          <section class="card" data-tab="novedades">
+            <div class="card__head">
+              <div>
+                <h2>Novedades, tips y notas</h2>
+                <p class="muted">Lo que publiques aparece en <a href="/blog" target="_blank" rel="noopener">/blog</a> y las 3 más recientes en "Lo último" de la home. Cada cambio tarda 1 o 2 minutos en verse en la web.</p>
+              </div>
+              {editorNovedades && <button type="button" class="btn btn--primary btn--sm" id="nv-nueva">Nueva entrada</button>}
+            </div>
+
+            <form id="nv-form" class="nv-form" hidden>
+              <h3 id="nv-form-tit">Nueva entrada</h3>
+              <label class="nv-campo">Título
+                <input type="text" name="titulo" maxlength="140" required />
+              </label>
+              <label class="nv-campo">Descripción <span class="nv-ayuda">(una o dos frases; es lo que se ve en la tarjeta y en Google · <span id="nv-desc-n">0</span>/160)</span>
+                <textarea name="descripcion" rows="2" maxlength="300" required></textarea>
+              </label>
+              <div class="nv-fila">
+                <label class="nv-campo">Tipo
+                  <select name="tipo">
+                    <option value="novedad">Novedad (tendencia o tema del momento)</option>
+                    <option value="tip">Tip (recomendación práctica)</option>
+                    <option value="nota">Nota (artículo largo)</option>
+                  </select>
+                </label>
+                <label class="nv-campo">Fecha
+                  <input type="date" name="fecha" required />
+                </label>
+              </div>
+              <label class="nv-campo">Texto <span class="nv-ayuda">(párrafos separados por una línea en blanco · **negrita** · listas con "1." o "-")</span>
+                <textarea name="cuerpo" rows="12" required></textarea>
+              </label>
+              <label class="nv-check">
+                <input type="checkbox" name="publicado" />
+                Publicada <span class="nv-ayuda">(si no la marcás, queda guardada como borrador y no sale en la web)</span>
+              </label>
+              <p class="nv-aviso">Antes de publicar: sin prometer curas ni resultados garantizados, sin cifras sin fuente, sin precios de tratamientos.</p>
+              <div class="nv-acciones">
+                <button type="submit" class="btn btn--primary" id="nv-guardar">Guardar</button>
+                <button type="button" class="btn btn--ghost" id="nv-cancelar">Cancelar</button>
+                <span id="nv-msg" class="guardar__msg"></span>
+              </div>
+            </form>
+
+            <div id="nv-lista"><p class="ag-vacia">Cargando…</p></div>
           </section>
 
           <section class="card" data-tab="agenda">
@@ -1484,6 +1535,146 @@ if (authed) {
       btn.disabled = false;
     });
   });
+
+  // ---------- Novedades (editor del blog) ----------
+  // Cada guardado hace un commit del .md en GitHub y Vercel vuelve a publicar
+  // el sitio; por eso los cambios tardan 1–2 min en verse en la web.
+  (() => {
+    const lista = document.getElementById('nv-lista');
+    const form = document.getElementById('nv-form') as HTMLFormElement | null;
+    if (!lista || !form) return;
+    const msg = document.getElementById('nv-msg')!;
+    const formTit = document.getElementById('nv-form-tit')!;
+    const descN = document.getElementById('nv-desc-n')!;
+    const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
+
+    type Entrada = { slug: string; sha: string; titulo: string; descripcion: string; fecha: string; tipo: string; publicado: boolean; cuerpo: string };
+    let entradas: Entrada[] = [];
+    let editando: Entrada | null = null;
+    let cargada = false;
+
+    const campo = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
+    const hoy = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const fmt = (f: string) => f ? new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+    const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const contarDesc = () => { descN.textContent = String(campo('descripcion').value.length); };
+    campo('descripcion').addEventListener('input', contarDesc);
+
+    async function api(body?: unknown) {
+      const res = await fetch('/api/admin/novedades', body
+        ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+        : undefined);
+      if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+      const d = await res.json().catch(() => ({}));
+      if (d.configurado === false) throw new Error('SIN_TOKEN');
+      if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo completar. Probá de nuevo.');
+      return d;
+    }
+
+    function pintar() {
+      if (!entradas.length) { lista!.innerHTML = '<p class="ag-vacia">Todavía no hay entradas. Tocá "Nueva entrada" para escribir la primera.</p>'; return; }
+      lista!.innerHTML = entradas.map((e) => `
+        <div class="nv-item" data-slug="${esc(e.slug)}">
+          <div class="nv-item__txt">
+            <span class="nv-item__meta"><span class="nv-tipo">${TIPO_LBL[e.tipo] || e.tipo}</span> · ${fmt(e.fecha)}</span>
+            <strong class="nv-item__tit">${esc(e.titulo)}</strong>
+            <span class="nv-estado ${e.publicado ? 'is-pub' : ''}">${e.publicado ? 'Publicada' : 'Borrador'}</span>
+          </div>
+          <div class="nv-item__acc">
+            ${e.publicado ? `<a class="btn btn--ghost btn--sm" href="/blog/${esc(e.slug)}" target="_blank" rel="noopener">Ver</a>` : ''}
+            <button type="button" class="btn btn--ghost btn--sm" data-acc="editar">Editar</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-acc="toggle">${e.publicado ? 'Despublicar' : 'Publicar'}</button>
+          </div>
+        </div>`).join('');
+    }
+
+    async function cargar() {
+      lista!.innerHTML = '<p class="ag-vacia">Cargando…</p>';
+      try {
+        entradas = (await api()).entradas;
+        cargada = true;
+        pintar();
+      } catch (err) {
+        const m = (err as Error).message;
+        lista!.innerHTML = m === 'SIN_TOKEN'
+          ? '<p class="ag-vacia">El editor todavía no está conectado (falta configurar GITHUB_TOKEN en Vercel). Mientras tanto, las novedades se suben como se explica en PUBLICAR-NOVEDADES.md.</p>'
+          : `<p class="ag-vacia">${esc(m)} <button type="button" class="btn btn--ghost btn--sm" id="nv-reintentar">Reintentar</button></p>`;
+        document.getElementById('nv-reintentar')?.addEventListener('click', cargar);
+      }
+    }
+
+    function abrir(e: Entrada | null) {
+      editando = e;
+      formTit.textContent = e ? 'Editar entrada' : 'Nueva entrada';
+      campo('titulo').value = e?.titulo ?? '';
+      campo('descripcion').value = e?.descripcion ?? '';
+      campo('tipo').value = e?.tipo ?? 'novedad';
+      campo('fecha').value = e?.fecha || hoy();
+      campo('cuerpo').value = e?.cuerpo ?? '';
+      campo('publicado').checked = e ? e.publicado : true;
+      msg.textContent = '';
+      contarDesc();
+      form!.hidden = false;
+      form!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      campo('titulo').focus({ preventScroll: true });
+    }
+    const cerrar = () => { form!.hidden = true; editando = null; };
+
+    document.getElementById('nv-nueva')?.addEventListener('click', () => abrir(null));
+    document.getElementById('nv-cancelar')?.addEventListener('click', cerrar);
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = document.getElementById('nv-guardar') as HTMLButtonElement;
+      btn.disabled = true; msg.textContent = 'Guardando…';
+      try {
+        const d = await api({
+          ...(editando ? { slug: editando.slug, sha: editando.sha } : {}),
+          titulo: campo('titulo').value,
+          descripcion: campo('descripcion').value,
+          tipo: campo('tipo').value,
+          fecha: campo('fecha').value,
+          cuerpo: campo('cuerpo').value,
+          publicado: campo('publicado').checked,
+        });
+        const e: Entrada = d.entrada;
+        entradas = [e, ...entradas.filter((x) => x.slug !== e.slug)].sort((a, b) => b.fecha.localeCompare(a.fecha));
+        pintar();
+        cerrar();
+        alert(e.publicado
+          ? 'Guardado. En 1 o 2 minutos se ve en la web.'
+          : 'Guardado como borrador. No aparece en la web hasta que la publiques.');
+      } catch (err) {
+        msg.textContent = (err as Error).message === 'SIN_TOKEN' ? 'Falta configurar GITHUB_TOKEN.' : (err as Error).message;
+      }
+      btn.disabled = false;
+    });
+
+    lista.addEventListener('click', async (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-acc]');
+      const slug = btn?.closest<HTMLElement>('.nv-item')?.dataset.slug;
+      const e = entradas.find((x) => x.slug === slug);
+      if (!btn || !e) return;
+      if (btn.dataset.acc === 'editar') { abrir(e); return; }
+      const nuevo = !e.publicado;
+      if (!nuevo && !confirm(`¿Despublicar "${e.titulo}"? Deja de verse en la web (queda guardada como borrador).`)) return;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const d = await api({ slug: e.slug, sha: e.sha, soloPublicado: true, publicado: nuevo });
+        Object.assign(e, d.entrada);
+        pintar();
+      } catch (err) {
+        alert((err as Error).message);
+        btn.disabled = false; btn.textContent = orig;
+      }
+    });
+
+    // Carga perezosa: recién cuando Ceci abre la pestaña (son llamadas a GitHub).
+    const tab = document.querySelector<HTMLButtonElement>('.tab[data-ir="novedades"]');
+    tab?.addEventListener('click', () => { if (!cargada) cargar(); });
+    if (tab?.getAttribute('aria-current') === 'true') cargar();
+  })();
 </script>
 
 <style>
@@ -1859,5 +2050,37 @@ if (authed) {
 
   @media (max-width: 560px) {
     .ag-sede { grid-template-columns: 1fr; gap: 0.2rem; }
+  }
+
+  /* Novedades */
+  .nv-form { display: grid; gap: 1rem; margin: 1.4rem 0 1.8rem; padding: 1.3rem; background: var(--cream-deep); border-radius: var(--radius); }
+  .nv-form[hidden] { display: none; }
+  .nv-form h3 { font-size: 1.15rem; margin: 0; }
+  .nv-campo { display: grid; gap: 0.35rem; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+  .nv-campo input, .nv-campo select, .nv-campo textarea {
+    font: inherit; font-weight: 400; padding: 0.6rem 0.8rem; border: 1px solid var(--sand);
+    border-radius: var(--radius-sm); background: var(--white); color: var(--ink); width: 100%;
+  }
+  .nv-campo textarea { resize: vertical; line-height: 1.6; }
+  .nv-ayuda { font-weight: 400; font-size: 0.8rem; color: var(--ink-soft); }
+  .nv-fila { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; }
+  .nv-check { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+  .nv-check input { width: 1.1rem; height: 1.1rem; accent-color: var(--sage-deep); }
+  .nv-aviso { margin: 0; font-size: 0.82rem; color: var(--ink-soft); }
+  .nv-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+  #nv-nueva { margin-top: 0.8rem; }
+  #nv-lista { margin-top: 1.2rem; }
+  .nv-item { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.9rem 0; border-top: 1px solid var(--sand); }
+  .nv-item__txt { display: grid; gap: 0.2rem; min-width: 0; }
+  .nv-item__meta { font-size: 0.8rem; color: var(--ink-soft); }
+  .nv-tipo { font-weight: 600; color: var(--sage-deep); }
+  .nv-item__tit { font-size: 0.98rem; color: var(--ink); }
+  .nv-estado { justify-self: start; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--cream-deep); color: var(--ink-soft); }
+  .nv-estado.is-pub { background: color-mix(in srgb, var(--sage) 18%, var(--white)); color: var(--sage-deep); }
+  .nv-item__acc { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; flex-shrink: 0; }
+  @media (max-width: 560px) {
+    .nv-fila { grid-template-columns: 1fr; }
+    .nv-item { flex-direction: column; align-items: stretch; }
+    .nv-item__acc { justify-content: flex-start; }
   }
 </style>
