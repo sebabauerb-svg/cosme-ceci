@@ -1,4 +1,11 @@
 ---
+import { modalidades } from '../data/modalidades';
+import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
+
+const precios = await leerPrecios();
+const presencial = modalidades.find((m) => m.id === 'presencial');
+const valorConsulta = presencial && precioModalidadTexto(precios, presencial);
+
 const faqs = [
   {
     q: '¿Atendés presencial y online?',
@@ -12,15 +19,17 @@ const faqs = [
     a:
       'Es una evaluación clínica completa: analizamos el estado de tu piel, tus antecedentes y ' +
       'objetivos, armamos tu historia clínica estética y diseñamos tu primer protocolo ' +
-      'personalizado. Tiene un valor de $1.800, que se bonifica si contratás un protocolo el ' +
-      'mismo día.',
+      'personalizado. ' +
+      (valorConsulta
+        ? `Tiene un valor de ${valorConsulta}, que se bonifica si contratás un protocolo el mismo día.`
+        : 'Su valor se bonifica si contratás un protocolo el mismo día.'),
   },
   {
-    q: '¿Por qué los tratamientos no tienen un precio fijo en la web?',
+    q: '¿Los valores de los tratamientos son finales?',
     a:
-      'Porque cada protocolo se diseña a medida. El estado de tu piel, los activos elegidos y la ' +
-      'combinación de tecnologías definen el valor final, para que pagues exactamente por lo que ' +
-      'tu piel necesita. El detalle se conversa en la consulta.',
+      'Son valores de referencia por sesión. Como cada protocolo se diseña a medida, la cantidad ' +
+      'de sesiones y la combinación de tratamientos dependen del estado de tu piel y de tus ' +
+      'objetivos. El plan completo, con su valor total, lo definimos juntas en la consulta.',
   },
   {
     q: '¿Qué es el Asesoramiento Skincare Inteligente?',

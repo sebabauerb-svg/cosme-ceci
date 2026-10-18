@@ -1,5 +1,10 @@
 ---
-import { modalidades } from '../data/modalidades';
+import { modalidades as base } from '../data/modalidades';
+import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
+
+// Precio vigente (lo que Ceci carga en /admin → Precios).
+const precios = await leerPrecios();
+const modalidades = base.map((m) => ({ ...m, precio: precioModalidadTexto(precios, m) }));
 ---
 
 <section class="section section--alt" id="modalidades">

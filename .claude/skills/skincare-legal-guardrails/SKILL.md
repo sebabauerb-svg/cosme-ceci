@@ -28,8 +28,12 @@ Médica* y usa términos como *diagnóstico*, *evaluación clínica* e *historia
    Rangos de precio observables están OK.
 5. **Testimonios reales y con permiso.** Que hablen de experiencia, trato y personalización, no
    de curas. Marcar los de ejemplo como `CONFIRMAR` hasta tener reales.
-6. **Precios coherentes.** En la web se muestra solo el valor de la Consulta ($1.800); el resto
-   "según protocolo". No inventar ni listar precios de tratamientos sin que Ceci lo pida.
+6. **Precios coherentes.** Desde oct-2026 (pedido de Ceci) la web muestra el valor de cada
+   modalidad y tratamiento, editables por Ceci en `/admin` → Precios. Cuidá que: (a) se lean
+   con `leerPrecios()` (nunca hardcodeados en la copy) y que la seña online siga fija en
+   `src/lib/precios.ts`; (b) se presenten como **valores de
+   referencia** por sesión, con el plan final definido en consulta (ver `/aviso-legal` §2);
+   (c) nunca se inventen: lo que Ceci no pasó va como `CONFIRMAR`.
 7. **Independencia (alcance acotado).** El ángulo "consumo consciente / no se trata de comprar
    más" pertenece a la modalidad **Skincare Inteligente**. No lo presentes como que la práctica
    "no vende nada": Ceci sí ofrece tratamientos y recomienda un recetario domiciliario.

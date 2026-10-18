@@ -1,45 +1,107 @@
 ---
-import { categoriasTratamientos } from '../data/tratamientos';
+import { categoriasTratamientos, formatUYU } from '../data/tratamientos';
+import { modalidades } from '../data/modalidades';
 import { whatsappLink } from '../data/site';
+import {
+  claveTratamiento,
+  leerPrecios,
+  precioDesde,
+  precioModalidadTexto,
+} from '../lib/precios-vigentes';
+
+// Precios vigentes: los que Ceci carga en /admin → Precios (respaldo: el código).
+const precios = await leerPrecios();
+const valor = (id: string) => precios[claveTratamiento(id)];
+
+const consultaMod = modalidades.find((m) => m.id === 'presencial');
+const consulta = consultaMod && { ...consultaMod, precio: precioModalidadTexto(precios, consultaMod) };
+const dev = import.meta.env.DEV;
 ---
 
 <section class="section" id="tratamientos">
   <div class="container">
     <div class="trat__head reveal">
-      <h2>Protocolos clínicos, faciales y corporales</h2>
+      <h2>Tratamientos y valores</h2>
       <p class="lead mx-auto text-center">
-        Cada procedimiento se indica según el diseño final de tu tratamiento. El valor
-        definitivo se define en la consulta de valoración, para que pagues exactamente por lo
-        que tu piel necesita.
+        Protocolos faciales, capilares y corporales, con su valor por sesión. Cada tratamiento
+        se indica en tu consulta de valoración, según lo que tu piel necesita.
       </p>
+      {consulta?.precio && (
+        <p class="trat__consulta">
+          Todo empieza con la Consulta Presencial ({consulta.precio}).
+          {consulta.precioNota && <> {consulta.precioNota}.</>}
+        </p>
+      )}
     </div>
 
     <div class="trat__cats">
-      {categoriasTratamientos.map((cat) => (
-        <details class="trat__cat reveal" open>
-          <summary class="trat__catHead">
-            <span class="trat__grupo">{cat.grupo}</span>
-            <h3>{cat.titulo}</h3>
-            <p>{cat.intro}</p>
-            <span class="trat__chev" aria-hidden="true">+</span>
-          </summary>
-          <ul class="trat__list">
-            {cat.tratamientos.map((t) => (
-              <li>
-                <h4>{t.nombre}</h4>
-                <p>{t.descripcion}</p>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ))}
+      {categoriasTratamientos.map((cat) => {
+        const desde = precioDesde(cat.tratamientos.map((t) => t.id), precios);
+        return (
+          <details class="trat__cat reveal" open>
+            <summary class="trat__catHead">
+              <span class="trat__grupo">{cat.grupo}</span>
+              <h3>{cat.titulo}</h3>
+              {desde != null && <span class="trat__desde">Desde {formatUYU(desde)}</span>}
+              <p>{cat.intro}</p>
+              <span class="trat__chev" aria-hidden="true">+</span>
+            </summary>
+            <ul class="trat__list">
+              {cat.tratamientos.map((t) => {
+                const v = valor(t.id);
+                return (
+                  <li>
+                    <div class="trat__itemHead">
+                      <h4>{t.nombre}</h4>
+                      {v.precio == null ? (
+                        <span class="trat__precio trat__precio--consulta">
+                          Valor en consulta
+                          {dev && v.pendiente && <span class="trat__confirmar">CONFIRMAR</span>}
+                        </span>
+                      ) : (
+                        <span class="trat__precio">
+                          {formatUYU(v.precio)}
+                          <span class="trat__unidad">{t.unidad ?? 'por sesión'}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p>{t.descripcion}</p>
+                    {(t.duracion || (v.precio != null && v.paquete6 != null)) && (
+                      <p class="trat__meta">
+                        {t.duracion && <span>{t.duracion}</span>}
+                        {v.precio != null && v.paquete6 != null && (
+                          <span>Paquete de 6 sesiones: <strong>{formatUYU(v.paquete6)}</strong></span>
+                        )}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
+        );
+      })}
     </div>
+
+    <p class="trat__fine">
+      Valores de referencia en pesos uruguayos. El plan final, con la cantidad de sesiones y la
+      combinación de tratamientos, se define en consulta. Los paquetes son personales e
+      intransferibles.
+    </p>
 
     <div class="trat__cta reveal">
       <p>¿No sabés cuál es para vos? Lo definimos juntas en tu consulta de valoración.</p>
-      <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
-        Agendá tu valoración
-      </a>
+      <div class="trat__ctaBtns">
+        <a href="/reservar?modalidad=presencial" class="btn btn--primary">Reservar mi consulta</a>
+        <a
+          href={whatsappLink('Hola Ceci, quiero consultar por un tratamiento.')}
+          class="btn btn--ghost"
+          target="_blank"
+          rel="noopener"
+        >
+          Consultar por WhatsApp
+        </a>
+      </div>
     </div>
   </div>
 </section>
@@ -121,6 +183,78 @@ import { whatsappLink } from '../data/site';
     justify-items: center;
   }
   .trat__cta p { font-size: 1.05rem; color: var(--ink); }
+  .trat__ctaBtns { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+
+  /* Valores */
+  .trat__consulta {
+    margin-top: 1rem;
+    font-size: 0.95rem;
+    color: var(--sage-deep);
+  }
+  .trat__desde {
+    display: inline-block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--sage-deep);
+  }
+  .trat__itemHead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+  }
+  .trat__itemHead h4 { margin-bottom: 0; flex: 1 1 12rem; }
+  .trat__precio {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    font-weight: 500;
+    color: var(--clay-deep);
+    white-space: nowrap;
+  }
+  .trat__unidad {
+    margin-left: 0.3rem;
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  .trat__precio--consulta {
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+  }
+  .trat__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 1rem;
+    margin-top: 0.7rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--sand);
+    font-size: 0.85rem;
+  }
+  .trat__meta strong { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  /* Solo en `npm run dev`: marca los valores que faltan pasar. */
+  .trat__confirmar {
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--clay) 22%, var(--white));
+    color: var(--clay-deep);
+    font-family: var(--font-sans);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .trat__fine {
+    max-width: 640px;
+    margin: 2.5rem auto 0;
+    text-align: center;
+    font-size: 0.85rem;
+  }
 
   /* Desktop y tablet: el details se comporta como el bloque estático de siempre. */
   @media (min-width: 761px) {

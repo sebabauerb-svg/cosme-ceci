@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import { getSql, ensureConfirmacion, ensureGestion } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
-import { SENA_UYU, precioTotal } from '../../../lib/precios';
+import { SENA_UYU } from '../../../lib/precios';
+import { leerPrecios, precioModalidad } from '../../../lib/precios-vigentes';
 
 export const prerender = false;
 
@@ -61,9 +62,11 @@ export const GET: APIRoute = async ({ request, cookies }) => {
        order by r.fecha, r.hora
     `) as any[];
 
+    // Precio de lista vigente (el que Ceci carga en /admin → Precios).
+    const precios = await leerPrecios();
     const reservas = rows.map((r) => {
       // Si Ceci no fijó un total para esta consulta, vale el precio de lista.
-      const total = r.total_acordado != null ? Number(r.total_acordado) : precioTotal(r.modalidad);
+      const total = r.total_acordado != null ? Number(r.total_acordado) : precioModalidad(precios, r.modalidad);
       const sena = r.sena_pagada != null ? Number(r.sena_pagada) : null;
       return {
         id: String(r.id),

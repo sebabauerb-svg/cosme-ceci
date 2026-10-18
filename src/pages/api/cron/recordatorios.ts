@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { getSql, ensureConfirmacion, ensureGestion } from '../../../lib/db';
 import { notificarRecordatorio } from '../../../lib/email';
-import { precioTotal } from '../../../lib/precios';
+import { leerPrecios, precioModalidad } from '../../../lib/precios-vigentes';
 import { enviarWhatsApp, whatsappConfigurado, lineaCobro } from '../../../lib/whatsapp';
 
 export const prerender = false;
@@ -72,10 +72,12 @@ export const GET: APIRoute = async ({ request }) => {
        order by r.hora
     `) as any[];
 
+    // Precio de lista vigente (el que Ceci carga en /admin → Precios).
+    const precios = await leerPrecios();
     let enviados = 0;
     let whatsapps = 0;
     for (const r of rows) {
-      const total = r.total_acordado != null ? Number(r.total_acordado) : precioTotal(r.modalidad);
+      const total = r.total_acordado != null ? Number(r.total_acordado) : precioModalidad(precios, r.modalidad);
       const sena = r.sena_pagada != null ? Number(r.sena_pagada) : null;
       const saldo = total != null ? Math.max(0, total - (sena ?? 0)) : null;
       if (waOn) {

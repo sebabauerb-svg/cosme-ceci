@@ -146,3 +146,18 @@ export async function ensureConfirmacion(sql: any) {
   `;
   await sql`drop index if exists reservas_slot_unico`;
 }
+
+/**
+ * Precios editables desde el panel (idempotente). Ver
+ * supabase/migrations/0006_precios.sql y src/lib/precios-vigentes.ts.
+ */
+export async function ensurePrecios(sql: any) {
+  await sql`
+    create table if not exists precios (
+      clave text primary key,
+      precio integer check (precio is null or precio between 0 and 1000000),
+      paquete6 integer check (paquete6 is null or paquete6 between 0 and 1000000),
+      updated_at timestamptz not null default now()
+    )
+  `;
+}
