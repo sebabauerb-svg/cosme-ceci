@@ -365,6 +365,9 @@
   .pc-form h3 { margin: 0; overflow-wrap: anywhere; }
   .pc-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .pc-nac { max-width: 16rem; }
+  /* La casilla al lado del texto también en mobile (el .nv-check general hace wrap). */
+  .pc-form .nv-check { flex-wrap: nowrap; align-items: flex-start; }
+  .pc-form .nv-check input { flex: none; margin-top: 0.2rem; }
   .pc-baja-aviso { font-size: 0.88rem; color: var(--clay-deep); margin: -0.4rem 0 0; line-height: 1.6; }
   .pc-link { font: inherit; color: var(--sage-deep); font-weight: 600; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }
   .pc-bloque { margin-top: 2rem; padding-top: 1.4rem; border-top: 1px solid var(--sand); }
