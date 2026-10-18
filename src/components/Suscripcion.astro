@@ -1,0 +1,140 @@
+---
+/**
+ * Formulario corto para recibir las novedades por email (doble opt-in: el alta
+ * queda pendiente hasta que la persona confirma desde el mail que le llega).
+ * `origen` queda registrado junto al consentimiento; `tono` adapta los colores
+ * al fondo (claro en /blog, oscuro en el pie de la home).
+ */
+interface Props {
+  origen: 'blog' | 'home';
+  tono?: 'claro' | 'oscuro';
+  id?: string;
+}
+const { origen, tono = 'claro', id } = Astro.props;
+const uid = `nl-${origen}`;
+---
+
+<section class:list={['nl', `nl--${tono}`]} id={id} aria-labelledby={`${uid}-tit`}>
+  <div class="nl__txt">
+    <h2 class="nl__tit" id={`${uid}-tit`}>Recibí las novedades por email</h2>
+    <p class="nl__lead">Novedades, tips y notas sobre el cuidado de la piel, solo cuando haya algo nuevo. Te das de baja cuando quieras.</p>
+  </div>
+  <form class="nl__form" data-nl-form data-origen={origen} novalidate>
+    <div class="nl__fila">
+      <label class="nl__sr" for={`${uid}-email`}>Tu email</label>
+      <input id={`${uid}-email`} type="email" name="email" required autocomplete="email" placeholder="tu@email.com" />
+      <button type="submit" class="btn btn--primary">Suscribirme</button>
+    </div>
+    <!-- Trampa para bots: oculto para las personas. -->
+    <input class="nl__trampa" type="text" name="sitio" tabindex="-1" autocomplete="off" aria-hidden="true" />
+    <label class="nl__check">
+      <input type="checkbox" name="consentimiento" required />
+      <span>Acepto recibir por email las novedades de Cecilia Gutiérrez · Cosmetología Médica. Mi email se usa solo para esto y no se comparte. <a href="/aviso-legal#emails">Cómo se usa</a>.</span>
+    </label>
+    <p class="nl__msg" role="status" aria-live="polite"></p>
+  </form>
+</section>
+
+<script>
+  document.querySelectorAll<HTMLFormElement>('[data-nl-form]').forEach((form) => {
+    const msg = form.querySelector<HTMLElement>('.nl__msg')!;
+    const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const email = form.elements.namedItem('email') as HTMLInputElement;
+    const consent = form.elements.namedItem('consentimiento') as HTMLInputElement;
+    const decir = (t: string, error = false) => {
+      msg.textContent = t;
+      msg.classList.toggle('is-error', error);
+    };
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (!email.checkValidity()) {
+        decir('Revisá el email.', true);
+        email.focus();
+        return;
+      }
+      if (!consent.checked) {
+        decir('Para suscribirte, marcá la casilla de consentimiento.', true);
+        consent.focus();
+        return;
+      }
+      btn.disabled = true;
+      decir('Enviando…');
+      try {
+        const res = await fetch('/api/newsletter/suscribir', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            email: email.value,
+            consentimiento: true,
+            origen: form.dataset.origen,
+            sitio: (form.elements.namedItem('sitio') as HTMLInputElement).value,
+          }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || 'No pudimos registrar tu email. Probá de nuevo.');
+        form.reset();
+        decir('¡Casi listo! Te mandamos un mail para confirmar. Si no lo ves, revisá la carpeta de spam.');
+      } catch (err) {
+        decir((err as Error).message, true);
+      }
+      btn.disabled = false;
+    });
+  });
+</script>
+
+<style>
+  .nl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 1.5rem 2.5rem;
+    align-items: start;
+    /* Que el título no quede tapado por la barra fija al llegar con #suscribirse. */
+    scroll-margin-top: 6rem;
+  }
+  .nl--claro {
+    padding: clamp(1.4rem, 4vw, 2.2rem);
+    background: var(--cream-deep);
+    border-radius: var(--radius);
+  }
+  .nl__tit { font-size: clamp(1.35rem, 3vw, 1.7rem); margin: 0 0 0.5rem; }
+  .nl__lead { margin: 0; color: var(--ink-soft); }
+  .nl--oscuro .nl__tit { color: var(--cream); }
+  .nl--oscuro .nl__lead { color: var(--sand); opacity: 0.85; }
+
+  .nl__form { display: grid; gap: 0.8rem; }
+  .nl__fila { display: flex; gap: 0.5rem; }
+  .nl__fila input {
+    flex: 1;
+    min-width: 0;
+    min-height: 48px;
+    font: inherit;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--sand);
+    border-radius: 999px;
+    background: var(--white);
+    color: var(--ink);
+  }
+  .nl__fila input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }
+  .nl__fila .btn { flex-shrink: 0; }
+  .nl__check { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.85rem; line-height: 1.5; color: var(--ink-soft); cursor: pointer; }
+  .nl__check input { flex-shrink: 0; width: 1.15rem; height: 1.15rem; margin-top: 0.15rem; accent-color: var(--sage-deep); }
+  .nl__check a { color: var(--sage-deep); text-decoration: underline; }
+  .nl--oscuro .nl__check { color: var(--sand); }
+  .nl--oscuro .nl__check a { color: var(--cream); }
+  .nl__msg { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--sage-deep); min-height: 1.4em; }
+  .nl__msg:empty { min-height: 0; }
+  .nl__msg.is-error { color: var(--clay-deep); }
+  .nl--oscuro .nl__msg { color: var(--cream); }
+  .nl--oscuro .nl__msg.is-error { color: var(--clay); }
+  .nl__sr, .nl__trampa {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  @media (max-width: 760px) {
+    .nl { grid-template-columns: 1fr; gap: 1rem; }
+    .nl__fila { flex-direction: column; }
+    .nl__fila .btn { width: 100%; }
+  }
+</style>

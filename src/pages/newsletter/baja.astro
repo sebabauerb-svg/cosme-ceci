@@ -1,0 +1,81 @@
+---
+export const prerender = false;
+
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { getSql, ensureNewsletter } from '../../lib/db';
+import { darDeBaja, tokenValido } from '../../lib/newsletter';
+
+// Baja sin login: el link de cada mail trae ?t=<token>. Se pide un clic en el
+// botón (POST) en vez de dar de baja al abrir la página, porque algunos
+// programas de correo abren los links solos para revisarlos.
+const t = Astro.url.searchParams.get('t');
+const prueba = Astro.url.searchParams.has('prueba');
+let estado: 'pedir' | 'hecho' | 'invalido' | 'error' | 'prueba' = prueba ? 'prueba' : tokenValido(t) ? 'pedir' : 'invalido';
+
+if (estado === 'pedir' && Astro.request.method === 'POST') {
+  try {
+    const sql = getSql();
+    await ensureNewsletter(sql);
+    estado = (await darDeBaja(sql, t!)) ? 'hecho' : 'invalido';
+  } catch (e) {
+    console.error('newsletter/baja:', e instanceof Error ? e.message : e);
+    estado = 'error';
+  }
+}
+if (estado === 'invalido') Astro.response.status = 404;
+---
+
+<Base title="Darte de baja" path="/newsletter/baja" noindex>
+  <Nav />
+  <main id="contenido" class="section nl-pag">
+    <div class="container nl-pag__wrap">
+      {estado === 'pedir' && (
+        <>
+          <h1>¿Dejar de recibir las novedades?</h1>
+          <p class="nl-pag__lead">Vas a dejar de recibir los mails de novedades. Los avisos de tus turnos te siguen llegando igual.</p>
+          <form method="post" class="nl-pag__actions">
+            <button type="submit" class="btn btn--primary">Sí, darme de baja</button>
+            <a href="/" class="btn btn--ghost">No, seguir recibiéndolas</a>
+          </form>
+        </>
+      )}
+      {estado === 'hecho' && (
+        <>
+          <h1>Listo, te dimos de baja</h1>
+          <p class="nl-pag__lead">No te vamos a mandar más novedades a este email. Si algún día querés volver, te podés suscribir de nuevo desde la página de novedades.</p>
+          <div class="nl-pag__actions"><a href="/blog" class="btn btn--ghost">Ver las novedades</a></div>
+        </>
+      )}
+      {estado === 'prueba' && (
+        <>
+          <h1>Este es un mail de prueba</h1>
+          <p class="nl-pag__lead">En los mails reales este link da de baja a quien lo recibe. En la prueba no hace nada.</p>
+        </>
+      )}
+      {estado === 'invalido' && (
+        <>
+          <h1>Este link no es válido</h1>
+          <p class="nl-pag__lead">Puede que esté incompleto. Si querés darte de baja, usá el link del último mail que recibiste o escribinos y lo hacemos por vos.</p>
+        </>
+      )}
+      {estado === 'error' && (
+        <>
+          <h1>No pudimos darte de baja ahora</h1>
+          <p class="nl-pag__lead">Hubo un problema de nuestro lado. Probá de nuevo en unos minutos.</p>
+          <form method="post" class="nl-pag__actions"><button type="submit" class="btn btn--primary">Reintentar</button></form>
+        </>
+      )}
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .nl-pag { padding-block: clamp(4rem, 10vw, 7rem); }
+  .nl-pag__wrap { max-width: 560px; margin-inline: auto; text-align: center; }
+  .nl-pag__wrap h1 { margin: 0.4rem 0 1rem; }
+  .nl-pag__lead { color: var(--ink-soft); margin-bottom: 2rem; }
+  .nl-pag__actions { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+</style>

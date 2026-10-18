@@ -14,6 +14,9 @@ import { sedeConDireccion } from '../data/sedes';
 
 const FROM_DEFAULT = 'Cecilia Gutiérrez · Cosmetología Médica <onboarding@resend.dev>';
 
+/** Remitente de todos los mails (también lo usa el newsletter). */
+export const remitente = () => process.env.RESEND_FROM || FROM_DEFAULT;
+
 async function enviar(to: string, subject: string, html: string) {
   const key = process.env.RESEND_API_KEY;
   if (!key || !to) return;
@@ -21,7 +24,7 @@ async function enviar(to: string, subject: string, html: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM || FROM_DEFAULT,
+      from: remitente(),
       to,
       subject,
       html,
@@ -48,7 +51,7 @@ type Datos = {
 };
 
 /** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
-const esc = (s: unknown) =>
+export const esc = (s: unknown) =>
   String(s ?? '').replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string

@@ -103,6 +103,7 @@ if (authed) {
             <button class="tab" data-ir="seguimiento">Seguimiento</button>
             <button class="tab" data-ir="precios">Precios</button>
             <button class="tab" data-ir="novedades">Novedades</button>
+            <button class="tab" data-ir="newsletter">Newsletter</button>
           </nav>
 
           <section class="card" data-tab="agenda">
@@ -335,6 +336,48 @@ if (authed) {
             </form>
 
             <div id="nv-lista"><p class="ag-vacia">Cargando…</p></div>
+          </section>
+
+          <section class="card" data-tab="newsletter">
+            <h2>Newsletter</h2>
+            <p class="muted">Mandá por email las novedades que ya están en la web a quienes pidieron recibirlas. Solo les llega a quienes confirmaron desde su mail.</p>
+            <div id="nl-resumen" class="nl-resumen"><p class="ag-vacia">Cargando…</p></div>
+
+            <form id="nl-form" class="nl-form" hidden>
+              <fieldset class="nl-paso">
+                <legend>1. Elegí de 1 a 3 novedades</legend>
+                <div id="nl-entradas" class="nl-entradas"></div>
+              </fieldset>
+              <fieldset class="nl-paso">
+                <legend>2. Escribí el mail</legend>
+                <label class="nv-campo">Asunto
+                  <input type="text" name="asunto" maxlength="120" required />
+                </label>
+                <label class="nv-campo">Unas líneas tuyas <span class="nv-ayuda">(opcional; van arriba de las novedades)</span>
+                  <textarea name="intro" rows="4" maxlength="2000"></textarea>
+                </label>
+                <p class="nv-aviso">Sin prometer curas ni resultados garantizados, sin cifras sin fuente, sin precios de tratamientos.</p>
+              </fieldset>
+              <fieldset class="nl-paso">
+                <legend>3. Revisalo y mandalo</legend>
+                <div class="nv-acciones">
+                  <button type="button" class="btn btn--ghost" id="nl-ver">Ver cómo queda</button>
+                </div>
+                <div class="nl-prueba">
+                  <label class="nv-campo">Mandarme una prueba a
+                    <input type="email" name="para" autocomplete="email" />
+                  </label>
+                  <button type="button" class="btn btn--ghost" id="nl-probar">Mandar prueba</button>
+                </div>
+                <div class="nv-acciones">
+                  <button type="button" class="btn btn--primary" id="nl-enviar" disabled>Enviar</button>
+                  <span id="nl-msg" class="guardar__msg" role="status"></span>
+                </div>
+              </fieldset>
+              <iframe id="nl-vista" class="nl-vista" title="Vista previa del mail" sandbox="" hidden></iframe>
+            </form>
+
+            <div id="nl-envios"></div>
           </section>
 
           <section class="card" data-tab="agenda">
@@ -1828,6 +1871,188 @@ if (authed) {
     tab?.addEventListener('click', () => { if (!cargada) cargar(); });
     if (tab?.getAttribute('aria-current') === 'true') cargar();
   })();
+
+  // ---------- Newsletter ----------
+  // Arma un mail con 1 a 3 novedades ya publicadas y lo manda por lotes. Si la
+  // lista supera el cupo diario del plan de Resend, el envío queda a medias y
+  // se completa con "Continuar envío" otro día (nadie lo recibe dos veces).
+  (() => {
+    const form = document.getElementById('nl-form') as HTMLFormElement | null;
+    const resumenEl = document.getElementById('nl-resumen');
+    if (!form || !resumenEl) return;
+    const listaEl = document.getElementById('nl-entradas')!;
+    const enviosEl = document.getElementById('nl-envios')!;
+    const vista = document.getElementById('nl-vista') as HTMLIFrameElement;
+    const msg = document.getElementById('nl-msg')!;
+    const btnEnviar = document.getElementById('nl-enviar') as HTMLButtonElement;
+    const btnProbar = document.getElementById('nl-probar') as HTMLButtonElement;
+    const btnVer = document.getElementById('nl-ver') as HTMLButtonElement;
+    const campo = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
+    const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const fmt = (f: string) => f.length > 10
+      ? new Date(f).toLocaleDateString('es-UY', { day: 'numeric', month: 'short', timeZone: 'America/Montevideo' })
+      : new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
+    const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+    type Entrada = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
+    type Envio = { id: string; asunto: string; total: number; enviados: number; created_at: string; terminado_at: string | null };
+    type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[] };
+    let datos: Datos | null = null;
+    let elegidas: string[] = [];
+    let asuntoTocado = false;
+    let cargada = false;
+
+    async function api(body?: unknown) {
+      const res = await fetch('/api/admin/newsletter', body
+        ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+        : undefined);
+      if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo completar. Probá de nuevo.');
+      return d;
+    }
+
+    function pintarResumen() {
+      const d = datos!;
+      resumenEl!.innerHTML = `
+        <div class="nl-cifras">
+          <span><strong>${d.confirmados}</strong> ${d.confirmados === 1 ? 'persona confirmada' : 'personas confirmadas'}</span>
+          <span><strong>${d.pendientes}</strong> sin confirmar todavía</span>
+          <span><strong>${d.bajas}</strong> ${d.bajas === 1 ? 'baja' : 'bajas'}</span>
+        </div>
+        <p class="nv-ayuda">Hoy se pueden mandar ${plural(d.cupoHoy, 'mail', 'mails')} más del newsletter (tope diario: ${d.tope}, así queda lugar para los avisos de turnos).</p>
+        ${d.resend ? '' : '<p class="login__err">Los mails todavía no están conectados (falta RESEND_API_KEY en Vercel). Podés armar el mail y verlo, pero no mandarlo.</p>'}`;
+      btnEnviar.textContent = d.confirmados ? `Enviar a ${plural(d.confirmados, 'persona', 'personas')}` : 'Enviar (todavía no hay nadie confirmado)';
+      actualizarBotones();
+    }
+
+    function pintarEntradas() {
+      const d = datos!;
+      if (!d.entradas.length) {
+        listaEl.innerHTML = '<p class="ag-vacia">Todavía no hay novedades publicadas. Publicá alguna en la pestaña Novedades (tarda 1 o 2 minutos en aparecer acá).</p>';
+        return;
+      }
+      listaEl.innerHTML = d.entradas.map((e) => `
+        <label class="nl-ent">
+          <input type="checkbox" value="${esc(e.slug)}" ${elegidas.includes(e.slug) ? 'checked' : ''} />
+          <span class="nl-ent__txt">
+            <span class="nv-item__meta"><span class="nv-tipo">${TIPO_LBL[e.tipo] || e.tipo}</span> · ${fmt(e.fecha)}${e.borrador ? ' · borrador (solo en pruebas)' : ''}</span>
+            <strong class="nv-item__tit">${esc(e.titulo)}</strong>
+          </span>
+        </label>`).join('');
+      actualizarBotones();
+    }
+
+    function pintarEnvios() {
+      const env = datos!.envios;
+      if (!env.length) { enviosEl.innerHTML = ''; return; }
+      enviosEl.innerHTML = '<h3 class="nl-hist">Envíos anteriores</h3>' + env.map((e) => {
+        const falta = e.total - e.enviados;
+        return `<div class="nv-item">
+          <div class="nv-item__txt">
+            <span class="nv-item__meta">${fmt(e.created_at)}</span>
+            <strong class="nv-item__tit">${esc(e.asunto)}</strong>
+            <span class="nv-estado ${e.terminado_at ? 'is-pub' : ''}">${e.terminado_at ? `Enviado a ${plural(e.enviados, 'persona', 'personas')}` : `${e.enviados} de ${e.total} enviados`}</span>
+          </div>
+          ${!e.terminado_at && falta > 0 ? `<div class="nv-item__acc"><button type="button" class="btn btn--ghost btn--sm" data-continuar="${esc(e.id)}">Continuar envío</button></div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function actualizarBotones() {
+      const d = datos;
+      const n = elegidas.length;
+      const listo = n >= 1 && n <= 3 && !!campo('asunto').value.trim();
+      btnEnviar.disabled = !listo || !d?.resend || !d.confirmados || !d.cupoHoy;
+      btnProbar.disabled = !listo || !d?.resend;
+      btnVer.disabled = !listo;
+      // Con 3 elegidas, las demás quedan bloqueadas.
+      listaEl.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach((c) => { c.disabled = !c.checked && n >= 3; });
+    }
+
+    const cuerpo = () => ({ entradas: elegidas, asunto: campo('asunto').value, intro: campo('intro').value });
+
+    listaEl.addEventListener('change', (ev) => {
+      const c = ev.target as HTMLInputElement;
+      if (c.type !== 'checkbox') return;
+      elegidas = c.checked ? [...elegidas, c.value] : elegidas.filter((s) => s !== c.value);
+      // El asunto toma el título de la primera elegida, hasta que Ceci lo edite.
+      if (!asuntoTocado) {
+        const primera = datos!.entradas.find((e) => e.slug === elegidas[0]);
+        campo('asunto').value = primera ? primera.titulo : '';
+      }
+      vista.hidden = true;
+      actualizarBotones();
+    });
+    campo('asunto').addEventListener('input', () => { asuntoTocado = !!campo('asunto').value; actualizarBotones(); });
+
+    btnVer.addEventListener('click', async () => {
+      msg.textContent = '';
+      try {
+        const d = await api({ accion: 'vista', ...cuerpo() });
+        vista.srcdoc = d.html;
+        vista.hidden = false;
+        vista.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (err) { msg.textContent = (err as Error).message; }
+    });
+
+    btnProbar.addEventListener('click', async () => {
+      btnProbar.disabled = true; msg.textContent = 'Mandando la prueba…';
+      try {
+        await api({ accion: 'prueba', ...cuerpo(), para: campo('para').value });
+        msg.textContent = `Listo: revisá ${campo('para').value} (el asunto empieza con "[Prueba]").`;
+      } catch (err) { msg.textContent = (err as Error).message; }
+      actualizarBotones();
+    });
+
+    function avisarResultado(d: any) {
+      datos = { ...datos!, ...d };
+      pintarResumen(); pintarEnvios();
+      msg.textContent = d.faltan > 0
+        ? `Se mandaron ${d.enviados}. Faltan ${d.faltan}: se terminó el cupo de hoy. Mañana tocá "Continuar envío".`
+        : `¡Listo! Se mandó a ${plural(d.hechos, 'persona', 'personas')}.`;
+    }
+
+    btnEnviar.addEventListener('click', async () => {
+      const n = datos!.confirmados;
+      if (!confirm(`¿Mandar "${campo('asunto').value}" a ${plural(n, 'persona', 'personas')}? No se puede deshacer.`)) return;
+      btnEnviar.disabled = true; msg.textContent = 'Enviando…';
+      try {
+        avisarResultado(await api({ accion: 'enviar', ...cuerpo() }));
+        elegidas = []; asuntoTocado = false;
+        campo('asunto').value = ''; campo('intro').value = '';
+        vista.hidden = true;
+        pintarEntradas();
+      } catch (err) { msg.textContent = (err as Error).message; }
+      actualizarBotones();
+    });
+
+    enviosEl.addEventListener('click', async (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-continuar]');
+      if (!btn) return;
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      try { avisarResultado(await api({ accion: 'continuar', envioId: btn.dataset.continuar })); }
+      catch (err) { alert((err as Error).message); btn.disabled = false; btn.textContent = 'Continuar envío'; }
+    });
+
+    async function cargar() {
+      try {
+        datos = await api();
+        cargada = true;
+        campo('para').value = datos!.pruebaA;
+        pintarResumen(); pintarEntradas(); pintarEnvios();
+        form!.hidden = false;
+      } catch (err) {
+        resumenEl!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
+      }
+    }
+
+    // Carga perezosa: recién cuando Ceci abre la pestaña.
+    const tab = document.querySelector<HTMLButtonElement>('.tab[data-ir="newsletter"]');
+    tab?.addEventListener('click', () => { if (!cargada) cargar(); });
+    if (tab?.getAttribute('aria-current') === 'true') cargar();
+  })();
 </script>
 
 <style>
@@ -2261,6 +2486,26 @@ if (authed) {
   .nv-estado { justify-self: start; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--cream-deep); color: var(--ink-soft); }
   .nv-estado.is-pub { background: color-mix(in srgb, var(--sage) 18%, var(--white)); color: var(--sage-deep); }
   .nv-item__acc { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; flex-shrink: 0; }
+  /* Newsletter */
+  .nl-resumen { margin: 1.2rem 0 0.4rem; }
+  .nl-cifras { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; font-size: 0.92rem; color: var(--ink-soft); margin-bottom: 0.4rem; }
+  .nl-cifras strong { color: var(--ink); font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .nl-form { display: grid; gap: 1.2rem; margin: 1.4rem 0 1.8rem; }
+  .nl-form[hidden] { display: none; }
+  .nl-paso { display: grid; gap: 0.9rem; border: 0; margin: 0; padding: 1.2rem; background: var(--cream-deep); border-radius: var(--radius); min-width: 0; }
+  .nl-paso legend { float: left; width: 100%; padding: 0; font-family: var(--font-serif); font-size: 1.1rem; color: var(--ink); }
+  .nl-entradas { display: grid; gap: 0.5rem; }
+  .nl-ent { display: flex; gap: 0.7rem; align-items: flex-start; padding: 0.7rem 0.8rem; background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); cursor: pointer; }
+  .nl-ent:has(input:checked) { border-color: var(--sage); box-shadow: inset 0 0 0 1px var(--sage); }
+  .nl-ent:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
+  .nl-ent input { flex-shrink: 0; width: 1.1rem; height: 1.1rem; margin-top: 0.2rem; accent-color: var(--sage-deep); }
+  .nl-ent__txt { display: grid; gap: 0.15rem; min-width: 0; }
+  .nl-prueba { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; }
+  .nl-prueba .nv-campo { flex: 1 1 240px; }
+  .nl-vista { width: 100%; height: 640px; border: 1px solid var(--sand); border-radius: var(--radius); background: var(--white); }
+  .nl-vista[hidden] { display: none; }
+  .nl-hist { font-size: 1.1rem; margin: 0.6rem 0 0.4rem; }
+
   @media (max-width: 560px) {
     .nv-fila { grid-template-columns: 1fr; }
     .nv-item { flex-direction: column; align-items: stretch; }

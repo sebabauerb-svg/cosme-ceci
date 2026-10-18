@@ -1,10 +1,22 @@
 ---
 import { site, whatsappLink } from '../data/site';
+import Suscripcion from './Suscripcion.astro';
+
+interface Props {
+  /** Muestra el alta al newsletter arriba del pie (se usa en la home). */
+  suscripcion?: boolean;
+}
+const { suscripcion = false } = Astro.props;
 const anio = new Date().getFullYear();
 const { contacto } = site;
 ---
 
 <footer class="footer">
+  {suscripcion && (
+    <div class="container footer__nl">
+      <Suscripcion origen="home" tono="oscuro" id="suscribirse" />
+    </div>
+  )}
   <div class="container footer__top">
     <div class="footer__brand">
       <span class="footer__name">{site.marca.nombre}</span>
@@ -45,6 +57,11 @@ const { contacto } = site;
     background: var(--ink);
     color: var(--sand);
     padding-block: clamp(3rem, 6vw, 4.5rem) 2rem;
+  }
+  .footer__nl {
+    padding-bottom: clamp(2rem, 5vw, 3rem);
+    margin-bottom: clamp(2rem, 5vw, 3rem);
+    border-bottom: 1px solid rgba(250, 246, 240, 0.12);
   }
   .footer__top {
     display: grid;

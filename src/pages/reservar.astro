@@ -123,6 +123,10 @@ const senaLabel = fmt(SENA_UYU);
             <input type="email" name="email" required autocomplete="email" placeholder="tu@email.com" />
           </label>
           <p class="form__note">A este correo te llega la confirmación con el día y la hora de tu turno. Tus datos se usan solo para coordinar tu atención.</p>
+          <label class="form__check">
+            <input type="checkbox" name="newsletter" />
+            <span>Quiero recibir también las novedades, tips y notas por email (opcional). Te llega un mail para confirmarlo y te das de baja cuando quieras. <a href="/aviso-legal#emails" target="_blank" rel="noopener">Cómo se usa</a>.</span>
+          </label>
           <div class="step__nav">
             <button type="button" class="btn btn--ghost" data-back>← Volver</button>
             <button type="submit" class="btn btn--primary">Continuar al pago</button>
@@ -201,7 +205,7 @@ const senaLabel = fmt(SENA_UYU);
 </Base>
 
 <script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0, conceptoPrefijo: CONCEPTO_PREFIJO }}>
-  const state = { modalidad: null, sedeSlug: 'online', lugar: null, fecha: null, fechaLabel: null, hora: null, nombre: '', tel: '', email: '' };
+  const state = { modalidad: null, sedeSlug: 'online', lugar: null, fecha: null, fechaLabel: null, hora: null, nombre: '', tel: '', email: '', newsletter: false };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -479,6 +483,7 @@ const senaLabel = fmt(SENA_UYU);
     state.nombre = f.nombre.value.trim();
     state.tel = f.tel.value.trim();
     state.email = f.email.value.trim();
+    state.newsletter = f.newsletter.checked;
     renderResumen();
     goTo(4);
   });
@@ -587,6 +592,7 @@ const senaLabel = fmt(SENA_UYU);
           nombre: state.nombre,
           telefono: state.tel,
           email: state.email,
+          newsletter: state.newsletter,
           via,
         }),
       });
@@ -857,6 +863,9 @@ const senaLabel = fmt(SENA_UYU);
   }
   .form input:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }
   .form__note { font-size: 0.82rem; color: var(--ink-soft); }
+  .form label.form__check { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.85rem; font-weight: 400; line-height: 1.5; color: var(--ink-soft); cursor: pointer; }
+  .form__check input { flex-shrink: 0; padding: 0; width: 1.15rem; height: 1.15rem; margin-top: 0.15rem; accent-color: var(--sage-deep); }
+  .form__check a { color: var(--sage-deep); text-decoration: underline; }
 
   .resumen {
     background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
