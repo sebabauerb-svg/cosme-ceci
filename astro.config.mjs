@@ -7,7 +7,13 @@ import vercel from '@astrojs/vercel';
 export default defineConfig({
   // Dominio de producción.
   site: 'https://cgcosmetologiamedica.com',
-  integrations: [sitemap()],
+  // El sitemap deja afuera las páginas con noindex (transaccionales y 404) y el panel.
+  // Los borradores del blog no se generan en el build, así que tampoco entran.
+  integrations: [
+    sitemap({
+      filter: (page) => !/\/(admin|reservar|mi-turno|404)\/?$/.test(new URL(page).pathname),
+    }),
+  ],
   // Sitio estático + endpoints de servidor (las páginas siguen prerenderizadas;
   // solo /api/* corre en serverless, marcado con `export const prerender = false`).
   adapter: vercel(),

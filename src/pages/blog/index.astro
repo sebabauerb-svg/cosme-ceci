@@ -1,37 +1,73 @@
 ---
-import { getCollection } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
 import WhatsappFloat from '../../components/WhatsappFloat.astro';
+import { getEntradas, fmtFecha, TIPOS, type Tipo } from '../../lib/blog';
 
-const posts = (await getCollection('blog', ({ data }) => data.publicado)).sort(
-  (a, b) => b.data.fecha.getTime() - a.data.fecha.getTime()
-);
-const fmt = (d: Date) =>
-  d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' });
+const entradas = await getEntradas();
+// Solo se ofrecen filtros por los tipos que tienen al menos una entrada.
+const tipos = (Object.keys(TIPOS) as Tipo[]).filter((t) => entradas.some((e) => e.data.tipo === t));
+
+const url = (id: string) => new URL(`/blog/${id}`, Astro.site).href;
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'Blog',
+  name: 'Novedades y notas',
+  url: new URL('/blog', Astro.site).href,
+  inLanguage: 'es-UY',
+  blogPost: entradas
+    .filter((e) => e.data.publicado)
+    .map((e) => ({
+      '@type': 'BlogPosting',
+      headline: e.data.titulo,
+      datePublished: e.data.fecha.toISOString(),
+      url: url(e.id),
+    })),
+};
 ---
 
-<Base title="Blog" description="Notas sobre comprar skincare con criterio, cuidar la piel y gastar mejor." path="/blog">
+<Base
+  title="Novedades y notas"
+  description="Novedades, tips y notas sobre el cuidado de la piel, de Cecilia Gutiérrez, cosmetóloga médica en Montevideo y San José."
+  path="/blog"
+  schema={schema}
+>
   <Nav />
-  <main class="blog">
+  <main class="blog" id="contenido">
     <div class="container">
-      <h1>Comprar mejor, cuidarse mejor</h1>
-      <p class="lead">Notas cortas sobre criterio, rutina y cómo dejar de gastar de más.</p>
+      <h1>Novedades y notas</h1>
+      <p class="lead">Tendencias que vale la pena mirar con criterio, tips para tu rutina y notas para entender mejor tu piel.</p>
 
-      {posts.length === 0 ? (
-        <p class="blog__empty">Pronto vas a encontrar acá las primeras notas.</p>
+      {entradas.length === 0 ? (
+        <p class="blog__empty">Pronto vas a encontrar acá las primeras novedades.</p>
       ) : (
-        <ul class="blog__list">
-          {posts.map((p) => (
-            <li class="card reveal">
-              <time datetime={p.data.fecha.toISOString()}>{fmt(p.data.fecha)}</time>
-              <h2><a href={`/blog/${p.id}`}>{p.data.titulo}</a></h2>
-              <p>{p.data.descripcion}</p>
-              <a class="blog__more" href={`/blog/${p.id}`}>Leer la nota →</a>
-            </li>
-          ))}
-        </ul>
+        <>
+          {tipos.length > 1 && (
+            <div class="blog__filtros" role="group" aria-label="Filtrar por tipo">
+              <button type="button" data-filtro="todo" aria-pressed="true">Todo</button>
+              {tipos.map((t) => (
+                <button type="button" data-filtro={t} aria-pressed="false">{TIPOS[t].plural}</button>
+              ))}
+            </div>
+          )}
+          <ul class="blog__list">
+            {entradas.map((e) => (
+              <li class="card" data-tipo={e.data.tipo}>
+                <p class="blog__meta">
+                  <span class={`blog__tipo blog__tipo--${e.data.tipo}`}>{TIPOS[e.data.tipo].label}</span>
+                  {!e.data.publicado && <span class="blog__draft">Borrador</span>}
+                  <time datetime={e.data.fecha.toISOString()}>{fmtFecha(e.data.fecha)}</time>
+                </p>
+                <h2><a href={`/blog/${e.id}`}>{e.data.titulo}</a></h2>
+                <p>{e.data.descripcion}</p>
+                <a class="blog__more" href={`/blog/${e.id}`} aria-hidden="true" tabindex="-1">
+                  {e.data.tipo === 'nota' ? 'Leer la nota →' : 'Leer →'}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   </main>
@@ -39,13 +75,74 @@ const fmt = (d: Date) =>
   <WhatsappFloat />
 </Base>
 
+<script>
+  const botones = document.querySelectorAll<HTMLButtonElement>('[data-filtro]');
+  const items = document.querySelectorAll<HTMLElement>('.blog__list [data-tipo]');
+  botones.forEach((b) =>
+    b.addEventListener('click', () => {
+      const f = b.dataset.filtro;
+      botones.forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+      items.forEach((i) => (i.hidden = f !== 'todo' && i.dataset.tipo !== f));
+    })
+  );
+</script>
+
 <style>
   .blog { padding-block: clamp(3rem, 7vw, 5rem); }
   .blog h1 { margin: 0.4rem 0 1rem; }
-  .blog__list { list-style: none; display: grid; gap: 1.25rem; margin-top: 2.5rem; }
-  .blog__list time { font-size: 0.85rem; color: var(--sage-deep); font-weight: 600; }
-  .blog__list h2 { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; }
+  .blog__filtros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 2rem;
+  }
+  .blog__filtros button {
+    font: 600 0.9rem var(--font-sans);
+    padding: 0.55rem 1.1rem;
+    min-height: 44px;
+    border-radius: 999px;
+    border: 1.5px solid var(--sand);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .blog__filtros button[aria-pressed='true'] {
+    background: var(--sage-deep);
+    border-color: var(--sage-deep);
+    color: var(--cream);
+  }
+  .blog__list { list-style: none; display: grid; gap: 1.25rem; margin-top: 1.5rem; }
+  .blog__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.7rem;
+    font-size: 0.85rem;
+  }
+  .blog__meta time { color: var(--ink-soft); }
+  .blog__tipo,
+  .blog__draft {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sage-deep);
+  }
+  .blog__tipo--tip { color: var(--clay-deep); }
+  .blog__draft {
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .blog__list h2 { font-size: 1.5rem; margin: 0.4rem 0 0.6rem; overflow-wrap: anywhere; }
   .blog__list h2 a:hover { color: var(--sage-deep); }
   .blog__more { color: var(--clay-deep); font-weight: 600; display: inline-block; margin-top: 0.6rem; }
   .blog__empty { margin-top: 2.5rem; }
+
+  @media (max-width: 760px) {
+    .blog__filtros { gap: 0.35rem; margin-top: 1.5rem; }
+    .blog__filtros button { padding: 0.5rem 0.8rem; font-size: 0.85rem; }
+    .blog__list h2 { font-size: 1.3rem; }
+  }
 </style>
