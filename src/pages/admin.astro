@@ -241,7 +241,7 @@ if (authed) {
               <div class="tm__head">
                 <div>
                   <h3>Agenda de temas</h3>
-                  <p class="nv-ayuda">Ideas para escribir. Todos los lunes se suman temas nuevos del research semanal (con sus fuentes), y te llega un mail. También podés anotar los tuyos.</p>
+                  <p class="nv-ayuda">Ideas para escribir. Todos los domingos se suman temas nuevos del research semanal (con sus fuentes), y te llega un mail. También podés anotar los tuyos.</p>
                 </div>
                 <button type="button" class="btn btn--ghost btn--sm" id="tm-investigar" hidden>Investigar ahora</button>
               </div>
@@ -1760,7 +1760,7 @@ if (authed) {
     if (tab?.getAttribute('aria-current') === 'true') cargar();
   })();
 
-  // ---------- Agenda de temas (research de los lunes + ideas de Ceci) ----------
+  // ---------- Agenda de temas (research de los domingos + ideas de Ceci) ----------
   (() => {
     const lista = document.getElementById('tm-lista');
     const nuevo = document.getElementById('tm-nuevo') as HTMLFormElement | null;
@@ -1814,7 +1814,7 @@ if (authed) {
       const cerrados = temas.filter((t) => !(t.estado === 'idea' || t.estado === 'elegido'));
       lista!.innerHTML = (activos.length
         ? activos.map(item).join('')
-        : '<p class="ag-vacia">No hay temas pendientes. El lunes llegan los del research, o anotá uno arriba.</p>')
+        : '<p class="ag-vacia">No hay temas pendientes. El domingo llegan los del research, o anotá uno arriba.</p>')
         + (cerrados.length ? `<details class="tm-cerrados"><summary>Publicados y descartados (${cerrados.length})</summary>${cerrados.map(item).join('')}</details>` : '');
     }
 
@@ -1866,7 +1866,7 @@ if (authed) {
     btnInv.addEventListener('click', async () => {
       if (!armado) {
         btnInv.textContent = 'Tocá de nuevo para confirmar';
-        msg.textContent = 'Busca temas nuevos en la web. Tarda 1 a 3 minutos (y además corre solo todos los lunes).';
+        msg.textContent = 'Busca temas nuevos en la web. Tarda 1 a 3 minutos (y además corre solo todos los domingos).';
         armado = setTimeout(() => { armado = null; btnInv.textContent = textoInv; msg.textContent = ''; }, 6000);
         return;
       }

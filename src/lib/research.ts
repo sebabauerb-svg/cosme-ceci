@@ -1,5 +1,5 @@
 /**
- * Research semanal de novedades (lo dispara el cron de los lunes, o Ceci con
+ * Research semanal de novedades (lo dispara el cron de los domingos, o Ceci con
  * "Investigar ahora" en el panel). Claude busca en la web qué se está hablando
  * en cosmetología y skincare, y propone de 5 a 8 temas con fuentes para la
  * agenda de novedades. NO escribe ni publica artículos: propone temas, y Ceci

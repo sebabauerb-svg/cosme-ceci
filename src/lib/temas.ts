@@ -1,5 +1,5 @@
 /**
- * Agenda de temas para las novedades: lo que propone el research de los lunes
+ * Agenda de temas para las novedades: lo que propone el research de los domingos
  * y lo que anota Ceci a mano. Vive en Neon (tabla agenda_temas); las entradas
  * del blog siguen siendo los .md del repo (ver src/lib/novedades.ts).
  */
@@ -82,7 +82,7 @@ async function avisarCeci(temas: TemaPropuesto[], base: string) {
         to: ceci,
         subject: `🗞️ ${temas.length} temas para tus novedades de esta semana`,
         html: `<h2 style="font-family:Georgia,serif;color:#2a302b">Temas de la semana</h2>
-          <p style="${P}">El research de los lunes encontró estos temas. Están en tu panel, en Novedades → Agenda de temas: elegí los que quieras escribir y descartá el resto.</p>
+          <p style="${P}">El research del domingo encontró estos temas. Están en tu panel, en Novedades → Agenda de temas: elegí los que quieras escribir y descartá el resto.</p>
           ${items}
           <p style="${P};margin-top:16px"><a href="${esc(base)}/admin" style="color:#5d7a63;font-weight:600">Abrir el panel</a></p>
           <p style="${P};font-size:13px;color:#55605a">Son propuestas de una IA: revisá las fuentes antes de escribir, y escribí siempre con tu criterio. Sin prometer curas ni resultados garantizados.</p>`,

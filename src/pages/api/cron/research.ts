@@ -6,7 +6,7 @@ import { researchSemanal } from '../../../lib/temas';
 export const prerender = false;
 
 /**
- * GET /api/cron/research — lo llama el cron de Vercel los lunes a las 11:00 UTC
+ * GET /api/cron/research — lo llama el cron de Vercel los domingos a las 11:00 UTC
  * (08:00 en Uruguay), ver vercel.json. Investiga novedades del mundo del
  * skincare y carga temas en la agenda del panel (src/lib/research.ts).
  *

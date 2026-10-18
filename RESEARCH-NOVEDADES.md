@@ -1,6 +1,6 @@
 # Research semanal de novedades
 
-Cada **lunes a las 8:00** (hora de Uruguay) el sitio busca en la web qué hay de nuevo en cosmetología y skincare. Propone **de 5 a 8 temas** con fuentes para escribir novedades, tips o notas.
+Cada **domingo a las 8:00** (hora de Uruguay) el sitio busca en la web qué hay de nuevo en cosmetología y skincare. Propone **de 5 a 8 temas** con fuentes para escribir novedades, tips o notas.
 
 ## Cómo funciona
 
@@ -20,13 +20,13 @@ Ceci también puede **anotar sus propios temas** en la agenda y tocar **Investig
 |---|---|
 | `ANTHROPIC_API_KEY` | **Nueva.** La clave de la API de Claude (console.anthropic.com). Sin ella, el research no corre y el botón no aparece. |
 | `CRON_SECRET` | Ya existe. Protege el cron: cada corrida cuesta. |
-| `RESEND_API_KEY`, `CECI_NOTIF_EMAIL` | Ya existen. El mail del lunes a Ceci. |
+| `RESEND_API_KEY`, `CECI_NOTIF_EMAIL` | Ya existen. El mail del domingo a Ceci. |
 
 **Costo estimado:** entre 0,30 y 0,60 USD por corrida (hasta 10 búsquedas web a 0,01 USD cada una, más los tokens). Son unos 2 USD por mes. Conviene ponerle un límite mensual de gasto en la consola de Anthropic.
 
 ## Prompt de respaldo (para usarlo en otra IA)
 
-Si algún día Ceci prefiere recibir el research en su ChatGPT, Claude u otra IA (por ejemplo, como tarea programada los lunes), puede pegar esto. Es el mismo criterio que usa el sitio, pero devuelve la lista en texto en lugar de cargarla en el panel. Después ella anota los temas que le interesen en la agenda.
+Si algún día Ceci prefiere recibir el research en su ChatGPT, Claude u otra IA (por ejemplo, como tarea programada los domingos), puede pegar esto. Es el mismo criterio que usa el sitio, pero devuelve la lista en texto en lugar de cargarla en el panel. Después ella anota los temas que le interesen en la agenda.
 
 ```text
 Sos el asistente editorial de Cecilia Gutiérrez, cosmetóloga médica con consultorio en Montevideo y San José (Uruguay). Ella publica en su web entradas cortas para sus pacientes: novedades (tendencias o noticias del momento), tips (recomendaciones prácticas) y notas (artículos más largos).
