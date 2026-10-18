@@ -126,7 +126,28 @@ const pasos = [
   @media (max-width: 760px) {
     .cf__inner { gap: 1.7rem; }
     .cf__lead { margin-bottom: 1.4rem; }
-    .cf__step { padding-block: 1.1rem; }
+    /* Los tres pasos en tarjetas deslizables (asoma la siguiente). */
+    .cf__steps {
+      display: flex;
+      gap: 0.8rem;
+      margin-inline: calc(-1 * clamp(1.25rem, 5vw, 2.5rem));
+      padding-inline: clamp(1.25rem, 5vw, 2.5rem);
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-padding-inline: clamp(1.25rem, 5vw, 2.5rem);
+      scrollbar-width: none;
+    }
+    .cf__steps::-webkit-scrollbar { display: none; }
+    .cf__step, .cf__step:first-child {
+      flex: 0 0 82%;
+      scroll-snap-align: start;
+      grid-template-columns: 1fr;
+      gap: 0.6rem;
+      padding: 1.2rem;
+      border: 1px solid rgba(250, 246, 240, 0.15);
+      border-radius: var(--radius-sm);
+      background: rgba(250, 246, 240, 0.05);
+    }
     .cf__num { font-size: 1.6rem; }
   }
 </style>
