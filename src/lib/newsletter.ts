@@ -103,13 +103,20 @@ export function htmlConfirmacion(link: string) {
   );
 }
 
-export type EntradaNl = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string };
+export type EntradaNl = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
+
+/**
+ * En local y en los previews de Vercel también se ofrecen los borradores, para
+ * poder probar el armado y la prueba sin publicar nada (igual que /blog muestra
+ * los borradores en `npm run dev`). En producción, solo lo publicado.
+ */
+const verBorradores = () => import.meta.env.DEV || process.env.VERCEL_ENV === 'preview';
 
 const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
 
 /** Entradas publicadas del blog (las que ya están en la web), de la más nueva a la más vieja. */
 export async function entradasPublicadas(): Promise<EntradaNl[]> {
-  const todas = await getCollection('blog', ({ data }) => data.publicado);
+  const todas = await getCollection('blog', ({ data }) => data.publicado || verBorradores());
   return todas
     .sort((a, b) => b.data.fecha.getTime() - a.data.fecha.getTime())
     .map((e) => ({
@@ -118,6 +125,7 @@ export async function entradasPublicadas(): Promise<EntradaNl[]> {
       descripcion: e.data.descripcion,
       tipo: e.data.tipo,
       fecha: e.data.fecha.toISOString().slice(0, 10),
+      ...(e.data.publicado ? {} : { borrador: true }),
     }));
 }
 

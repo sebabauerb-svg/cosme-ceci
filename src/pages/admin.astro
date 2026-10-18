@@ -1742,7 +1742,7 @@ if (authed) {
     const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
     const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
 
-    type Entrada = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string };
+    type Entrada = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
     type Envio = { id: string; asunto: string; total: number; enviados: number; created_at: string; terminado_at: string | null };
     type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[] };
     let datos: Datos | null = null;
@@ -1784,7 +1784,7 @@ if (authed) {
         <label class="nl-ent">
           <input type="checkbox" value="${esc(e.slug)}" ${elegidas.includes(e.slug) ? 'checked' : ''} />
           <span class="nl-ent__txt">
-            <span class="nv-item__meta"><span class="nv-tipo">${TIPO_LBL[e.tipo] || e.tipo}</span> · ${fmt(e.fecha)}</span>
+            <span class="nv-item__meta"><span class="nv-tipo">${TIPO_LBL[e.tipo] || e.tipo}</span> · ${fmt(e.fecha)}${e.borrador ? ' · borrador (solo en pruebas)' : ''}</span>
             <strong class="nv-item__tit">${esc(e.titulo)}</strong>
           </span>
         </label>`).join('');
