@@ -261,6 +261,43 @@ Si necesitás reprogramar, avisanos lo antes posible así liberamos el horario. 
 
 ---
 
+### Plantilla 4 — `consulta_seguimiento` (invitación a volver)
+
+Es el mensaje que sale solo un mes después de una consulta, si la paciente no
+tiene otro turno agendado. Se puede cargar más adelante: mientras no esté
+aprobada, la invitación sale solo por email.
+
+- **Template name:** `consulta_seguimiento`
+- **Category:** Marketing (invita a reservar, así que Meta la clasifica así; cuesta
+  un poco más que las de Utility) · **Language:** Spanish
+- **Dos botones**, en este orden:
+  1. **Visit website**, texto `Agendar consulta`, **Static**, URL
+     `https://cgcosmetologiamedica.com/reservar`
+  2. **Visit website**, texto `No recibir más`, **Dynamic**, URL
+     `https://cgcosmetologiamedica.com/pacientes/baja?t={{1}}`, sample
+     `0123456789abcdef0123456789abcdef`
+
+**Body:**
+
+```
+¡Hola, {{1}}! 🌿 Ya pasó un mes desde tu última consulta y queríamos saber cómo viene tu piel.
+
+El seguimiento es parte del cuidado: en una consulta de control revisamos cómo respondió tu piel a la rutina y ajustamos lo que haga falta.
+
+Si querés coordinar la próxima, tocá el botón y elegí el día y horario que mejor te quede.
+```
+
+**Ejemplos:**
+
+| Hueco | Ejemplo |
+| --- | --- |
+| `{{1}}` | Ana |
+
+> Si cambiás el texto, no cambies la cantidad de huecos ni el orden de los
+> botones sin avisarle a Sebas: la web los manda en ese orden.
+
+---
+
 ### Esperar la aprobación
 - En **"Templates"** cada plantilla muestra su estado. Tiene que pasar a
   **"Approved"** (aprobada). Suele tardar **entre unos minutos y un día**.

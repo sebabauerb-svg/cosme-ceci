@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensureGestion } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensureGestion, ensurePacientes } from '../../../lib/db';
+import { vincularPendientes, enviarVueltas, baseUrl } from '../../../lib/pacientes';
 import { notificarRecordatorio } from '../../../lib/email';
 import { leerPrecios, precioModalidad } from '../../../lib/precios-vigentes';
 import { enviarWhatsApp, whatsappConfigurado, lineaCobro } from '../../../lib/whatsapp';
@@ -32,6 +33,10 @@ function labelFecha(iso?: string | null) {
  * si el cron corre dos veces, la segunda no encuentra nada que mandar. Es la
  * misma marca que usa el botón de WhatsApp del panel, así que un canal no pisa
  * al otro.
+ *
+ * Después manda el "volvé a consultar" (src/lib/pacientes.ts) a quienes se
+ * atendieron hace un mes y no tienen otro turno. Solo en producción: los
+ * previews tienen una copia de la base con pacientes reales.
  *
  * Seguridad: Vercel manda `Authorization: Bearer $CRON_SECRET`. Sin secret
  * configurado, en producción no corre (fail-closed): el endpoint es público y
@@ -109,7 +114,24 @@ export const GET: APIRoute = async ({ request }) => {
     }
 
     console.log(`cron recordatorios: ${enviados} enviado(s) para ${manana} (${whatsapps} por WhatsApp)`);
-    return new Response(JSON.stringify({ ok: true, fecha: manana, enviados, whatsapps }), {
+
+    // "Volvé a consultar". Aparte: si falla, los recordatorios de turno ya salieron.
+    // Interruptor: arranca apagado para que Ceci valide las fichas antes de que
+    // salga ningún aviso automático. Se prende con VUELTA_ACTIVA=true en Vercel.
+    const vueltaActiva = process.env.VUELTA_ACTIVA === 'true';
+    let vueltas: unknown = vueltaActiva ? 'omitido (no es producción)' : 'apagado (VUELTA_ACTIVA no es "true")';
+    if ((process.env.VERCEL_ENV === 'production' && vueltaActiva) || import.meta.env.DEV) {
+      try {
+        await ensurePacientes(sql);
+        await vincularPendientes(sql);
+        vueltas = await enviarVueltas(sql, baseUrl(request));
+        console.log('cron volvé a consultar:', JSON.stringify(vueltas));
+      } catch (e) {
+        console.error('cron volvé a consultar:', e instanceof Error ? e.message : e);
+        vueltas = 'error';
+      }
+    }
+    return new Response(JSON.stringify({ ok: true, fecha: manana, enviados, whatsapps, vueltas }), {
       headers: { 'content-type': 'application/json' },
     });
   } catch (e) {

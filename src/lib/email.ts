@@ -11,16 +11,17 @@ import {
   hayDatosTransferencia,
 } from '../data/pago';
 import { sedeConDireccion } from '../data/sedes';
+import { site } from '../data/site';
 
 const FROM_DEFAULT = 'Cecilia Gutiérrez · Cosmetología Médica <onboarding@resend.dev>';
 
 /** Remitente de todos los mails (también lo usa el newsletter). */
 export const remitente = () => process.env.RESEND_FROM || FROM_DEFAULT;
 
-async function enviar(to: string, subject: string, html: string) {
+async function enviar(to: string, subject: string, html: string): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return;
-  await fetch('https://api.resend.com/emails', {
+  if (!key || !to) return false;
+  const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -30,6 +31,8 @@ async function enviar(to: string, subject: string, html: string) {
       html,
     }),
   });
+  if (!res.ok) console.error(`Resend ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`);
+  return res.ok;
 }
 
 type Datos = {
@@ -343,5 +346,45 @@ export async function alertarPagoSinTurno(opts: {
     );
   } catch {
     /* nunca bloquear el webhook por un error de email */
+  }
+}
+
+/**
+ * "Volvé a consultar": invitación a la consulta de seguimiento, un mes después
+ * de la última, si la paciente no tiene otro turno. Lo dispara el cron diario
+ * (ver src/lib/pacientes.ts). Sin promesas de resultados: la consulta de
+ * control es para revisar y ajustar, no para "lograr" nada. Lleva el link de
+ * baja de estos recordatorios (no afecta los avisos de turnos).
+ * Devuelve true si Resend lo aceptó. Nunca lanza error.
+ */
+export async function notificarVolverConsulta(d: {
+  nombre: string;
+  email: string;
+  linkReservar: string;
+  linkBaja: string;
+}): Promise<boolean> {
+  try {
+    const nombre = d.nombre.trim().split(/\s+/)[0] || d.nombre;
+    const P = 'font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b';
+    return await enviar(
+      d.email,
+      `${nombre}, ¿cómo viene tu piel?`,
+      `<div style="max-width:560px">
+       <h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">¿Cómo viene tu piel?</h2>
+       <p style="${P}">Hola, ${esc(nombre)}:</p>
+       <p style="${P}">Ya pasó un mes desde tu última consulta y queríamos saber cómo estás.</p>
+       <p style="${P}">La piel cambia con las estaciones, el ritmo de cada día y los hábitos. Por eso el seguimiento es parte del cuidado: en una consulta de control revisamos cómo respondió tu piel a la rutina y ajustamos lo que haga falta.</p>
+       <p style="${P}">Si querés coordinar tu próxima consulta, elegí el día y el horario que mejor te quede:</p>
+       <p style="margin:22px 0"><a href="${esc(d.linkReservar)}" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">Agendar mi consulta</a></p>
+       <p style="${P}">¿Preferís coordinarlo por WhatsApp? Escribinos al ${esc(site.contacto.whatsappDisplay)} y lo vemos.</p>
+       <p style="${P}">Un abrazo,<br />Ceci</p>
+       <p style="font-family:system-ui,sans-serif;font-size:12px;line-height:1.6;color:#55605a;margin:22px 0 0;padding-top:14px;border-top:1px solid #e4e0d8">
+         Te escribimos porque te atendiste con nosotras. Si no querés recibir más estos recordatorios de seguimiento,
+         <a href="${esc(d.linkBaja)}" style="color:#55605a">tocá acá</a>. Los avisos de tus turnos te siguen llegando igual.
+       </p>
+       </div>`
+    );
+  } catch {
+    return false;
   }
 }

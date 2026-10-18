@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion, ensureNewsletter } from '../../lib/db';
+import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion, ensureNewsletter, ensurePacientes } from '../../lib/db';
 import { baseUrl, normalizarEmail, pedirSuscripcion } from '../../lib/newsletter';
+import { vincularPendientes } from '../../lib/pacientes';
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
@@ -202,6 +203,14 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         returning id
       `;
       const reservaId = String(ins[0].id);
+
+      // Ficha de la paciente: la vincula (o la crea). Nunca traba la reserva.
+      try {
+        await ensurePacientes(sql);
+        await vincularPendientes(sql, reservaId);
+      } catch (e) {
+        console.error('reservar → ficha:', e instanceof Error ? e.message : e);
+      }
 
       // Pago online con MercadoPago (solo en el camino 'pagar', si está configurado
       // y hay monto). En 'coordinar' no hay checkout: queda a confirmar por Ceci.

@@ -1,0 +1,533 @@
+---
+/**
+ * Pestaña "Pacientes" del panel: lista con buscador, ficha de cada paciente
+ * (datos de contacto, fecha de nacimiento, notas, historial de turnos) y el
+ * estado del recordatorio "volvé a consultar". Datos: /api/admin/pacientes.
+ * Va aparte de admin.astro para que ese archivo no siga creciendo.
+ *
+ * Seguimiento por consulta (tratamientos hechos + nota de evolución): son datos
+ * de salud, así que solo se habilita con la fecha del consentimiento firmado.
+ */
+import { categoriasTratamientos } from '../../data/tratamientos';
+
+// Catálogo para el selector de tratamientos, agrupado como en la web.
+const catalogo = categoriasTratamientos.map((c) => ({
+  grupo: `${c.grupo} · ${c.titulo}`,
+  items: c.tratamientos.map((t) => ({ id: t.id, nombre: t.nombre })),
+}));
+---
+
+<section class="card" data-tab="pacientes">
+  <div class="card__head">
+    <div>
+      <h2>Pacientes</h2>
+      <p class="muted">Una ficha por paciente, armada sola con sus reservas. Un mes después de cada consulta, si no tiene otro turno, le llega una invitación a agendar la próxima.</p>
+    </div>
+    <button type="button" class="btn btn--primary btn--sm" id="pc-nueva">Nueva ficha</button>
+  </div>
+
+  <div id="pc-lista-vista">
+    <label class="pc-buscar">
+      <span class="sr-only">Buscar paciente</span>
+      <input type="search" id="pc-buscar" placeholder="Buscar por nombre, teléfono o email" autocomplete="off" />
+    </label>
+    <p class="pc-resumen" id="pc-resumen"></p>
+    <div id="pc-lista"><p class="ag-vacia">Cargando…</p></div>
+  </div>
+
+  <div id="pc-ficha-vista" hidden>
+    <button type="button" class="pc-volver" id="pc-volver">← Todas las pacientes</button>
+
+    <form id="pc-form" class="pc-form" novalidate>
+      <h3 id="pc-form-tit">Nueva ficha</h3>
+      <label class="nv-campo">Nombre y apellido
+        <input type="text" name="nombre" maxlength="120" required autocomplete="off" />
+      </label>
+      <div class="nv-fila pc-fila">
+        <label class="nv-campo">Teléfono
+          <input type="tel" name="telefono" maxlength="40" inputmode="tel" autocomplete="off" />
+        </label>
+        <label class="nv-campo">Email
+          <input type="email" name="email" maxlength="160" autocomplete="off" />
+        </label>
+      </div>
+      <div class="nv-fila pc-fila">
+        <label class="nv-campo">Fecha de nacimiento <span class="nv-ayuda">(opcional)</span>
+          <input type="date" name="fecha_nacimiento" />
+        </label>
+        <label class="nv-campo">Consentimiento firmado <span class="nv-ayuda">(fecha; sin esto no se registran tratamientos ni evolución)</span>
+          <input type="date" name="consentimiento_fecha" />
+        </label>
+      </div>
+      <label class="nv-campo">Notas de contacto <span class="nv-ayuda">(cómo prefiere que le escriban, qué días puede. Lo de cada consulta va en su registro, en el historial)</span>
+        <textarea name="notas" rows="3" maxlength="1000"></textarea>
+      </label>
+      <label class="nv-check">
+        <input type="checkbox" name="recordatorio_activo" checked />
+        Mandarle el recordatorio para volver a consultar
+      </label>
+      <p class="pc-baja-aviso" id="pc-baja-aviso" hidden></p>
+      <div class="nv-acciones">
+        <button type="submit" class="btn btn--primary" id="pc-guardar">Guardar</button>
+        <span id="pc-msg" class="guardar__msg" role="status"></span>
+      </div>
+    </form>
+
+    <div id="pc-detalle" hidden>
+      <div class="pc-bloque">
+        <h3>Recordatorio para volver</h3>
+        <div id="pc-vuelta"></div>
+      </div>
+
+      <div class="pc-bloque">
+        <h3>Historial y seguimiento</h3>
+        <p class="nv-ayuda pc-consent-aviso" id="pc-consent-aviso" hidden>Para registrar tratamientos y la evolución de cada consulta, cargá arriba la fecha del consentimiento firmado y guardá.</p>
+        <div id="pc-historial"></div>
+        <details class="pc-anterior">
+          <summary>Cargar una consulta anterior</summary>
+          <p class="nv-ayuda">Para consultas de antes de la web o que no pasaron por la agenda. Cuenta para el recordatorio y no ocupa ningún horario.</p>
+          <div class="pc-anterior__fila">
+            <input type="date" id="pc-anterior-fecha" aria-label="Fecha de la consulta" />
+            <button type="button" class="btn btn--ghost btn--sm" id="pc-anterior-btn">Agregar</button>
+          </div>
+          <span id="pc-anterior-msg" class="guardar__msg" role="status"></span>
+        </details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script type="application/json" id="pc-catalogo" set:html={JSON.stringify(catalogo)} />
+
+<script>
+  (() => {
+    const lista = document.getElementById('pc-lista');
+    const form = document.getElementById('pc-form') as HTMLFormElement | null;
+    if (!lista || !form) return;
+    const vistaLista = document.getElementById('pc-lista-vista')!;
+    const vistaFicha = document.getElementById('pc-ficha-vista')!;
+    const buscar = document.getElementById('pc-buscar') as HTMLInputElement;
+    const resumen = document.getElementById('pc-resumen')!;
+    const msg = document.getElementById('pc-msg')!;
+    const detalle = document.getElementById('pc-detalle')!;
+    const bajaAviso = document.getElementById('pc-baja-aviso')!;
+
+    type Estado = { tipo: string; fecha?: string | null; desde?: string; consulta?: string };
+    type Fila = { id: string; nombre: string; email: string | null; telefono: string | null; ultima: string | null; proximo: string | null; estado: Estado; consultas: number };
+    let filas: Fila[] = [];
+    let cargada = false;
+    let fichaId: string | null = null;
+    let bajaDesde: string | null = null;
+    let reactivar = false;
+    let conConsentimiento = false;
+    let hoy = '';
+    let historial: any[] = [];
+    type Trat = { id: string; nombre: string; sesion: number | null; de: number | null };
+    const catalogo: { grupo: string; items: { id: string; nombre: string }[] }[] =
+      JSON.parse(document.getElementById('pc-catalogo')?.textContent || '[]');
+
+    const campo = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
+    const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const fmt = (f?: string | null) => f ? new Date(f.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—';
+    const sinAcentos = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+    async function api(body?: unknown, qs = '') {
+      const res = await fetch('/api/admin/pacientes' + qs, body
+        ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+        : undefined);
+      if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) throw Object.assign(new Error(d.error || 'No se pudo completar. Probá de nuevo.'), { id: d.id });
+      return d;
+    }
+
+    /** Texto corto del recordatorio para la lista; null = no mostrar nada. */
+    function chip(e: Estado): [string, string] | null {
+      switch (e.tipo) {
+        case 'listo': return ['Le toca hoy', 'is-hoy'];
+        case 'programado': return [`Recordatorio el ${fmt(e.desde)}`, ''];
+        case 'enviado': return ['Recordatorio enviado', 'is-ok'];
+        case 'baja': return ['Pidió no recibirlo', 'is-off'];
+        case 'apagado': return ['Recordatorio apagado', 'is-off'];
+        case 'sin-contacto': return ['Sin email', 'is-off'];
+        default: return null;
+      }
+    }
+
+    /** Explicación larga del recordatorio para la ficha. */
+    function explicar(e: Estado | null): string {
+      if (!e) return '';
+      switch (e.tipo) {
+        case 'sin-consulta': return 'Todavía no tiene consultas realizadas. Un mes después de la primera le llega la invitación a volver.';
+        case 'turno': return `No se manda: ya tiene un turno${e.fecha ? ' el ' + fmt(e.fecha) : ''}.`;
+        case 'programado': return `Se manda el ${fmt(e.desde)} (un mes después de la consulta del ${fmt(e.consulta)}), si para entonces no agendó otro turno.`;
+        case 'listo': return `Le toca: pasó un mes desde la consulta del ${fmt(e.consulta)} y no tiene otro turno. Sale con el próximo envío automático (todos los días a las 10 h), o podés mandarlo ahora.`;
+        case 'enviado': return `Ya se le mandó el ${fmt(e.fecha)} por la consulta del ${fmt(e.consulta)}. El próximo sale un mes después de su siguiente consulta.`;
+        case 'vencido': return `No se manda: su última consulta (${fmt(e.consulta)}) fue hace más de dos meses. Vuelve a activarse con su próxima consulta.`;
+        case 'apagado': return 'Apagado para esta paciente. Marcá la casilla de arriba y guardá para volver a activarlo.';
+        case 'baja': return `Ella pidió no recibirlo (${fmt(e.desde)}).`;
+        case 'sin-contacto': return 'No se puede mandar: la ficha no tiene email. Cargalo arriba y guardá.';
+        default: return '';
+      }
+    }
+
+    function pintarLista() {
+      const q = sinAcentos(buscar.value.trim());
+      const qTel = q.replace(/\D/g, '');
+      const vis = filas.filter((p) => !q
+        || sinAcentos(p.nombre).includes(q)
+        || (p.email ?? '').toLowerCase().includes(q)
+        || (qTel.length >= 3 && (p.telefono ?? '').replace(/\D/g, '').includes(qTel)));
+      const hoy = filas.filter((p) => p.estado.tipo === 'listo').length;
+      resumen.textContent = `${filas.length} ${filas.length === 1 ? 'paciente' : 'pacientes'}` + (hoy ? ` · ${hoy} con recordatorio pendiente` : '');
+      if (!filas.length) { lista!.innerHTML = '<p class="ag-vacia">Todavía no hay fichas. Se crean solas con cada reserva, o tocá "Nueva ficha".</p>'; return; }
+      if (!vis.length) { lista!.innerHTML = '<p class="ag-vacia">Nadie coincide con esa búsqueda.</p>'; return; }
+      lista!.innerHTML = vis.map((p) => {
+        const c = chip(p.estado);
+        const contacto = [p.telefono, p.email].filter(Boolean).map(esc).join(' · ') || 'Sin datos de contacto';
+        const turnos = [
+          p.ultima ? `Última consulta: ${fmt(p.ultima)}` : 'Sin consultas todavía',
+          p.proximo ? `Próximo turno: ${fmt(p.proximo)}` : '',
+        ].filter(Boolean).join(' · ');
+        return `<button type="button" class="pc-item" data-id="${esc(p.id)}">
+          <span class="pc-item__top"><strong>${esc(p.nombre)}</strong>${c ? `<span class="pc-chip ${c[1]}">${esc(c[0])}</span>` : ''}</span>
+          <span class="pc-item__sub">${contacto}</span>
+          <span class="pc-item__sub">${turnos}</span>
+        </button>`;
+      }).join('');
+    }
+
+    async function cargarLista() {
+      lista!.innerHTML = '<p class="ag-vacia">Cargando…</p>';
+      try {
+        filas = (await api()).pacientes;
+        cargada = true;
+        pintarLista();
+      } catch (err) {
+        lista!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)} <button type="button" class="btn btn--ghost btn--sm" id="pc-reintentar">Reintentar</button></p>`;
+        document.getElementById('pc-reintentar')?.addEventListener('click', cargarLista);
+      }
+    }
+
+    const ESTADO_LBL: Record<string, string> = {
+      confirmada: 'Confirmado', a_confirmar: 'A confirmar', pendiente_pago: 'Esperando pago', cancelada: 'Cancelado', expirada: 'Vencido',
+    };
+    const MOD_LBL: Record<string, string> = {
+      presencial: 'Presencial', virtual: 'Virtual', 'skincare-inteligente': 'Skincare Inteligente', club: 'Club de las Estaciones', manual: 'Cargado a mano',
+    };
+
+    function pintarVuelta(e: Estado | null) {
+      const cont = document.getElementById('pc-vuelta')!;
+      cont.innerHTML = `<p class="pc-vuelta__txt">${esc(explicar(e))}</p>` +
+        (e?.tipo === 'listo' ? '<button type="button" class="btn btn--ghost btn--sm" id="pc-mandar">Mandarlo ahora</button>' : '');
+      const btn = document.getElementById('pc-mandar') as HTMLButtonElement | null;
+      if (!btn) return;
+      // Confirmación de dos toques (el navegador del panel bloquea confirm()).
+      let armado = false;
+      btn.addEventListener('click', async () => {
+        if (!armado) { armado = true; btn.textContent = 'Tocá de nuevo para mandarlo'; setTimeout(() => { if (armado && !btn.disabled) { armado = false; btn.textContent = 'Mandarlo ahora'; } }, 4000); return; }
+        btn.disabled = true; btn.textContent = 'Mandando…';
+        try {
+          const d = await api({ accion: 'vuelta', id: fichaId });
+          pintarVuelta(d.estado);
+          const canales = [d.emails ? 'email' : '', d.whatsapps ? 'WhatsApp' : ''].filter(Boolean).join(' y ');
+          cont.insertAdjacentHTML('beforeend', `<p class="guardar__msg guardar__msg--ok">${d.avisadas ? `Enviado${canales ? ' por ' + canales : ''}.` : 'No se mandó: ya no le correspondía.'}</p>`);
+          cargada = false;
+        } catch (err) {
+          btn.disabled = false; btn.textContent = 'Mandarlo ahora'; armado = false;
+          cont.insertAdjacentHTML('beforeend', `<p class="guardar__msg guardar__msg--dirty">${esc((err as Error).message)}</p>`);
+        }
+      });
+    }
+
+    const opcionesTrat = (sel: string) =>
+      catalogo.map((g) => `<optgroup label="${esc(g.grupo)}">${g.items.map((t) => `<option value="${esc(t.id)}"${t.id === sel ? ' selected' : ''}>${esc(t.nombre)}</option>`).join('')}</optgroup>`).join('') +
+      `<option value="otro"${sel === 'otro' ? ' selected' : ''}>Otro (escribilo)</option>`;
+
+    const textoTrat = (t: Trat) => t.nombre + (t.sesion ? ` · sesión ${t.sesion}${t.de ? ' de ' + t.de : ''}` : '');
+
+    /** Una consulta realizada (confirmada, de hoy o antes) admite registro de atención. */
+    const esAtendible = (r: any) => r.estado === 'confirmada' && r.fecha && r.fecha <= hoy;
+
+    function pintarHistorial(h: any[]) {
+      historial = h;
+      const cont = document.getElementById('pc-historial')!;
+      document.getElementById('pc-consent-aviso')!.hidden = conConsentimiento || !h.some(esAtendible);
+      if (!h.length) { cont.innerHTML = '<p class="ag-vacia">Sin turnos todavía.</p>'; return; }
+      cont.innerHTML = '<ul class="pc-hist">' + h.map((r, i) => {
+        const donde = [MOD_LBL[r.modalidad] ?? r.modalidad, r.sede].filter(Boolean).join(' · ');
+        const cuando = r.fecha ? fmt(r.fecha) + (r.hora ? ` · ${r.hora} h` : '') : 'Sin fecha';
+        const trats: Trat[] = Array.isArray(r.tratamientos) ? r.tratamientos : [];
+        const seg = [
+          trats.length ? `<p class="pc-seg__trat">${trats.map((t) => `<span class="pc-chip">${esc(textoTrat(t))}</span>`).join(' ')}</p>` : '',
+          r.evolucion ? `<p class="pc-seg__evo"><strong>Evolución:</strong> ${esc(r.evolucion)}</p>` : '',
+          r.notas && !String(r.notas).startsWith('Consulta anterior cargada') ? `<p class="pc-seg__nota"><strong>Nota del turno:</strong> ${esc(r.notas)}</p>` : '',
+        ].join('');
+        const btn = esAtendible(r) && conConsentimiento
+          ? `<button type="button" class="pc-link pc-seg__btn" data-atender="${i}">${trats.length || r.evolucion ? 'Editar registro' : 'Registrar lo que se hizo'}</button>`
+          : '';
+        return `<li data-i="${i}">
+          <div class="pc-hist__fila"><span class="pc-hist__f">${esc(cuando)}</span><span class="pc-hist__d">${esc(donde)}</span><span class="pc-hist__e is-${esc(r.estado)}">${esc(ESTADO_LBL[r.estado] ?? r.estado)}${r.vuelta_avisada_at ? ' · recordatorio enviado' : ''}</span></div>
+          ${seg ? `<div class="pc-seg">${seg}</div>` : ''}
+          ${btn}
+          <div class="pc-ed" hidden></div>
+        </li>`;
+      }).join('') + '</ul>';
+    }
+
+    function filaTrat(t?: Trat) {
+      const sel = t?.id ?? '';
+      return `<div class="pc-ed__trat">
+        <select class="pc-ed__sel" aria-label="Tratamiento"><option value="">Elegí el tratamiento…</option>${opcionesTrat(sel)}</select>
+        <input class="pc-ed__otro" type="text" maxlength="80" placeholder="¿Cuál?" value="${sel === 'otro' ? esc(t?.nombre) : ''}" ${sel === 'otro' ? '' : 'hidden'} aria-label="Nombre del tratamiento" />
+        <span class="pc-ed__ses">Sesión <input type="number" min="1" max="50" class="pc-ed__n" value="${t?.sesion ?? ''}" aria-label="Número de sesión" /> de <input type="number" min="1" max="50" class="pc-ed__de" value="${t?.de ?? ''}" aria-label="Total de sesiones" /></span>
+        <button type="button" class="pc-link pc-ed__quitar" aria-label="Quitar tratamiento">Quitar</button>
+      </div>`;
+    }
+
+    function abrirEditor(li: HTMLElement, r: any) {
+      const ed = li.querySelector<HTMLElement>('.pc-ed')!;
+      if (!ed.hidden) { ed.hidden = true; return; }
+      const trats: Trat[] = Array.isArray(r.tratamientos) ? r.tratamientos : [];
+      ed.innerHTML = `
+        <p class="nv-ayuda">Qué tratamientos se hicieron en esta consulta. La sesión es opcional (ej. 3 de 6 del paquete).</p>
+        <div class="pc-ed__lista">${(trats.length ? trats : [undefined]).map((t) => filaTrat(t)).join('')}</div>
+        <button type="button" class="pc-link pc-ed__mas">+ Otro tratamiento</button>
+        <label class="nv-campo">Evolución <span class="nv-ayuda">(cómo encontraste la piel, qué ajustaste, qué rutina o productos indicaste)</span>
+          <textarea class="pc-ed__evo" rows="4" maxlength="4000">${esc(r.evolucion ?? '')}</textarea>
+        </label>
+        <div class="nv-acciones">
+          <button type="button" class="btn btn--primary btn--sm pc-ed__guardar">Guardar registro</button>
+          <button type="button" class="btn btn--ghost btn--sm pc-ed__cancelar">Cancelar</button>
+          <span class="guardar__msg pc-ed__msg" role="status"></span>
+        </div>`;
+      ed.hidden = false;
+      ed.querySelector('.pc-ed__mas')!.addEventListener('click', () => ed.querySelector('.pc-ed__lista')!.insertAdjacentHTML('beforeend', filaTrat()));
+      ed.addEventListener('change', (ev) => {
+        const sel = (ev.target as HTMLElement).closest<HTMLSelectElement>('.pc-ed__sel');
+        if (sel) sel.parentElement!.querySelector<HTMLInputElement>('.pc-ed__otro')!.hidden = sel.value !== 'otro';
+      });
+      ed.addEventListener('click', (ev) => {
+        const q = (ev.target as HTMLElement).closest('.pc-ed__quitar');
+        if (q) q.closest('.pc-ed__trat')!.remove();
+      });
+      ed.querySelector('.pc-ed__cancelar')!.addEventListener('click', () => { ed.hidden = true; });
+      ed.querySelector('.pc-ed__guardar')!.addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget as HTMLButtonElement;
+        const out = ed.querySelector<HTMLElement>('.pc-ed__msg')!;
+        const tratamientos = [...ed.querySelectorAll<HTMLElement>('.pc-ed__trat')].map((f) => {
+          const id = f.querySelector<HTMLSelectElement>('.pc-ed__sel')!.value;
+          return {
+            id,
+            nombre: id === 'otro' ? f.querySelector<HTMLInputElement>('.pc-ed__otro')!.value : '',
+            sesion: f.querySelector<HTMLInputElement>('.pc-ed__n')!.value,
+            de: f.querySelector<HTMLInputElement>('.pc-ed__de')!.value,
+          };
+        }).filter((t) => t.id);
+        btn.disabled = true; out.className = 'guardar__msg pc-ed__msg'; out.textContent = 'Guardando…';
+        try {
+          await api({ accion: 'atencion', id: fichaId, reserva_id: r.id, tratamientos, evolucion: ed.querySelector<HTMLTextAreaElement>('.pc-ed__evo')!.value });
+          const d = await api(undefined, '?id=' + encodeURIComponent(fichaId!));
+          hoy = d.hoy;
+          pintarHistorial(d.historial);
+        } catch (err) {
+          btn.disabled = false;
+          out.className = 'guardar__msg guardar__msg--dirty pc-ed__msg'; out.textContent = (err as Error).message;
+        }
+      });
+    }
+
+    document.getElementById('pc-historial')!.addEventListener('click', (ev) => {
+      const b = (ev.target as HTMLElement).closest<HTMLElement>('[data-atender]');
+      if (!b) return;
+      abrirEditor(b.closest('li')!, historial[Number(b.dataset.atender)]);
+    });
+
+    function mostrarBaja() {
+      bajaAviso.hidden = !bajaDesde;
+      if (!bajaDesde) return;
+      bajaAviso.innerHTML = reactivar
+        ? 'Se va a reactivar al guardar. Hacelo solo si ella te pidió volver a recibirlo.'
+        : `Ella pidió no recibir este recordatorio (${esc(fmt(bajaDesde))}). <button type="button" class="pc-link" id="pc-reactivar">Me pidió volver a recibirlo</button>`;
+      document.getElementById('pc-reactivar')?.addEventListener('click', () => { reactivar = true; campo('recordatorio_activo').checked = true; mostrarBaja(); });
+      campo('recordatorio_activo').disabled = !reactivar;
+    }
+
+    async function abrir(id: string | null) {
+      fichaId = id; bajaDesde = null; reactivar = false; conConsentimiento = false;
+      vistaLista.hidden = true; vistaFicha.hidden = false;
+      msg.textContent = ''; msg.className = 'guardar__msg';
+      form!.reset();
+      campo('recordatorio_activo').disabled = false;
+      bajaAviso.hidden = true;
+      detalle.hidden = !id;
+      (document.getElementById('pc-anterior-msg')!).textContent = '';
+      document.getElementById('pc-form-tit')!.textContent = id ? 'Ficha' : 'Nueva ficha';
+      vistaFicha.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!id) { campo('nombre').focus({ preventScroll: true }); return; }
+      document.getElementById('pc-vuelta')!.innerHTML = '<p class="ag-vacia">Cargando…</p>';
+      document.getElementById('pc-historial')!.innerHTML = '';
+      try {
+        const d = await api(undefined, '?id=' + encodeURIComponent(id));
+        const f = d.ficha;
+        document.getElementById('pc-form-tit')!.textContent = f.nombre;
+        campo('nombre').value = f.nombre ?? '';
+        campo('telefono').value = f.telefono ?? '';
+        campo('email').value = f.email ?? '';
+        campo('fecha_nacimiento').value = f.fecha_nacimiento ?? '';
+        campo('consentimiento_fecha').value = f.consentimiento_fecha ?? '';
+        conConsentimiento = !!f.consentimiento_fecha;
+        hoy = d.hoy;
+        (form!.elements.namedItem('notas') as HTMLTextAreaElement).value = f.notas ?? '';
+        campo('recordatorio_activo').checked = f.recordatorio_activo && !f.baja_recordatorios_at;
+        bajaDesde = f.baja_recordatorios_at;
+        mostrarBaja();
+        pintarVuelta(d.estado);
+        pintarHistorial(d.historial);
+      } catch (err) {
+        document.getElementById('pc-vuelta')!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
+      }
+    }
+
+    function volver() {
+      vistaFicha.hidden = true; vistaLista.hidden = false;
+      if (!cargada) cargarLista();
+    }
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = document.getElementById('pc-guardar') as HTMLButtonElement;
+      btn.disabled = true; msg.className = 'guardar__msg'; msg.textContent = 'Guardando…';
+      try {
+        const d = await api({
+          accion: 'guardar',
+          id: fichaId,
+          nombre: campo('nombre').value,
+          telefono: campo('telefono').value,
+          email: campo('email').value,
+          fecha_nacimiento: campo('fecha_nacimiento').value,
+          consentimiento_fecha: campo('consentimiento_fecha').value,
+          notas: (form.elements.namedItem('notas') as HTMLTextAreaElement).value,
+          recordatorio_activo: campo('recordatorio_activo').checked,
+          reactivar,
+        });
+        cargada = false;
+        await abrir(d.id);
+        msg.className = 'guardar__msg guardar__msg--ok'; msg.textContent = 'Guardado.';
+      } catch (err) {
+        msg.className = 'guardar__msg guardar__msg--dirty';
+        const e = err as Error & { id?: string };
+        msg.innerHTML = esc(e.message) + (e.id ? ` <button type="button" class="pc-link" data-ir-ficha="${esc(e.id)}">Abrir esa ficha</button>` : '');
+      }
+      btn.disabled = false;
+    });
+
+    msg.addEventListener('click', (ev) => {
+      const id = (ev.target as HTMLElement).closest<HTMLElement>('[data-ir-ficha]')?.dataset.irFicha;
+      if (id) abrir(id);
+    });
+
+    document.getElementById('pc-anterior-btn')!.addEventListener('click', async () => {
+      const inp = document.getElementById('pc-anterior-fecha') as HTMLInputElement;
+      const out = document.getElementById('pc-anterior-msg')!;
+      if (!inp.value) { out.textContent = 'Elegí la fecha.'; return; }
+      out.className = 'guardar__msg'; out.textContent = 'Agregando…';
+      try {
+        await api({ accion: 'consulta', id: fichaId, fecha: inp.value });
+        cargada = false;
+        const id = fichaId;
+        await abrir(id);
+        (document.querySelector('.pc-anterior') as HTMLDetailsElement).open = true;
+        const o2 = document.getElementById('pc-anterior-msg')!;
+        o2.className = 'guardar__msg guardar__msg--ok'; o2.textContent = 'Consulta agregada.';
+      } catch (err) {
+        out.className = 'guardar__msg guardar__msg--dirty'; out.textContent = (err as Error).message;
+      }
+    });
+
+    lista.addEventListener('click', (ev) => {
+      const id = (ev.target as HTMLElement).closest<HTMLElement>('.pc-item')?.dataset.id;
+      if (id) abrir(id);
+    });
+    buscar.addEventListener('input', pintarLista);
+    document.getElementById('pc-nueva')!.addEventListener('click', () => abrir(null));
+    document.getElementById('pc-volver')!.addEventListener('click', volver);
+
+    // Carga perezosa: recién cuando Ceci abre la pestaña.
+    const tab = document.querySelector<HTMLButtonElement>('.tab[data-ir="pacientes"]');
+    tab?.addEventListener('click', () => { if (!cargada && !vistaLista.hidden) cargarLista(); });
+    if (tab?.getAttribute('aria-current') === 'true') cargarLista();
+  })();
+</script>
+
+<style is:global>
+  .pc-buscar input {
+    font: inherit; width: 100%; padding: 0.7rem 0.9rem; margin-top: 1rem;
+    border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
+  }
+  .pc-resumen { font-size: 0.85rem; color: var(--ink-soft); margin: 0.6rem 0 0.4rem; }
+  .pc-item {
+    display: grid; gap: 0.2rem; width: 100%; text-align: left; font: inherit; color: var(--ink);
+    padding: 0.85rem 0.2rem; background: none; border: 0; border-top: 1px solid var(--sand); cursor: pointer;
+  }
+  .pc-item:hover { background: var(--cream-deep); }
+  .pc-item:focus-visible { outline: 2px solid var(--sage); outline-offset: -2px; }
+  .pc-item__top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; }
+  .pc-item__sub { font-size: 0.85rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .pc-chip {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; padding: 0.15rem 0.55rem;
+    border-radius: 999px; background: var(--cream-deep); color: var(--ink-soft); white-space: nowrap;
+  }
+  .pc-chip.is-hoy { background: var(--sage); color: var(--white); }
+  .pc-chip.is-ok { color: var(--sage-deep); }
+  .pc-chip.is-off { color: var(--clay-deep); }
+  .pc-volver { font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--sage-deep); background: none; border: 0; padding: 0.4rem 0; margin: 0.6rem 0 0.4rem; cursor: pointer; }
+  .pc-form { display: grid; gap: 1rem; margin-top: 0.6rem; }
+  .pc-form h3 { margin: 0; overflow-wrap: anywhere; }
+  .pc-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* La casilla al lado del texto también en mobile (el .nv-check general hace wrap). */
+  .pc-form .nv-check { flex-wrap: nowrap; align-items: flex-start; }
+  .pc-form .nv-check input { flex: none; margin-top: 0.2rem; }
+  .pc-baja-aviso { font-size: 0.88rem; color: var(--clay-deep); margin: -0.4rem 0 0; line-height: 1.6; }
+  .pc-link { font: inherit; color: var(--sage-deep); font-weight: 600; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }
+  .pc-bloque { margin-top: 2rem; padding-top: 1.4rem; border-top: 1px solid var(--sand); }
+  .pc-bloque h3 { font-size: 1.1rem; margin: 0 0 0.6rem; }
+  .pc-vuelta__txt { margin: 0 0 0.8rem; line-height: 1.6; color: var(--ink); }
+  .pc-hist { list-style: none; margin: 0; padding: 0; }
+  .pc-hist li { padding: 0.65rem 0; border-top: 1px solid var(--sand); font-size: 0.9rem; }
+  .pc-hist__fila { display: grid; grid-template-columns: 11rem minmax(0, 1fr) auto; gap: 0.3rem 1rem; }
+  .pc-seg { margin: 0.45rem 0 0; display: grid; gap: 0.35rem; }
+  .pc-seg p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
+  .pc-seg__trat { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .pc-seg__evo, .pc-seg__nota { color: var(--ink); white-space: pre-line; }
+  .pc-seg__nota { color: var(--ink-soft); }
+  .pc-seg__btn { font-size: 0.85rem; margin-top: 0.4rem; }
+  .pc-consent-aviso { margin: -0.2rem 0 0.6rem; color: var(--clay-deep); }
+  /* minmax(0, 1fr): sin esto el <select> (nombres largos) estira la grilla en mobile. */
+  .pc-ed { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.8rem; margin-top: 0.7rem; padding: 0.9rem; border-radius: var(--radius-sm); background: var(--cream-deep); }
+  .pc-ed__lista { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
+  .pc-ed textarea { width: 100%; }
+  .pc-ed__trat { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .pc-ed__trat select, .pc-ed__trat input, .pc-ed textarea {
+    font: inherit; font-size: 0.9rem; padding: 0.45rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
+  }
+  .pc-ed__sel { flex: 1 1 14rem; min-width: 0; max-width: 100%; }
+  .pc-ed__otro { flex: 1 1 10rem; min-width: 0; }
+  .pc-ed__ses { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--ink-soft); }
+  .pc-ed__ses input { width: 3.6rem; }
+  .pc-ed__mas { justify-self: start; font-size: 0.88rem; }
+  .pc-hist li:first-child { border-top: 0; }
+  .pc-hist__f { font-weight: 600; }
+  .pc-hist__d { color: var(--ink-soft); }
+  .pc-hist__e { font-size: 0.82rem; color: var(--ink-soft); text-align: right; }
+  .pc-hist__e.is-confirmada { color: var(--sage-deep); }
+  .pc-anterior { margin-top: 1rem; }
+  .pc-anterior summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; color: var(--sage-deep); }
+  .pc-anterior__fila { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin: 0.6rem 0 0.4rem; }
+  .pc-anterior__fila input { font: inherit; padding: 0.45rem 0.7rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  @media (max-width: 640px) {
+    .pc-fila { grid-template-columns: 1fr; }
+    .pc-hist__fila { grid-template-columns: 1fr; gap: 0.1rem; }
+    .pc-hist__e { text-align: left; }
+  }
+</style>
