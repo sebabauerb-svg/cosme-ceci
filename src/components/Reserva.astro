@@ -97,9 +97,9 @@ const { enlaces, contacto } = site;
   .reserva__ico--wa { background: #25d366; }
   .reserva__ico--ig { background: linear-gradient(135deg, #f9ce34, #ee2a7b 55%, #6228d7); }
   .reserva__ico--mail { background: var(--sage); }
-  .reserva__by { display: flex; flex-direction: column; }
+  .reserva__by { display: flex; flex-direction: column; min-width: 0; }
   .reserva__label {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--sage-deep);
@@ -109,10 +109,12 @@ const { enlaces, contacto } = site;
     font-family: var(--font-serif);
     font-size: 1.1rem;
     color: var(--ink);
+    overflow-wrap: anywhere;
+    padding-block: 0.3rem;
   }
   .reserva__by a:hover { color: var(--sage-deep); }
   @media (max-width: 860px) {
-    .reserva__box { grid-template-columns: 1fr; }
+    .reserva__box { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 760px) {
     .reserva__box { padding: 1.5rem 1.25rem; gap: 1.6rem; }

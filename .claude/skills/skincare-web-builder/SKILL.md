@@ -10,9 +10,15 @@ description: Construcción y mantenimiento técnico del sitio Astro de Cecilia G
 Datos editables (lo que toca Ceci, sin tocar componentes):
 - `src/data/site.ts` — marca (`site.marca`), contacto, redes, enlaces, WhatsApp +
   helper `whatsappLink()`. Campos provisorios marcados `CONFIRMAR`.
-- `src/data/modalidades.ts` — las 4 modalidades de atención. Solo la Consulta muestra precio.
-- `src/data/tratamientos.ts` — catálogo por categorías. **Los precios NO se renderizan**
-  (decisión de negocio); van en `precioRef` solo como referencia interna.
+- `src/data/modalidades.ts` — las 4 modalidades de atención, con su precio.
+- `src/data/tratamientos.ts` — catálogo por categorías. **Los precios SE muestran**
+  (pedido de Ceci, oct-2026). Cada tratamiento tiene un `id` fijo (no cambiarlo: es la clave del
+  precio guardado), `precio` por sesión, `unidad` opcional ("por zona"), `paquete6` y `duracion`
+  opcional. Estos valores son los INICIALES/RESPALDO: los vigentes los edita Ceci en `/admin` →
+  Precios (tabla `precios`, `src/lib/precios-vigentes.ts`). Para mostrar un precio en un
+  componente usá `leerPrecios()`, nunca el valor del archivo directo. La home y `/reservar` son
+  SSR con caché de CDN (`src/lib/cache.ts`). El "Desde $X" de cada categoría solo aparece si
+  todos sus tratamientos tienen valor.
 - `src/data/club.ts` — plan detallado del Club de las Estaciones (sección `ClubEstaciones.astro`).
 - `src/data/imagenes.ts` — slots de imágenes (hero opcional + galería "El espacio"). Con
   fallback elegante (`.media-ph`) cuando un slot está vacío. Guía en `IMAGENES.md`.

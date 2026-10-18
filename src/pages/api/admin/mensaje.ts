@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import { getSql, ensureConfirmacion, ensureGestion } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
-import { SENA_UYU, precioTotal } from '../../../lib/precios';
+import { SENA_UYU } from '../../../lib/precios';
+import { leerPrecios, precioModalidad } from '../../../lib/precios-vigentes';
 import { generarMensaje, linkWhatsApp, PLANTILLAS, type PlantillaId } from '../../../lib/mensajes';
 import { fechaLarga } from './gestion';
 import { linkAutogestion } from '../../../lib/reprogramar';
@@ -50,7 +51,9 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const r = rows[0];
     if (!r) return json({ ok: false, error: 'No encontramos esa reserva.' }, 404);
 
-    const total = r.total_acordado != null ? Number(r.total_acordado) : precioTotal(r.modalidad);
+    // Precio de lista vigente (el que Ceci carga en /admin → Precios).
+    const precios = await leerPrecios();
+    const total = r.total_acordado != null ? Number(r.total_acordado) : precioModalidad(precios, r.modalidad);
     const senaPagada = r.sena_pagada != null ? Number(r.sena_pagada) : null;
     const texto = generarMensaje(plantilla, {
       nombre: r.nombre,

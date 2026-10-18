@@ -20,8 +20,8 @@ Casi todo se cambia desde tres archivos, sin tocar código:
 - **`src/data/site.ts`** — marca, contacto (WhatsApp, mail, Instagram) y enlaces. Los campos
   `CONFIRMAR` tienen valores provisorios tomados del dossier.
 - **`src/data/modalidades.ts`** — las 4 modalidades de atención (Consulta Presencial, Virtual,
-  Asesoramiento Skincare Inteligente, Club de las Estaciones). Solo la Consulta muestra precio.
-- **`src/data/tratamientos.ts`** — catálogo de tratamientos por categoría (sin precios visibles).
+  Asesoramiento Skincare Inteligente, Club de las Estaciones). Cada una con su precio.
+- **`src/data/tratamientos.ts`** — catálogo de tratamientos por categoría, con valor por sesión y paquete de 6 (`CONFIRMAR` = falta el valor).
 
 Los textos de cada sección están en `src/components/*.astro`. El blog son archivos `.md` en
 `src/content/blog/`.
@@ -40,7 +40,7 @@ Los textos de cada sección están en `src/components/*.astro`. El blog son arch
   las modalidades, no la marca.
 - **Voz:** la del dossier (Cosmetología Médica, diagnóstico, evaluación clínica). Detalle y
   límites en `PROMPT.md` y en la skill `skincare-legal-guardrails`.
-- **Precios:** solo la Consulta ($1.800) visible; tratamientos "según protocolo".
+- **Precios (oct-2026):** visibles en modalidades y tratamientos; los que faltan, `CONFIRMAR`.
 
 ## Estructura
 

@@ -8,6 +8,20 @@ const links = [
   { href: '/#sobre-ceci', label: 'Sobre mí' },
   { href: '/blog', label: 'Novedades' },
 ];
+
+// Barra de secciones (solo home, en celular/tablet): en el orden de la página,
+// para saltar a cualquier parte —y volver al inicio— sin scrollear todo.
+const enHome = Astro.url.pathname === '/';
+const secciones = [
+  { id: 'top', label: 'Inicio' },
+  { id: 'filosofia', label: 'Filosofía' },
+  { id: 'modalidades', label: 'Modalidades' },
+  { id: 'tratamientos', label: 'Tratamientos' },
+  { id: 'club', label: 'Club' },
+  { id: 'sobre-ceci', label: 'Sobre mí' },
+  { id: 'reservar', label: 'Contacto' },
+  { id: 'preguntas', label: 'Preguntas' },
+];
 ---
 
 <header class="nav" id="top">
@@ -32,6 +46,16 @@ const links = [
       <span></span><span></span><span></span>
     </button>
   </div>
+
+  {enHome && (
+    <nav class="nav__secciones" aria-label="Secciones de la página">
+      <div class="nav__secTrack">
+        {secciones.map((x, i) => (
+          <a href={`#${x.id}`} data-sec={x.id} aria-current={i === 0 ? 'true' : undefined}>{x.label}</a>
+        ))}
+      </div>
+    </nav>
+  )}
 
   <nav class="nav__mobile" id="nav-mobile" aria-label="Navegación móvil" hidden>
     {links.map((l) => <a href={l.href}>{l.label}</a>)}
@@ -102,7 +126,11 @@ const links = [
     background: none;
     border: 0;
     cursor: pointer;
-    padding: 6px;
+    /* Área táctil de 44px; el margen negativo mantiene el ícono donde estaba. */
+    min-width: 44px; min-height: 44px;
+    align-items: center; justify-content: center;
+    padding: 10px;
+    margin-right: -10px;
   }
   .nav__toggle span {
     width: 24px; height: 2px;
@@ -118,7 +146,7 @@ const links = [
     border-top: 1px solid var(--sand);
   }
   .nav__mobile a:not(.btn) {
-    padding: 0.7rem 0;
+    padding: 0.8rem 0;
     font-weight: 500;
     border-bottom: 1px solid var(--sand);
   }
@@ -129,14 +157,53 @@ const links = [
        queda solo para los links de secciones. */
     .nav__links { display: none; }
     .nav__inner { gap: 0.8rem; }
-    .nav__cta { padding: 0.5rem 1rem; font-size: 0.85rem; margin-left: auto; white-space: nowrap; }
+    .nav__cta { padding: 0.5rem 1rem; font-size: 0.85rem; margin-left: auto; white-space: nowrap; min-height: 42px; }
     .nav__toggle { display: flex; }
     .nav__mobile[data-open='true'] { display: flex; }
   }
   @media (max-width: 400px) {
     /* En pantallas muy angostas priorizamos marca + CTA */
     .nav__sub { display: none; }
-    .nav__cta { padding: 0.45rem 0.85rem; font-size: 0.8rem; }
+    /* Logo + CTA + ☰ no entraban en 360px (Android chicos): menos aire entre ellos. */
+    .nav__inner { gap: 0.5rem; }
+    .nav__brand { gap: 0.5rem; }
+    .nav__cta { padding: 0.45rem 0.75rem; font-size: 0.84rem; }
+  }
+  @media (max-width: 365px) {
+    .nav__mark { width: 36px; height: 36px; font-size: 0.92rem; }
+    .nav__cta { font-size: 0.8rem; padding-inline: 0.65rem; }
+  }
+
+  .nav__secciones { display: none; }
+  @media (max-width: 980px) {
+    .nav__secciones {
+      display: block;
+      border-top: 1px solid var(--sand);
+    }
+    .nav__secTrack {
+      display: flex;
+      gap: 0.35rem;
+      overflow-x: auto;
+      padding: 0.4rem clamp(1.25rem, 5vw, 2.5rem);
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .nav__secTrack::-webkit-scrollbar { display: none; }
+    .nav__secTrack a {
+      flex: none;
+      display: inline-flex; align-items: center;
+      min-height: 36px;
+      padding: 0 0.85rem;
+      border-radius: 999px;
+      font-size: 0.86rem; font-weight: 500;
+      color: var(--ink-soft);
+      white-space: nowrap;
+      transition: background 0.2s ease, color 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .nav__secTrack a[aria-current='true'] { background: var(--sage); color: var(--cream); }
+    /* Con la barra, el encabezado fijo es más alto: los anclajes lo descuentan. */
+    :global(html:has(.nav__secciones) .section) { scroll-margin-top: 128px; }
   }
 </style>
 
@@ -156,4 +223,43 @@ const links = [
       toggle?.setAttribute('aria-expanded', 'false');
     })
   );
+
+  // Barra de secciones: marca la sección visible y la mantiene a la vista
+  // dentro de la fila deslizable.
+  const track = document.querySelector<HTMLElement>('.nav__secTrack');
+  if (track) {
+    const chips = Array.from(track.querySelectorAll<HTMLAnchorElement>('a[data-sec]'));
+    const objetivos = chips
+      .map((c) => ({ chip: c, el: document.getElementById(c.dataset.sec || '') }))
+      .filter((x) => x.el) as { chip: HTMLAnchorElement; el: HTMLElement }[];
+    let actual: HTMLAnchorElement | null = null;
+    const marcar = () => {
+      if (!track.offsetParent) return; // barra oculta (desktop)
+      const limite = (document.querySelector('.nav') as HTMLElement).offsetHeight + 24;
+      let elegido = objetivos[0]?.chip;
+      for (const o of objetivos) {
+        if (o.el.id !== 'top' && o.el.getBoundingClientRect().top <= limite) elegido = o.chip;
+      }
+      if (elegido === actual) return;
+      actual = elegido;
+      chips.forEach((c) => (c === elegido ? c.setAttribute('aria-current', 'true') : c.removeAttribute('aria-current')));
+      // scrollTo con left calculado (scrollIntoView movería también la página).
+      const left = elegido.offsetLeft - track.offsetLeft - (track.clientWidth - elegido.offsetWidth) / 2;
+      track.scrollTo({ left, behavior: 'smooth' });
+    };
+    let pendiente = false;
+    window.addEventListener('scroll', () => {
+      if (pendiente) return;
+      pendiente = true;
+      requestAnimationFrame(() => { pendiente = false; marcar(); });
+    }, { passive: true });
+    window.addEventListener('resize', marcar);
+    marcar();
+    // "Inicio": el header es sticky, así que su ancla no lleva arriba de todo.
+    track.querySelector('a[data-sec="top"]')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      history.replaceState(null, '', location.pathname);
+    });
+  }
 </script>

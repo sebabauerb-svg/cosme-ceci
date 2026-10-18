@@ -14,7 +14,12 @@
 /** Seña que reserva el turno. Es lo único que se cobra por la web. */
 export const SENA_UYU = 700;
 
-/** Precio total del servicio (referencia; el saldo se abona en la consulta). */
+/**
+ * Precio total del servicio: valor INICIAL y de respaldo. El precio de lista
+ * vigente lo carga Ceci en /admin → Precios (ver src/lib/precios-vigentes.ts) y
+ * es el que se usa para mostrar y calcular saldos. Acá solo decide qué
+ * modalidades se pueden señar online (las que no son null).
+ */
 export const PRECIOS_UYU: Record<string, number | null> = {
   presencial: 1800,
   virtual: 1500,
