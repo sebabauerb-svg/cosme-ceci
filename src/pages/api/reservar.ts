@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion } from '../../lib/db';
+import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion, ensureNewsletter } from '../../lib/db';
+import { baseUrl, normalizarEmail, pedirSuscripcion } from '../../lib/newsletter';
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
@@ -254,6 +255,19 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         via,
         sena: precioNum,
       });
+
+      // Casilla opcional "quiero recibir las novedades" (desmarcada por defecto).
+      // Mismo doble opt-in que en /blog: queda pendiente hasta que confirme
+      // desde el mail. Un error acá nunca debe trabar la reserva.
+      const emailNl = body?.newsletter === true ? normalizarEmail(emailT) : null;
+      if (emailNl) {
+        try {
+          await ensureNewsletter(sql);
+          await pedirSuscripcion(sql, emailNl, 'reserva', baseUrl(request));
+        } catch (e) {
+          console.error('newsletter desde reserva:', e instanceof Error ? e.message : e);
+        }
+      }
 
       return json({ ok: true, id: reservaId, initPoint, via });
     } catch (e: any) {

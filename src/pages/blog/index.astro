@@ -3,6 +3,7 @@ import Base from '../../layouts/Base.astro';
 import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
 import WhatsappFloat from '../../components/WhatsappFloat.astro';
+import Suscripcion from '../../components/Suscripcion.astro';
 import { getEntradas, fmtFecha, TIPOS, type Tipo } from '../../lib/blog';
 
 const entradas = await getEntradas();
@@ -69,6 +70,10 @@ const schema = {
           </ul>
         </>
       )}
+
+      <div class="blog__nl">
+        <Suscripcion origen="blog" id="suscribirse" />
+      </div>
     </div>
   </main>
   <Footer />
@@ -139,6 +144,7 @@ const schema = {
   .blog__list h2 a:hover { color: var(--sage-deep); }
   .blog__more { color: var(--clay-deep); font-weight: 600; display: inline-block; margin-top: 0.6rem; }
   .blog__empty { margin-top: 2.5rem; }
+  .blog__nl { margin-top: clamp(2.5rem, 6vw, 4rem); }
 
   @media (max-width: 760px) {
     .blog__filtros { gap: 0.35rem; margin-top: 1.5rem; }

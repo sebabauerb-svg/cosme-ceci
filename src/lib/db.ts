@@ -146,3 +146,54 @@ export async function ensureConfirmacion(sql: any) {
   `;
   await sql`drop index if exists reservas_slot_unico`;
 }
+
+/**
+ * Newsletter de novedades (idempotente). La base es la fuente de verdad de
+ * quién quiere recibir mails: el envío sale por lotes de Resend, sin copiar la
+ * lista a Resend (así la baja y el consentimiento viven en un solo lugar).
+ *  - newsletter_suscriptores: doble opt-in. 'pendiente' hasta que toca el link
+ *    del mail de confirmación; 'baja' cuando se da de baja (la fila queda como
+ *    registro de que pidió no recibir más, y por si vuelve a suscribirse).
+ *    token: secreto del link de confirmación y de baja (sin login).
+ *  - newsletter_envios: cada newsletter que arma Ceci (asunto, intro, entradas).
+ *  - newsletter_entregas: a quién ya le salió cada envío. Permite repartir un
+ *    envío grande en varios días sin pasarse del tope diario del plan de Resend
+ *    y sin mandarle dos veces lo mismo a nadie.
+ */
+export async function ensureNewsletter(sql: any) {
+  await sql`
+    create table if not exists newsletter_suscriptores (
+      id uuid primary key default gen_random_uuid(),
+      email text not null unique,
+      estado text not null default 'pendiente' check (estado in ('pendiente','confirmado','baja')),
+      token text not null unique default replace(gen_random_uuid()::text, '-', ''),
+      origen text,
+      consentimiento_at timestamptz not null default now(),
+      confirmacion_enviada_at timestamptz,
+      confirmado_at timestamptz,
+      baja_at timestamptz,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists newsletter_envios (
+      id uuid primary key default gen_random_uuid(),
+      asunto text not null,
+      intro text,
+      entradas text[] not null,
+      total integer not null default 0,
+      enviados integer not null default 0,
+      created_at timestamptz not null default now(),
+      terminado_at timestamptz
+    )
+  `;
+  await sql`
+    create table if not exists newsletter_entregas (
+      envio_id uuid not null references newsletter_envios(id) on delete cascade,
+      suscriptor_id uuid not null references newsletter_suscriptores(id) on delete cascade,
+      enviado_at timestamptz not null default now(),
+      primary key (envio_id, suscriptor_id)
+    )
+  `;
+  await sql`create index if not exists newsletter_entregas_fecha on newsletter_entregas (enviado_at)`;
+}
