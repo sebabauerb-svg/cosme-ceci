@@ -1,22 +1,21 @@
 ---
-import {
-  categoriasTratamientos,
-  CONFIRMAR,
-  formatUYU,
-  precioDesde,
-  preciosPendientes,
-} from '../data/tratamientos';
+import { categoriasTratamientos, formatUYU } from '../data/tratamientos';
 import { modalidades } from '../data/modalidades';
 import { whatsappLink } from '../data/site';
+import {
+  claveTratamiento,
+  leerPrecios,
+  precioDesde,
+  precioModalidadTexto,
+} from '../lib/precios-vigentes';
 
-const consulta = modalidades.find((m) => m.id === 'presencial');
+// Precios vigentes: los que Ceci carga en /admin → Precios (respaldo: el código).
+const precios = await leerPrecios();
+const valor = (id: string) => precios[claveTratamiento(id)];
+
+const consultaMod = modalidades.find((m) => m.id === 'presencial');
+const consulta = consultaMod && { ...consultaMod, precio: precioModalidadTexto(precios, consultaMod) };
 const dev = import.meta.env.DEV;
-
-// Recordatorio en el build de lo que falta pasarle a Ceci (no rompe el build).
-const pendientes = preciosPendientes();
-if (pendientes.length && import.meta.env.PROD) {
-  console.warn(`[tratamientos] Valores sin confirmar (${pendientes.length}):\n  - ${pendientes.join('\n  - ')}`);
-}
 ---
 
 <section class="section" id="tratamientos">
@@ -37,7 +36,7 @@ if (pendientes.length && import.meta.env.PROD) {
 
     <div class="trat__cats">
       {categoriasTratamientos.map((cat) => {
-        const desde = precioDesde(cat);
+        const desde = precioDesde(cat.tratamientos.map((t) => t.id), precios);
         return (
           <details class="trat__cat reveal" open>
             <summary class="trat__catHead">
@@ -48,36 +47,36 @@ if (pendientes.length && import.meta.env.PROD) {
               <span class="trat__chev" aria-hidden="true">+</span>
             </summary>
             <ul class="trat__list">
-              {cat.tratamientos.map((t) => (
-                <li>
-                  <div class="trat__itemHead">
-                    <h4>{t.nombre}</h4>
-                    {t.precio === CONFIRMAR ? (
-                      <span class="trat__precio trat__precio--consulta">
-                        Valor en consulta
-                        {dev && <span class="trat__confirmar">CONFIRMAR</span>}
-                      </span>
-                    ) : (
-                      <span class="trat__precio">
-                        {formatUYU(t.precio)}
-                        <span class="trat__unidad">{t.unidad ?? 'por sesión'}</span>
-                      </span>
-                    )}
-                  </div>
-                  <p>{t.descripcion}</p>
-                  {(t.duracion || typeof t.paquete6 === 'number') && (
-                    <p class="trat__meta">
-                      {t.duracion && <span>{t.duracion}</span>}
-                      {typeof t.paquete6 === 'number' && (
-                        <span>Paquete de 6 sesiones: <strong>{formatUYU(t.paquete6)}</strong></span>
+              {cat.tratamientos.map((t) => {
+                const v = valor(t.id);
+                return (
+                  <li>
+                    <div class="trat__itemHead">
+                      <h4>{t.nombre}</h4>
+                      {v.precio == null ? (
+                        <span class="trat__precio trat__precio--consulta">
+                          Valor en consulta
+                          {dev && v.pendiente && <span class="trat__confirmar">CONFIRMAR</span>}
+                        </span>
+                      ) : (
+                        <span class="trat__precio">
+                          {formatUYU(v.precio)}
+                          <span class="trat__unidad">{t.unidad ?? 'por sesión'}</span>
+                        </span>
                       )}
-                    </p>
-                  )}
-                  {dev && t.paquete6 === CONFIRMAR && t.precio !== CONFIRMAR && (
-                    <p class="trat__meta"><span class="trat__confirmar">Paquete 6: CONFIRMAR</span></p>
-                  )}
-                </li>
-              ))}
+                    </div>
+                    <p>{t.descripcion}</p>
+                    {(t.duracion || (v.precio != null && v.paquete6 != null)) && (
+                      <p class="trat__meta">
+                        {t.duracion && <span>{t.duracion}</span>}
+                        {v.precio != null && v.paquete6 != null && (
+                          <span>Paquete de 6 sesiones: <strong>{formatUYU(v.paquete6)}</strong></span>
+                        )}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </details>
         );

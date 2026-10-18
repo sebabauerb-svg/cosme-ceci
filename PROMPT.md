@@ -52,8 +52,11 @@ y se muestran en la web.
 
 - **Precios (actualizado oct-2026, pedido de Ceci):** la web **muestra precios** por
   transparencia y para convertir directo. Modalidades con su valor; cada tratamiento con valor
-  por sesión y paquete de 6 (`src/data/tratamientos.ts`, fuente: anexo de tarifas v4). Los que
-  falten van como `CONFIRMAR` y se ven como "Valor en consulta". Se aclara que son valores de
+  por sesión y paquete de 6. **Ceci los edita desde `/admin` → Precios** (tabla `precios` en
+  Neon); `src/data/tratamientos.ts` y `src/lib/precios.ts` son los valores iniciales y el
+  respaldo si la base falla. La home y `/reservar` se renderizan en el servidor con caché de CDN
+  de 60 s, así que un cambio se ve en ~1 minuto sin redeploy. La seña online sigue fija en el
+  código. Sin precio cargado = "Valor en consulta". Se aclara que son valores de
   referencia y que el plan final (sesiones y combinación) se define en la consulta.
   *(Reemplaza la regla de junio 2026: "solo la Consulta tiene precio; tratamientos según protocolo".)*
 - **Voz / lenguaje clínico:** se usa **la voz del dossier tal cual** — "Cosmetología Médica",
@@ -67,7 +70,7 @@ y se muestran en la web.
 - Datos editables (lo que toca Ceci):
   - `src/data/site.ts` — marca, contacto, redes, enlaces, WhatsApp + `whatsappLink()`.
   - `src/data/modalidades.ts` — las 4 modalidades (Consulta $1.800, Asesoramiento $1.600, Club).
-  - `src/data/tratamientos.ts` — catálogo por categorías con valor por sesión y paquete de 6.
+  - `src/data/tratamientos.ts` — catálogo por categorías; precios iniciales/respaldo (los vigentes, en `/admin` → Precios).
   - `src/data/club.ts` — plan detallado del Club ($4.800/año, 4 cuotas de $1.200, 4 estaciones).
   - `src/data/imagenes.ts` — slots de imágenes (hero opcional + galería "El espacio"). Ver IMAGENES.md.
 - `src/layouts/Base.astro` — head, SEO, Open Graph, JSON-LD.

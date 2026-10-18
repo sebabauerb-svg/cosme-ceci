@@ -6,10 +6,14 @@
  * web, por transparencia y para que la reserva sea más directa. Reemplaza la regla anterior
  * ("solo la Consulta tiene precio; tratamientos según protocolo").
  *
- * Fuente de los valores: anexo de tarifas v4 (anexo_tarifas_cecilia_gutierrez_v4.pdf).
- * Lo que no está en el anexo va como CONFIRMAR: en la web se ve "Valor en consulta" y,
- * en `npm run dev`, una etiqueta CONFIRMAR para que salte a la vista. Al tener el valor,
- * reemplazá CONFIRMAR por el número (en pesos, sin puntos: 2400).
+ * Los precios VIGENTES los carga Ceci desde el panel (/admin → Precios) y viven en la
+ * base (tabla `precios`, ver src/lib/precios-vigentes.ts). Los valores de este archivo
+ * son los INICIALES y el RESPALDO: se usan para todo tratamiento que Ceci no tocó en el
+ * panel, y para todos si la base no responde.
+ *
+ * Fuente: anexo de tarifas v4 (anexo_tarifas_cecilia_gutierrez_v4.pdf). Lo que no estaba
+ * en el anexo va como CONFIRMAR: en la web se ve "Valor en consulta" y, en
+ * `npm run dev`, una etiqueta CONFIRMAR para que salte a la vista.
  */
 
 export const CONFIRMAR = 'CONFIRMAR' as const;
@@ -17,6 +21,8 @@ export const CONFIRMAR = 'CONFIRMAR' as const;
 export type Precio = number | typeof CONFIRMAR;
 
 export type Tratamiento = {
+  /** Clave fija (no cambiarla): con ella se guarda el precio editado desde el panel. */
+  id: string;
   nombre: string;
   descripcion: string;
   /** Valor de una sesión. */
@@ -45,6 +51,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
     intro: 'El punto de partida de toda piel saludable: limpiar, renovar y preparar.',
     tratamientos: [
       {
+        id: 'higiene-profunda',
         nombre: 'Higiene Profunda con Extracciones',
         descripcion:
           'Elimina impurezas, exceso de oleosidad y comedones, mejorando la oxigenación y ' +
@@ -53,6 +60,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 12000,
       },
       {
+        id: 'microdermoabrasion',
         nombre: 'Microdermoabrasión con Puntas de Diamante',
         descripcion:
           'Renovación suave y controlada de la superficie cutánea. Mejora la textura, ' +
@@ -61,6 +69,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 9900,
       },
       {
+        id: 'dermaplaning',
         nombre: 'Dermaplaning',
         descripcion:
           'Exfoliación física que elimina células superficiales y vello fino. La piel luce ' +
@@ -69,6 +78,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: CONFIRMAR,
       },
       {
+        id: 'peelings',
         nombre: 'Peelings Químicos',
         descripcion:
           'Renovación celular adaptada a cada estación del año. Ayuda a mitigar manchas, ' +
@@ -85,6 +95,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
     intro: 'Devolver confort, elasticidad y vitalidad a la piel.',
     tratamientos: [
       {
+        id: 'hidratacion-shock',
         nombre: 'Hidratación Shock',
         descripcion:
           'Devuelve de forma inmediata el confort, la elasticidad y la luminosidad a pieles ' +
@@ -93,6 +104,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: CONFIRMAR,
       },
       {
+        id: 'mesoterapia-facial',
         nombre: 'Mesoterapia Facial',
         descripcion:
           'Aplicación experta de activos como vitaminas, ácido hialurónico y péptidos para ' +
@@ -101,6 +113,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 16200,
       },
       {
+        id: 'meso-lips',
         nombre: 'Meso Lips',
         descripcion:
           'Tratamiento exclusivo para mejorar la hidratación y revitalización profunda de los ' +
@@ -117,6 +130,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
     intro: 'Estímulo del colágeno y corrección con tecnología de última generación.',
     tratamientos: [
       {
+        id: 'microneedling',
         nombre: 'Microneedling',
         descripcion:
           'Estimula los mecanismos naturales de reparación cutánea y favorece la producción ' +
@@ -125,6 +139,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 16200,
       },
       {
+        id: 'radiofrecuencia-facial',
         nombre: 'Radiofrecuencia Facial',
         descripcion:
           'Tecnología no invasiva que estimula nuevas fibras de colágeno, mejorando la firmeza ' +
@@ -133,6 +148,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: CONFIRMAR,
       },
       {
+        id: 'ipl-facial',
         nombre: 'Luz Pulsada Intensa (IPL)',
         descripcion:
           'Procedimiento médico-estético versátil para trabajar manchas, rojeces difusas y un ' +
@@ -141,6 +157,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 13200,
       },
       {
+        id: 'despigmentantes',
         nombre: 'Tratamientos Despigmentantes',
         descripcion:
           'Protocolos altamente personalizados para corregir alteraciones pigmentarias y ' +
@@ -157,6 +174,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
     intro: 'Revitalización del folículo y un entorno biológico sano para el cabello.',
     tratamientos: [
       {
+        id: 'radiofrecuencia-capilar',
         nombre: 'Radiofrecuencia Capilar',
         descripcion:
           'Favorece la microcirculación del cuero cabelludo y mejora el entorno biológico para ' +
@@ -165,6 +183,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 11000,
       },
       {
+        id: 'mesoterapia-capilar',
         nombre: 'Mesoterapia Capilar',
         descripcion:
           'Aplicación localizada de activos para fortalecer y revitalizar el folículo piloso en ' +
@@ -181,6 +200,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
     intro: 'Cuidado corporal de alta gama, zona por zona.',
     tratamientos: [
       {
+        id: 'ultracavitacion',
         nombre: 'Ultracavitación & Mesoterapia Corporal',
         descripcion:
           'Remodelación corporal: ayuda a reducir la adiposidad localizada y a mejorar el aspecto ' +
@@ -190,6 +210,7 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         paquete6: 13200,
       },
       {
+        id: 'ipl-corporal',
         nombre: 'Luz Pulsada Intensa (IPL) Corporal',
         descripcion:
           'Depilación progresiva y tratamientos rejuvenecedores adaptados a cada zona y ' +
@@ -206,24 +227,3 @@ export function formatUYU(n: number): string {
   return '$' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
-/**
- * Menor valor de sesión de la categoría, solo si TODOS sus tratamientos tienen valor
- * (si falta alguno, el "desde" podría ser falso, así que no se muestra).
- */
-export function precioDesde(cat: CategoriaTratamiento): number | null {
-  const precios = cat.tratamientos.map((t) => t.precio);
-  if (precios.some((p) => p === CONFIRMAR)) return null;
-  return Math.min(...(precios as number[]));
-}
-
-/** Lista de valores que faltan confirmar con Ceci (para avisos de build y checklist). */
-export function preciosPendientes(): string[] {
-  const out: string[] = [];
-  for (const cat of categoriasTratamientos) {
-    for (const t of cat.tratamientos) {
-      if (t.precio === CONFIRMAR) out.push(`${t.nombre}: valor por sesión`);
-      if (t.paquete6 === CONFIRMAR) out.push(`${t.nombre}: paquete de 6`);
-    }
-  }
-  return out;
-}

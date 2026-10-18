@@ -6,6 +6,14 @@ import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
 import { site, whatsappLink } from '../data/site';
 import { SENA_UYU, senaOnline } from '../lib/precios';
+import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
+import { cacheCdn } from '../lib/cache';
+
+// SSR con caché de CDN: el precio de cada modalidad es el que Ceci carga en
+// /admin → Precios, sin redeploy. La seña sigue fija (src/lib/precios.ts).
+export const prerender = false;
+cacheCdn(Astro.response);
+const precios = await leerPrecios();
 import {
   CONCEPTO_PREFIJO,
   POLITICA_CANCELACION,
@@ -22,7 +30,7 @@ const items = modalidades.map((m) => ({
   id: m.id,
   nombre: m.nombre,
   subtitulo: m.subtitulo,
-  precio: m.precio ?? 'A coordinar',
+  precio: precioModalidadTexto(precios, m) ?? 'A coordinar',
   precioNota: m.precioNota ?? '',
   esMembresia: m.id === 'club', // el Club es membresía anual, no turno suelto
   // La web cobra una seña, no el total: el saldo se abona en la consulta. No se

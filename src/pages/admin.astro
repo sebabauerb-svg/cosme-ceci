@@ -5,6 +5,7 @@ import Base from '../layouts/Base.astro';
 import { isAdmin } from '../lib/admin';
 import { getSql, ensureFranjas, ensureDuracionMin, ensureConfirmacion } from '../lib/db';
 import { whatsappConfigurado } from '../lib/whatsapp';
+import { itemsVigentes, type ItemPrecio } from '../lib/precios-vigentes';
 
 // WhatsApp automático: cambia los textos del panel ("te avisamos por WhatsApp").
 const waAuto = whatsappConfigurado();
@@ -38,6 +39,8 @@ function fmtFechaTabla(iso?: string | null) {
 }
 
 let reservas: any[] = [];
+// Pestaña Precios: catálogo agrupado con los valores vigentes (base o código).
+const gruposPrecios: { grupo: string; items: ItemPrecio[] }[] = [];
 let dbError = '';
 
 if (authed) {
@@ -55,6 +58,12 @@ if (authed) {
     `) as any[];
   } catch (e) {
     dbError = e instanceof Error ? e.message : String(e);
+  }
+  // itemsVigentes() nunca lanza: si la base falla, trae los valores del código.
+  for (const it of await itemsVigentes()) {
+    const g = gruposPrecios.find((x) => x.grupo === it.grupo);
+    if (g) g.items.push(it);
+    else gruposPrecios.push({ grupo: it.grupo, items: [it] });
   }
 }
 ---
@@ -89,6 +98,7 @@ if (authed) {
             <button class="tab" data-ir="agenda" aria-current="true">Agenda</button>
             <button class="tab" data-ir="reservas">Reservas</button>
             <button class="tab" data-ir="seguimiento">Seguimiento</button>
+            <button class="tab" data-ir="precios">Precios</button>
           </nav>
 
           <section class="card" data-tab="agenda">
@@ -174,6 +184,59 @@ if (authed) {
               </div>
             </div>
             <div id="por-confirmar"><p class="ag-vacia">Cargando…</p></div>
+          </section>
+
+          <section class="card pr" data-tab="precios">
+            <div class="card__head">
+              <div>
+                <h2>Precios</h2>
+                <p class="muted">Lo que ve la gente en la web. Escribí el valor en pesos, sin puntos. Si no querés mostrar un precio, marcá «Valor en consulta». Los cambios se ven en la web en alrededor de un minuto.</p>
+                <p class="muted">La seña para reservar online no cambia desde acá.</p>
+              </div>
+            </div>
+            <form id="pr-form" novalidate>
+              {gruposPrecios.map((g) => (
+                <fieldset class="pr-grupo">
+                  <legend>{g.grupo}</legend>
+                  {g.items.map((it) => (
+                    <div class="pr-item" data-clave={it.clave}>
+                      <div class="pr-item__nom">
+                        <span>{it.nombre}{it.unidad && <small> ({it.unidad})</small>}</span>
+                        {it.pendiente && <span class="pr-pend">Falta cargar</span>}
+                      </div>
+                      <div class="pr-campos">
+                        <label class="pr-campo">
+                          <span>{it.conPaquete ? 'Sesión' : 'Valor'}</span>
+                          <span class="pr-input">
+                            <i aria-hidden="true">$</i>
+                            <input type="text" inputmode="numeric" autocomplete="off" name="precio"
+                              value={it.precio ?? ''} disabled={it.precio == null} placeholder="—" />
+                          </span>
+                        </label>
+                        {it.conPaquete && (
+                          <label class="pr-campo">
+                            <span>Paquete de 6</span>
+                            <span class="pr-input">
+                              <i aria-hidden="true">$</i>
+                              <input type="text" inputmode="numeric" autocomplete="off" name="paquete6"
+                                value={it.paquete6 ?? ''} disabled={it.precio == null} placeholder="Sin paquete" />
+                            </span>
+                          </label>
+                        )}
+                      </div>
+                      <label class="pr-consulta">
+                        <input type="checkbox" name="consulta" checked={it.precio == null} />
+                        Valor en consulta (no mostrar precio)
+                      </label>
+                    </div>
+                  ))}
+                </fieldset>
+              ))}
+              <div class="pr-barra">
+                <span id="pr-msg" class="pr-msg" role="status"></span>
+                <button type="submit" class="btn btn--primary" id="pr-guardar" disabled>Guardar precios</button>
+              </div>
+            </form>
           </section>
 
           <section class="card" data-tab="seguimiento">
@@ -301,6 +364,96 @@ if (authed) {
       if (guardada && [...tabs].some((t) => t.dataset.ir === guardada)) inicial = guardada;
     } catch { /* modo privado */ }
     mostrar(inicial);
+  })();
+
+  // ---------- Precios ----------
+  (() => {
+    const form = document.getElementById('pr-form') as HTMLFormElement | null;
+    if (!form) return;
+    const btn = document.getElementById('pr-guardar') as HTMLButtonElement;
+    const msg = document.getElementById('pr-msg') as HTMLElement;
+    const items = [...form.querySelectorAll<HTMLElement>('.pr-item')];
+    const aviso = (t: string, error = false) => {
+      msg.textContent = t;
+      msg.classList.toggle('is-error', error);
+    };
+    // "2.400" o "$ 2400" → 2400; vacío → null; cualquier otra cosa → NaN.
+    const leer = (v: string): number | null => {
+      const limpio = v.replace(/[\s.$]/g, '');
+      if (!limpio) return null;
+      return /^\d+$/.test(limpio) ? Number(limpio) : NaN;
+    };
+    const ensuciar = () => {
+      btn.disabled = false;
+      aviso('Tenés cambios sin guardar.');
+    };
+    window.addEventListener('beforeunload', (e) => {
+      if (!btn.disabled) e.preventDefault();
+    });
+
+    items.forEach((it) => {
+      const check = it.querySelector<HTMLInputElement>('input[name="consulta"]')!;
+      const inputs = [...it.querySelectorAll<HTMLInputElement>('input[type="text"]')];
+      inputs.forEach((i) =>
+        i.addEventListener('input', () => {
+          i.classList.remove('is-mal');
+          ensuciar();
+        })
+      );
+      check.addEventListener('change', () => {
+        inputs.forEach((i) => (i.disabled = check.checked));
+        if (!check.checked) inputs[0]?.focus();
+        ensuciar();
+      });
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const precios: { clave: string; precio: number | null; paquete6: number | null }[] = [];
+      let primeroMal: HTMLInputElement | null = null;
+      for (const it of items) {
+        const enConsulta = it.querySelector<HTMLInputElement>('input[name="consulta"]')!.checked;
+        if (enConsulta) {
+          precios.push({ clave: it.dataset.clave!, precio: null, paquete6: null });
+          continue;
+        }
+        const inP = it.querySelector<HTMLInputElement>('input[name="precio"]')!;
+        const inK = it.querySelector<HTMLInputElement>('input[name="paquete6"]');
+        const precio = leer(inP.value);
+        const paquete6 = inK ? leer(inK.value) : null;
+        // Sin «Valor en consulta», el valor por sesión es obligatorio.
+        if (precio == null || Number.isNaN(precio)) {
+          inP.classList.add('is-mal');
+          primeroMal ??= inP;
+        }
+        if (inK && Number.isNaN(paquete6)) {
+          inK.classList.add('is-mal');
+          primeroMal ??= inK;
+        }
+        precios.push({ clave: it.dataset.clave!, precio, paquete6 });
+      }
+      if (primeroMal) {
+        aviso('Revisá los campos marcados: solo números, o marcá «Valor en consulta».', true);
+        primeroMal.focus();
+        return;
+      }
+      btn.disabled = true;
+      aviso('Guardando…');
+      try {
+        const r = await fetch('/api/admin/precios', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ precios }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) throw new Error(d.error || 'No se pudo guardar.');
+        form.querySelectorAll('.pr-pend').forEach((el) => el.remove());
+        aviso('Listo, precios guardados. En un minuto se ven en la web.');
+      } catch (err) {
+        btn.disabled = false;
+        aviso(err instanceof Error ? err.message : 'No se pudo guardar.', true);
+      }
+    });
   })();
 
   // ---------- Login ----------
@@ -1496,6 +1649,36 @@ if (authed) {
   .login__err { color: var(--clay-deep); font-size: 0.9rem; margin-top: 0.8rem; }
 
   /* Pestañas del panel: una por tarea de Ceci. */
+  /* Precios */
+  .pr-grupo { border: 0; padding: 0; margin: 1.6rem 0 0; min-width: 0; }
+  .pr-grupo legend { font-size: 0.74rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--clay-deep); font-weight: 600; margin-bottom: 0.4rem; }
+  .pr-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.5rem 1.2rem; padding: 0.9rem 0; border-top: 1px solid var(--sand); }
+  .pr-item__nom { font-weight: 600; color: var(--ink); display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; }
+  .pr-item__nom small { font-weight: 400; color: var(--ink-soft); }
+  .pr-pend { font-size: 0.72rem; font-weight: 700; padding: 0.12rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--clay) 18%, var(--white)); color: var(--clay-deep); }
+  .pr-campos { display: flex; gap: 0.8rem; }
+  .pr-campo { display: grid; gap: 0.2rem; font-size: 0.78rem; color: var(--ink-soft); }
+  .pr-input { display: flex; align-items: center; gap: 0.3rem; padding: 0 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); }
+  .pr-input:focus-within { border-color: var(--sage); box-shadow: 0 0 0 2px color-mix(in srgb, var(--sage) 25%, transparent); }
+  .pr-input i { font-style: normal; color: var(--ink-soft); }
+  .pr-input input { font: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; width: 6.5em; padding: 0.55rem 0; border: 0; background: none; color: var(--ink); outline: none; }
+  .pr-input:has(input:disabled) { background: var(--cream-deep); opacity: 0.6; }
+  .pr-input:has(input.is-mal) { border-color: var(--clay-deep); box-shadow: 0 0 0 2px color-mix(in srgb, var(--clay) 30%, transparent); }
+  .pr-consulta { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; color: var(--ink-soft); cursor: pointer; justify-self: start; }
+  .pr-consulta input { width: 1.15rem; height: 1.15rem; accent-color: var(--sage-deep); }
+  .pr-barra { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 0.6rem 1rem; margin-top: 1.2rem; padding: 0.9rem 0; background: var(--white); border-top: 1px solid var(--sand); }
+  .pr-msg { font-size: 0.88rem; color: var(--ink-soft); }
+  .pr-msg.is-error { color: var(--clay-deep); font-weight: 600; }
+  .pr-barra .btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+  @media (max-width: 640px) {
+    .pr-item { grid-template-columns: 1fr; }
+    .pr-campos { gap: 0.6rem; }
+    .pr-campo { flex: 1; min-width: 0; }
+    .pr-input input { width: 100%; min-width: 0; }
+    .pr-barra .btn { flex: 1; justify-content: center; }
+    .pr-msg { flex-basis: 100%; }
+  }
+
   .tabs {
     display: flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.3rem; margin-bottom: 1.8rem;
     background: var(--cream-deep); border-radius: var(--radius);

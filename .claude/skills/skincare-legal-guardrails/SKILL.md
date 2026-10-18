@@ -29,8 +29,9 @@ Médica* y usa términos como *diagnóstico*, *evaluación clínica* e *historia
 5. **Testimonios reales y con permiso.** Que hablen de experiencia, trato y personalización, no
    de curas. Marcar los de ejemplo como `CONFIRMAR` hasta tener reales.
 6. **Precios coherentes.** Desde oct-2026 (pedido de Ceci) la web muestra el valor de cada
-   modalidad y tratamiento. Cuidá que: (a) salgan de `src/data/` y coincidan con
-   `src/lib/precios.ts` para lo que se cobra online; (b) se presenten como **valores de
+   modalidad y tratamiento, editables por Ceci en `/admin` → Precios. Cuidá que: (a) se lean
+   con `leerPrecios()` (nunca hardcodeados en la copy) y que la seña online siga fija en
+   `src/lib/precios.ts`; (b) se presenten como **valores de
    referencia** por sesión, con el plan final definido en consulta (ver `/aviso-legal` §2);
    (c) nunca se inventen: lo que Ceci no pasó va como `CONFIRMAR`.
 7. **Independencia (alcance acotado).** El ángulo "consumo consciente / no se trata de comprar

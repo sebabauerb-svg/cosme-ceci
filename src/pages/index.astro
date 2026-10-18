@@ -14,6 +14,13 @@ import Reserva from '../components/Reserva.astro';
 import FAQ from '../components/FAQ.astro';
 import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
+import { cacheCdn } from '../lib/cache';
+
+// La home se renderiza en el servidor (no en el build) para mostrar los precios
+// que Ceci carga en /admin → Precios sin redeploy. La CDN de Vercel la guarda
+// 60 s, así que la base se consulta como mucho ~1 vez por minuto.
+export const prerender = false;
+cacheCdn(Astro.response);
 ---
 
 <Base>

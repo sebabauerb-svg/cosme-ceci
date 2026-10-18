@@ -1,4 +1,11 @@
 ---
+import { modalidades } from '../data/modalidades';
+import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
+
+const precios = await leerPrecios();
+const presencial = modalidades.find((m) => m.id === 'presencial');
+const valorConsulta = presencial && precioModalidadTexto(precios, presencial);
+
 const faqs = [
   {
     q: '¿Atendés presencial y online?',
@@ -12,8 +19,10 @@ const faqs = [
     a:
       'Es una evaluación clínica completa: analizamos el estado de tu piel, tus antecedentes y ' +
       'objetivos, armamos tu historia clínica estética y diseñamos tu primer protocolo ' +
-      'personalizado. Tiene un valor de $1.800, que se bonifica si contratás un protocolo el ' +
-      'mismo día.',
+      'personalizado. ' +
+      (valorConsulta
+        ? `Tiene un valor de ${valorConsulta}, que se bonifica si contratás un protocolo el mismo día.`
+        : 'Su valor se bonifica si contratás un protocolo el mismo día.'),
   },
   {
     q: '¿Los valores de los tratamientos son finales?',
