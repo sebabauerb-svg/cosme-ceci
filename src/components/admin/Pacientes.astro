@@ -503,8 +503,10 @@ const catalogo = categoriasTratamientos.map((c) => ({
   .pc-seg__nota { color: var(--ink-soft); }
   .pc-seg__btn { font-size: 0.85rem; margin-top: 0.4rem; }
   .pc-consent-aviso { margin: -0.2rem 0 0.6rem; color: var(--clay-deep); }
-  .pc-ed { display: grid; gap: 0.8rem; margin-top: 0.7rem; padding: 0.9rem; border-radius: var(--radius-sm); background: var(--cream-deep); }
-  .pc-ed__lista { display: grid; gap: 0.6rem; }
+  /* minmax(0, 1fr): sin esto el <select> (nombres largos) estira la grilla en mobile. */
+  .pc-ed { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.8rem; margin-top: 0.7rem; padding: 0.9rem; border-radius: var(--radius-sm); background: var(--cream-deep); }
+  .pc-ed__lista { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
+  .pc-ed textarea { width: 100%; }
   .pc-ed__trat { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
   .pc-ed__trat select, .pc-ed__trat input, .pc-ed textarea {
     font: inherit; font-size: 0.9rem; padding: 0.45rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
