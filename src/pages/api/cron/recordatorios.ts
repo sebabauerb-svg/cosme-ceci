@@ -116,8 +116,11 @@ export const GET: APIRoute = async ({ request }) => {
     console.log(`cron recordatorios: ${enviados} enviado(s) para ${manana} (${whatsapps} por WhatsApp)`);
 
     // "Volvé a consultar". Aparte: si falla, los recordatorios de turno ya salieron.
-    let vueltas: unknown = 'omitido (no es producción)';
-    if (process.env.VERCEL_ENV === 'production' || import.meta.env.DEV) {
+    // Interruptor: arranca apagado para que Ceci valide las fichas antes de que
+    // salga ningún aviso automático. Se prende con VUELTA_ACTIVA=true en Vercel.
+    const vueltaActiva = process.env.VUELTA_ACTIVA === 'true';
+    let vueltas: unknown = vueltaActiva ? 'omitido (no es producción)' : 'apagado (VUELTA_ACTIVA no es "true")';
+    if ((process.env.VERCEL_ENV === 'production' && vueltaActiva) || import.meta.env.DEV) {
       try {
         await ensurePacientes(sql);
         await vincularPendientes(sql);
