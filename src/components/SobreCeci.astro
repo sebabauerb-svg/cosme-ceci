@@ -26,16 +26,20 @@ const p = site.profesional;
         combinando evaluación profesional, tecnología y activos de última generación, para
         obtener resultados naturales y sostenibles en el tiempo.
       </p>
-      <p>
-        La piel cambia con las estaciones, los hábitos y cada etapa de la vida. Por eso
-        considero fundamental acompañar a cada paciente de forma personalizada, con una
-        atención cercana donde cada tratamiento tenga una indicación clara y un objetivo
-        definido.
-      </p>
+      {/* En celular, el resto del texto queda detrás de "Leer más". */}
+      <details class="sobre__mas" data-colapsa-movil open>
+        <summary class="sobre__masBtn">Leer más</summary>
+        <p>
+          La piel cambia con las estaciones, los hábitos y cada etapa de la vida. Por eso
+          considero fundamental acompañar a cada paciente de forma personalizada, con una
+          atención cercana donde cada tratamiento tenga una indicación clara y un objetivo
+          definido.
+        </p>
 
-      <blockquote class="sobre__quote">
-        Porque una piel saludable siempre será la mejor versión de una piel bonita.
-      </blockquote>
+        <blockquote class="sobre__quote">
+          Porque una piel saludable siempre será la mejor versión de una piel bonita.
+        </blockquote>
+      </details>
 
       <a href={whatsappLink()} class="btn btn--primary" target="_blank" rel="noopener">
         Agendá tu consulta
@@ -95,6 +99,7 @@ const p = site.profesional;
     color: var(--clay);
     opacity: 0.55;
   }
+  .sobre__masBtn { display: none; }
   @media (max-width: 860px) {
     .sobre__inner { grid-template-columns: 1fr; }
     .sobre__foto { max-width: 360px; }
@@ -106,5 +111,14 @@ const p = site.profesional;
     .sobre__foto { max-width: none; aspect-ratio: 3 / 2; }
     .sobre__foto img { object-position: 50% 22%; }
     .sobre__quote { font-size: 1.22rem; padding-top: 1.8rem; margin: 1.3rem 0 1.5rem; }
+    .sobre__masBtn {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      min-height: 44px; margin: -0.4rem 0 0.8rem;
+      color: var(--sage-deep); font-weight: 600; cursor: pointer; list-style: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sobre__masBtn::-webkit-details-marker { display: none; }
+    .sobre__masBtn::after { content: '▾'; font-size: 0.85em; }
+    .sobre__mas[open] .sobre__masBtn { display: none; }
   }
 </style>

@@ -132,6 +132,24 @@ const articleLd = article
         );
         els.forEach((el) => io.observe(el));
       }
+
+      // Bloques plegables solo en celular: <details data-colapsa-movil open>.
+      // Sin JS quedan abiertos; en desktop siempre abiertos (se ven como antes).
+      const plegables = document.querySelectorAll('details[data-colapsa-movil]');
+      if (plegables.length) {
+        const mq = window.matchMedia('(max-width: 760px)');
+        let ultimo = mq.matches;
+        const aplicar = (movil: boolean) =>
+          plegables.forEach((d) => (movil ? d.removeAttribute('open') : d.setAttribute('open', '')));
+        aplicar(ultimo);
+        const alCambiar = () => {
+          if (mq.matches === ultimo) return;
+          ultimo = mq.matches;
+          aplicar(ultimo);
+        };
+        mq.addEventListener('change', alCambiar);
+        window.addEventListener('resize', alCambiar, { passive: true });
+      }
     </script>
   </body>
 </html>
