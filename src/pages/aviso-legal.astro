@@ -58,12 +58,16 @@ const marca = `${site.marca.nombre} · ${site.marca.subtitulo}`;
         <h2>5. Uso de tu email</h2>
         <p>
           Tratamos tu email según la Ley N.º 18.331 de Protección de Datos Personales de Uruguay.
-          La responsable es {marca}. Lo usamos para dos cosas, y solo para esas:
+          La responsable es {marca}. Lo usamos para tres cosas, y solo para esas:
         </p>
         <ul>
           <li>
             <strong>Avisos de tu turno</strong> (confirmación, cambios y recordatorio), si
             reservás por la web. Son parte del servicio que pediste.
+          </li>
+          <li>
+            <strong>Invitación a tu consulta de seguimiento</strong>, un mes después de una
+            consulta, si no tenés otro turno agendado (ver el punto 6).
           </li>
           <li>
             <strong>Novedades por email</strong>, solo si lo pediste marcando la casilla de
@@ -85,6 +89,42 @@ const marca = `${site.marca.nombre} · ${site.marca.subtitulo}`;
           {site.contacto.email ? <a href={`mailto:${site.contacto.email}`}>{site.contacto.email}</a> : 'nuestro email de contacto'}.
           Si considerás que no se respetaron tus derechos, podés acudir a la Unidad Reguladora y de
           Control de Datos Personales (URCDP).
+        </p>
+      </section>
+
+      <section id="pacientes">
+        <h2>6. Datos personales de pacientes</h2>
+        <p>
+          Conforme a la Ley N° 18.331 de Protección de Datos Personales, te contamos qué datos
+          guardamos, para qué y cómo ejercer tus derechos. La responsable de la base es
+          {site.marca.nombre}.
+        </p>
+        <p>
+          <strong>Qué guardamos.</strong> Tu nombre, teléfono y email; tu fecha de nacimiento, solo
+          si nos la das; y el registro de tus turnos (fecha, modalidad, sede, estado y la seña
+          abonada). La ficha puede llevar notas de contacto o de agenda, como el horario que
+          preferís. No guarda diagnósticos ni datos de salud.
+        </p>
+        <p>
+          <strong>Para qué.</strong> Para coordinar y confirmar tus turnos, avisarte de ellos por
+          email o WhatsApp y, un mes después de una consulta, si no tenés otro turno agendado,
+          invitarte a coordinar la de seguimiento. La fecha de nacimiento es opcional: sirve para
+          identificarte sin confusiones y para tener en cuenta tu etapa de vida al recomendarte
+          cuidados para tu piel.
+        </p>
+        <p>
+          <strong>Con quién.</strong> No la usamos para otros fines ni la compartimos con terceros.
+          Se guarda en los servicios que usamos para que el sitio funcione (alojamiento web, base
+          de datos, envío de emails y de mensajes de WhatsApp), que la procesan solo por encargo
+          nuestro.
+        </p>
+        <p>
+          <strong>Tus derechos.</strong> Podés pedir en cualquier momento acceder a tus datos,
+          corregirlos, actualizarlos o eliminarlos, escribiendo a
+          <a href={`mailto:${site.contacto.email}`}>{site.contacto.email}</a> o por WhatsApp al
+          {' '}{site.contacto.whatsappDisplay}. Si no querés recibir más la invitación a la consulta de
+          seguimiento, usá el link que viene en cada mensaje o pedínoslo; los avisos de tus turnos
+          te siguen llegando igual.
         </p>
       </section>
 

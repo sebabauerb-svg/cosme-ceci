@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensureGestion } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensureGestion, ensurePacientes } from '../../../lib/db';
+import { vincularPendientes } from '../../../lib/pacientes';
 import { isAdmin } from '../../../lib/admin';
 import { SENA_UYU } from '../../../lib/precios';
 import { leerPrecios, precioModalidad } from '../../../lib/precios-vigentes';
@@ -163,6 +164,16 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       if (e && (e.length > 160 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)))
         return json({ ok: false, error: 'Email inválido' }, 400);
       await sql`update reservas set email = ${e || null} where id = ${id}`;
+    }
+    // Con teléfono o email nuevos, una reserva suelta (ej. marcada a mano) ya
+    // puede encontrar su ficha. Las ya vinculadas no se tocan.
+    if ('telefono' in body || 'email' in body) {
+      try {
+        await ensurePacientes(sql);
+        await vincularPendientes(sql, id);
+      } catch (e) {
+        console.error('gestion → ficha:', e instanceof Error ? e.message : e);
+      }
     }
     if (body?.recordado === true) {
       await sql`update reservas set recordatorio_at = now() where id = ${id}`;

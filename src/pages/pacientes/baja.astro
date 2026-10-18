@@ -1,0 +1,74 @@
+---
+export const prerender = false;
+
+import Base from '../../layouts/Base.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { getSql, ensurePacientes } from '../../lib/db';
+import { darDeBajaVuelta, tokenValido } from '../../lib/pacientes';
+
+// Baja del "volvé a consultar", sin login: el link de cada mensaje trae
+// ?t=<token>. Se pide un clic (POST) en vez de dar de baja al abrir la página,
+// porque algunos programas de correo abren los links solos para revisarlos.
+const t = Astro.url.searchParams.get('t');
+let estado: 'pedir' | 'hecho' | 'invalido' | 'error' = tokenValido(t) ? 'pedir' : 'invalido';
+
+if (estado === 'pedir' && Astro.request.method === 'POST') {
+  try {
+    const sql = getSql();
+    await ensurePacientes(sql);
+    estado = (await darDeBajaVuelta(sql, t!)) ? 'hecho' : 'invalido';
+  } catch (e) {
+    console.error('pacientes/baja:', e instanceof Error ? e.message : e);
+    estado = 'error';
+  }
+}
+if (estado === 'invalido') Astro.response.status = 404;
+---
+
+<Base title="Recordatorios de seguimiento" path="/pacientes/baja" noindex>
+  <Nav />
+  <main id="contenido" class="section pc-baja">
+    <div class="container pc-baja__wrap">
+      {estado === 'pedir' && (
+        <>
+          <h1>¿Dejar de recibir los recordatorios de seguimiento?</h1>
+          <p class="pc-baja__lead">Son los mensajes que te invitan a agendar tu próxima consulta un mes después de la última. Los avisos de tus turnos te siguen llegando igual.</p>
+          <form method="post" class="pc-baja__actions">
+            <button type="submit" class="btn btn--primary">Sí, no quiero recibirlos</button>
+            <a href="/" class="btn btn--ghost">No, seguir recibiéndolos</a>
+          </form>
+        </>
+      )}
+      {estado === 'hecho' && (
+        <>
+          <h1>Listo, no te los vamos a mandar más</h1>
+          <p class="pc-baja__lead">Cuando quieras volver a consultar, podés reservar tu turno en la web o escribirnos por WhatsApp.</p>
+          <div class="pc-baja__actions"><a href="/reservar" class="btn btn--ghost">Reservar un turno</a></div>
+        </>
+      )}
+      {estado === 'invalido' && (
+        <>
+          <h1>Este link no es válido</h1>
+          <p class="pc-baja__lead">Puede que esté incompleto. Usá el link del último mensaje que recibiste, o escribinos y lo hacemos por vos.</p>
+        </>
+      )}
+      {estado === 'error' && (
+        <>
+          <h1>No pudimos registrarlo ahora</h1>
+          <p class="pc-baja__lead">Hubo un problema de nuestro lado. Probá de nuevo en unos minutos.</p>
+          <form method="post" class="pc-baja__actions"><button type="submit" class="btn btn--primary">Reintentar</button></form>
+        </>
+      )}
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .pc-baja { padding-block: clamp(4rem, 10vw, 7rem); }
+  .pc-baja__wrap { max-width: 560px; margin-inline: auto; text-align: center; }
+  .pc-baja__wrap h1 { margin: 0.4rem 0 1rem; }
+  .pc-baja__lead { color: var(--ink-soft); margin-bottom: 2rem; }
+  .pc-baja__actions { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; }
+</style>

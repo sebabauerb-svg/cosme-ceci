@@ -240,3 +240,43 @@ export async function ensurePrecios(sql: any) {
     )
   `;
 }
+
+/**
+ * Fichas de pacientes (idempotente). Ver supabase/migrations/0008_pacientes.sql
+ * y src/lib/pacientes.ts.
+ *  - tel_norm / email_norm: teléfono y email normalizados, para reconocer a la
+ *    misma paciente entre reservas aunque los haya escrito distinto.
+ *  - fecha_nacimiento: opcional, la carga Ceci (ver el aviso legal: para qué).
+ *  - notas: de contacto/agenda. NO datos clínicos.
+ *  - recordatorio_activo: Ceci apaga el "volvé a consultar" de esta paciente.
+ *  - baja_recordatorios_at: la paciente pidió no recibirlo (link de baja).
+ *  - token_baja: va en el link de baja, sin login.
+ * En reservas: paciente_id (la ficha) y vuelta_avisada_at (marca de que ya se
+ * mandó el "volvé a consultar" por ESA consulta: uno solo por consulta).
+ */
+export async function ensurePacientes(sql: any) {
+  await sql`
+    create table if not exists pacientes (
+      id uuid primary key default gen_random_uuid(),
+      nombre text not null,
+      fecha_nacimiento date,
+      email text,
+      telefono text,
+      tel_norm text,
+      email_norm text,
+      notas text,
+      recordatorio_activo boolean not null default true,
+      baja_recordatorios_at timestamptz,
+      token_baja text not null default replace(gen_random_uuid()::text, '-', ''),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`create unique index if not exists pacientes_token_baja on pacientes (token_baja)`;
+  await sql`create index if not exists pacientes_tel_norm on pacientes (tel_norm)`;
+  await sql`create index if not exists pacientes_email_norm on pacientes (email_norm)`;
+  await sql`alter table reservas add column if not exists paciente_id uuid references pacientes(id) on delete set null`;
+  await sql`alter table reservas add column if not exists vuelta_avisada_at timestamptz`;
+  await sql`create index if not exists reservas_paciente on reservas (paciente_id)`;
+  await sql`alter table pacientes enable row level security`;
+}

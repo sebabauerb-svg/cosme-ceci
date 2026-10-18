@@ -28,13 +28,15 @@
 import { site } from '../data/site';
 import { sedeConDireccion } from '../data/sedes';
 
-export type PlantillaWA = 'confirmado' | 'movido' | 'recordatorio';
+export type PlantillaWA = 'confirmado' | 'movido' | 'recordatorio' | 'volver';
 
 /** Nombre de cada plantilla tal como se carga en el proveedor. */
 export const NOMBRES_PLANTILLA: Record<PlantillaWA, string> = {
   confirmado: 'turno_confirmado',
   movido: 'turno_movido',
   recordatorio: 'turno_recordatorio',
+  // "Volvé a consultar" (src/lib/pacientes.ts). Categoría Marketing en Meta.
+  volver: 'consulta_seguimiento',
 };
 
 /** Las que llevan el botón "Cambiar horario" (link a /mi-turno?c=<código>). */
@@ -53,6 +55,8 @@ export type DatosTurnoWA = {
   token?: string | null;
   /** solo recordatorio: línea de cobro ya armada */
   cobro?: string | null;
+  /** solo volver: código del link de baja (segundo botón de la plantilla) */
+  tokenBaja?: string | null;
 };
 
 export type ResultadoWA = { ok: boolean; error?: string };
@@ -108,6 +112,8 @@ const limpiar = (s: unknown) =>
 
 /** Los huecos de cada plantilla, en orden. Ver la guía para el texto completo. */
 export function parametrosPlantilla(p: PlantillaWA, d: DatosTurnoWA): string[] {
+  // consulta_seguimiento: un solo hueco, el nombre.
+  if (p === 'volver') return [limpiar(d.nombre.trim().split(/\s+/)[0] || d.nombre)];
   const base = [
     d.nombre,
     d.servicio,
@@ -152,6 +158,11 @@ export async function enviarWhatsApp(
     // Botón "Cambiar horario": la URL base está en la plantilla y acá va solo
     // la parte variable (el código de la reserva).
     components.push({ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: d.token }] });
+  }
+  if (plantilla === 'volver' && d.tokenBaja) {
+    // Botón 0 "Agendar consulta" es fijo (/reservar); el 1 "No recibir más"
+    // lleva el código de baja de la paciente.
+    components.push({ type: 'button', sub_type: 'url', index: '1', parameters: [{ type: 'text', text: d.tokenBaja }] });
   }
   const template = { name: NOMBRES_PLANTILLA[plantilla], language: { code: cfg.lang }, components };
 

@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureFranjas } from '../../../lib/db';
+import { getSql, ensureFranjas, ensurePacientes } from '../../../lib/db';
+import { vincularPendientes } from '../../../lib/pacientes';
 import { sedeKeyDeSlug } from '../../../lib/agenda';
 import { isAdmin } from '../../../lib/admin';
 
@@ -40,10 +41,18 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const sql = getSql();
     const sid = await sedeId(sql, sede);
     try {
-      await sql`
+      const ins = await sql`
         insert into reservas (modalidad, sede_id, fecha, hora, nombre, telefono, estado)
         values ('manual', ${sid}, ${fecha}, ${hora}, ${nombre}, '—', 'confirmada')
+        returning id
       `;
+      // Sin teléfono ni email: se vincula solo si hay UNA ficha con ese nombre.
+      try {
+        await ensurePacientes(sql);
+        await vincularPendientes(sql, String(ins[0].id));
+      } catch (e) {
+        console.error('reserva-manual → ficha:', e instanceof Error ? e.message : e);
+      }
     } catch (e: any) {
       if (e?.code === '23505' || String(e?.message ?? e).includes('reservas_slot_unico'))
         return json({ ok: false, error: 'Ese turno ya está ocupado.' }, 409);
