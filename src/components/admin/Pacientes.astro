@@ -4,7 +4,17 @@
  * (datos de contacto, fecha de nacimiento, notas, historial de turnos) y el
  * estado del recordatorio "volvé a consultar". Datos: /api/admin/pacientes.
  * Va aparte de admin.astro para que ese archivo no siga creciendo.
+ *
+ * Seguimiento por consulta (tratamientos hechos + nota de evolución): son datos
+ * de salud, así que solo se habilita con la fecha del consentimiento firmado.
  */
+import { categoriasTratamientos } from '../../data/tratamientos';
+
+// Catálogo para el selector de tratamientos, agrupado como en la web.
+const catalogo = categoriasTratamientos.map((c) => ({
+  grupo: `${c.grupo} · ${c.titulo}`,
+  items: c.tratamientos.map((t) => ({ id: t.id, nombre: t.nombre })),
+}));
 ---
 
 <section class="card" data-tab="pacientes">
@@ -41,10 +51,15 @@
           <input type="email" name="email" maxlength="160" autocomplete="off" />
         </label>
       </div>
-      <label class="nv-campo pc-nac">Fecha de nacimiento <span class="nv-ayuda">(opcional)</span>
-        <input type="date" name="fecha_nacimiento" />
-      </label>
-      <label class="nv-campo">Notas <span class="nv-ayuda">(de contacto o de agenda: cómo prefiere que le escriban, qué días puede. Sin diagnósticos ni datos de salud)</span>
+      <div class="nv-fila pc-fila">
+        <label class="nv-campo">Fecha de nacimiento <span class="nv-ayuda">(opcional)</span>
+          <input type="date" name="fecha_nacimiento" />
+        </label>
+        <label class="nv-campo">Consentimiento firmado <span class="nv-ayuda">(fecha; sin esto no se registran tratamientos ni evolución)</span>
+          <input type="date" name="consentimiento_fecha" />
+        </label>
+      </div>
+      <label class="nv-campo">Notas de contacto <span class="nv-ayuda">(cómo prefiere que le escriban, qué días puede. Lo de cada consulta va en su registro, en el historial)</span>
         <textarea name="notas" rows="3" maxlength="1000"></textarea>
       </label>
       <label class="nv-check">
@@ -65,7 +80,8 @@
       </div>
 
       <div class="pc-bloque">
-        <h3>Turnos</h3>
+        <h3>Historial y seguimiento</h3>
+        <p class="nv-ayuda pc-consent-aviso" id="pc-consent-aviso" hidden>Para registrar tratamientos y la evolución de cada consulta, cargá arriba la fecha del consentimiento firmado y guardá.</p>
         <div id="pc-historial"></div>
         <details class="pc-anterior">
           <summary>Cargar una consulta anterior</summary>
@@ -80,6 +96,8 @@
     </div>
   </div>
 </section>
+
+<script type="application/json" id="pc-catalogo" set:html={JSON.stringify(catalogo)} />
 
 <script>
   (() => {
@@ -101,6 +119,12 @@
     let fichaId: string | null = null;
     let bajaDesde: string | null = null;
     let reactivar = false;
+    let conConsentimiento = false;
+    let hoy = '';
+    let historial: any[] = [];
+    type Trat = { id: string; nombre: string; sesion: number | null; de: number | null };
+    const catalogo: { grupo: string; items: { id: string; nombre: string }[] }[] =
+      JSON.parse(document.getElementById('pc-catalogo')?.textContent || '[]');
 
     const campo = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
     const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -216,15 +240,108 @@
       });
     }
 
+    const opcionesTrat = (sel: string) =>
+      catalogo.map((g) => `<optgroup label="${esc(g.grupo)}">${g.items.map((t) => `<option value="${esc(t.id)}"${t.id === sel ? ' selected' : ''}>${esc(t.nombre)}</option>`).join('')}</optgroup>`).join('') +
+      `<option value="otro"${sel === 'otro' ? ' selected' : ''}>Otro (escribilo)</option>`;
+
+    const textoTrat = (t: Trat) => t.nombre + (t.sesion ? ` · sesión ${t.sesion}${t.de ? ' de ' + t.de : ''}` : '');
+
+    /** Una consulta realizada (confirmada, de hoy o antes) admite registro de atención. */
+    const esAtendible = (r: any) => r.estado === 'confirmada' && r.fecha && r.fecha <= hoy;
+
     function pintarHistorial(h: any[]) {
+      historial = h;
       const cont = document.getElementById('pc-historial')!;
+      document.getElementById('pc-consent-aviso')!.hidden = conConsentimiento || !h.some(esAtendible);
       if (!h.length) { cont.innerHTML = '<p class="ag-vacia">Sin turnos todavía.</p>'; return; }
-      cont.innerHTML = '<ul class="pc-hist">' + h.map((r) => {
+      cont.innerHTML = '<ul class="pc-hist">' + h.map((r, i) => {
         const donde = [MOD_LBL[r.modalidad] ?? r.modalidad, r.sede].filter(Boolean).join(' · ');
         const cuando = r.fecha ? fmt(r.fecha) + (r.hora ? ` · ${r.hora} h` : '') : 'Sin fecha';
-        return `<li><span class="pc-hist__f">${esc(cuando)}</span><span class="pc-hist__d">${esc(donde)}</span><span class="pc-hist__e is-${esc(r.estado)}">${esc(ESTADO_LBL[r.estado] ?? r.estado)}${r.vuelta_avisada_at ? ' · recordatorio enviado' : ''}</span></li>`;
+        const trats: Trat[] = Array.isArray(r.tratamientos) ? r.tratamientos : [];
+        const seg = [
+          trats.length ? `<p class="pc-seg__trat">${trats.map((t) => `<span class="pc-chip">${esc(textoTrat(t))}</span>`).join(' ')}</p>` : '',
+          r.evolucion ? `<p class="pc-seg__evo"><strong>Evolución:</strong> ${esc(r.evolucion)}</p>` : '',
+          r.notas && !String(r.notas).startsWith('Consulta anterior cargada') ? `<p class="pc-seg__nota"><strong>Nota del turno:</strong> ${esc(r.notas)}</p>` : '',
+        ].join('');
+        const btn = esAtendible(r) && conConsentimiento
+          ? `<button type="button" class="pc-link pc-seg__btn" data-atender="${i}">${trats.length || r.evolucion ? 'Editar registro' : 'Registrar lo que se hizo'}</button>`
+          : '';
+        return `<li data-i="${i}">
+          <div class="pc-hist__fila"><span class="pc-hist__f">${esc(cuando)}</span><span class="pc-hist__d">${esc(donde)}</span><span class="pc-hist__e is-${esc(r.estado)}">${esc(ESTADO_LBL[r.estado] ?? r.estado)}${r.vuelta_avisada_at ? ' · recordatorio enviado' : ''}</span></div>
+          ${seg ? `<div class="pc-seg">${seg}</div>` : ''}
+          ${btn}
+          <div class="pc-ed" hidden></div>
+        </li>`;
       }).join('') + '</ul>';
     }
+
+    function filaTrat(t?: Trat) {
+      const sel = t?.id ?? '';
+      return `<div class="pc-ed__trat">
+        <select class="pc-ed__sel" aria-label="Tratamiento"><option value="">Elegí el tratamiento…</option>${opcionesTrat(sel)}</select>
+        <input class="pc-ed__otro" type="text" maxlength="80" placeholder="¿Cuál?" value="${sel === 'otro' ? esc(t?.nombre) : ''}" ${sel === 'otro' ? '' : 'hidden'} aria-label="Nombre del tratamiento" />
+        <span class="pc-ed__ses">Sesión <input type="number" min="1" max="50" class="pc-ed__n" value="${t?.sesion ?? ''}" aria-label="Número de sesión" /> de <input type="number" min="1" max="50" class="pc-ed__de" value="${t?.de ?? ''}" aria-label="Total de sesiones" /></span>
+        <button type="button" class="pc-link pc-ed__quitar" aria-label="Quitar tratamiento">Quitar</button>
+      </div>`;
+    }
+
+    function abrirEditor(li: HTMLElement, r: any) {
+      const ed = li.querySelector<HTMLElement>('.pc-ed')!;
+      if (!ed.hidden) { ed.hidden = true; return; }
+      const trats: Trat[] = Array.isArray(r.tratamientos) ? r.tratamientos : [];
+      ed.innerHTML = `
+        <p class="nv-ayuda">Qué tratamientos se hicieron en esta consulta. La sesión es opcional (ej. 3 de 6 del paquete).</p>
+        <div class="pc-ed__lista">${(trats.length ? trats : [undefined]).map((t) => filaTrat(t)).join('')}</div>
+        <button type="button" class="pc-link pc-ed__mas">+ Otro tratamiento</button>
+        <label class="nv-campo">Evolución <span class="nv-ayuda">(cómo encontraste la piel, qué ajustaste, qué rutina o productos indicaste)</span>
+          <textarea class="pc-ed__evo" rows="4" maxlength="4000">${esc(r.evolucion ?? '')}</textarea>
+        </label>
+        <div class="nv-acciones">
+          <button type="button" class="btn btn--primary btn--sm pc-ed__guardar">Guardar registro</button>
+          <button type="button" class="btn btn--ghost btn--sm pc-ed__cancelar">Cancelar</button>
+          <span class="guardar__msg pc-ed__msg" role="status"></span>
+        </div>`;
+      ed.hidden = false;
+      ed.querySelector('.pc-ed__mas')!.addEventListener('click', () => ed.querySelector('.pc-ed__lista')!.insertAdjacentHTML('beforeend', filaTrat()));
+      ed.addEventListener('change', (ev) => {
+        const sel = (ev.target as HTMLElement).closest<HTMLSelectElement>('.pc-ed__sel');
+        if (sel) sel.parentElement!.querySelector<HTMLInputElement>('.pc-ed__otro')!.hidden = sel.value !== 'otro';
+      });
+      ed.addEventListener('click', (ev) => {
+        const q = (ev.target as HTMLElement).closest('.pc-ed__quitar');
+        if (q) q.closest('.pc-ed__trat')!.remove();
+      });
+      ed.querySelector('.pc-ed__cancelar')!.addEventListener('click', () => { ed.hidden = true; });
+      ed.querySelector('.pc-ed__guardar')!.addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget as HTMLButtonElement;
+        const out = ed.querySelector<HTMLElement>('.pc-ed__msg')!;
+        const tratamientos = [...ed.querySelectorAll<HTMLElement>('.pc-ed__trat')].map((f) => {
+          const id = f.querySelector<HTMLSelectElement>('.pc-ed__sel')!.value;
+          return {
+            id,
+            nombre: id === 'otro' ? f.querySelector<HTMLInputElement>('.pc-ed__otro')!.value : '',
+            sesion: f.querySelector<HTMLInputElement>('.pc-ed__n')!.value,
+            de: f.querySelector<HTMLInputElement>('.pc-ed__de')!.value,
+          };
+        }).filter((t) => t.id);
+        btn.disabled = true; out.className = 'guardar__msg pc-ed__msg'; out.textContent = 'Guardando…';
+        try {
+          await api({ accion: 'atencion', id: fichaId, reserva_id: r.id, tratamientos, evolucion: ed.querySelector<HTMLTextAreaElement>('.pc-ed__evo')!.value });
+          const d = await api(undefined, '?id=' + encodeURIComponent(fichaId!));
+          hoy = d.hoy;
+          pintarHistorial(d.historial);
+        } catch (err) {
+          btn.disabled = false;
+          out.className = 'guardar__msg guardar__msg--dirty pc-ed__msg'; out.textContent = (err as Error).message;
+        }
+      });
+    }
+
+    document.getElementById('pc-historial')!.addEventListener('click', (ev) => {
+      const b = (ev.target as HTMLElement).closest<HTMLElement>('[data-atender]');
+      if (!b) return;
+      abrirEditor(b.closest('li')!, historial[Number(b.dataset.atender)]);
+    });
 
     function mostrarBaja() {
       bajaAviso.hidden = !bajaDesde;
@@ -237,7 +354,7 @@
     }
 
     async function abrir(id: string | null) {
-      fichaId = id; bajaDesde = null; reactivar = false;
+      fichaId = id; bajaDesde = null; reactivar = false; conConsentimiento = false;
       vistaLista.hidden = true; vistaFicha.hidden = false;
       msg.textContent = ''; msg.className = 'guardar__msg';
       form!.reset();
@@ -258,6 +375,9 @@
         campo('telefono').value = f.telefono ?? '';
         campo('email').value = f.email ?? '';
         campo('fecha_nacimiento').value = f.fecha_nacimiento ?? '';
+        campo('consentimiento_fecha').value = f.consentimiento_fecha ?? '';
+        conConsentimiento = !!f.consentimiento_fecha;
+        hoy = d.hoy;
         (form!.elements.namedItem('notas') as HTMLTextAreaElement).value = f.notas ?? '';
         campo('recordatorio_activo').checked = f.recordatorio_activo && !f.baja_recordatorios_at;
         bajaDesde = f.baja_recordatorios_at;
@@ -286,6 +406,7 @@
           telefono: campo('telefono').value,
           email: campo('email').value,
           fecha_nacimiento: campo('fecha_nacimiento').value,
+          consentimiento_fecha: campo('consentimiento_fecha').value,
           notas: (form.elements.namedItem('notas') as HTMLTextAreaElement).value,
           recordatorio_activo: campo('recordatorio_activo').checked,
           reactivar,
@@ -364,7 +485,6 @@
   .pc-form { display: grid; gap: 1rem; margin-top: 0.6rem; }
   .pc-form h3 { margin: 0; overflow-wrap: anywhere; }
   .pc-fila { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .pc-nac { max-width: 16rem; }
   /* La casilla al lado del texto también en mobile (el .nv-check general hace wrap). */
   .pc-form .nv-check { flex-wrap: nowrap; align-items: flex-start; }
   .pc-form .nv-check input { flex: none; margin-top: 0.2rem; }
@@ -374,7 +494,26 @@
   .pc-bloque h3 { font-size: 1.1rem; margin: 0 0 0.6rem; }
   .pc-vuelta__txt { margin: 0 0 0.8rem; line-height: 1.6; color: var(--ink); }
   .pc-hist { list-style: none; margin: 0; padding: 0; }
-  .pc-hist li { display: grid; grid-template-columns: 11rem minmax(0, 1fr) auto; gap: 0.3rem 1rem; padding: 0.55rem 0; border-top: 1px solid var(--sand); font-size: 0.9rem; }
+  .pc-hist li { padding: 0.65rem 0; border-top: 1px solid var(--sand); font-size: 0.9rem; }
+  .pc-hist__fila { display: grid; grid-template-columns: 11rem minmax(0, 1fr) auto; gap: 0.3rem 1rem; }
+  .pc-seg { margin: 0.45rem 0 0; display: grid; gap: 0.35rem; }
+  .pc-seg p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
+  .pc-seg__trat { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .pc-seg__evo, .pc-seg__nota { color: var(--ink); white-space: pre-line; }
+  .pc-seg__nota { color: var(--ink-soft); }
+  .pc-seg__btn { font-size: 0.85rem; margin-top: 0.4rem; }
+  .pc-consent-aviso { margin: -0.2rem 0 0.6rem; color: var(--clay-deep); }
+  .pc-ed { display: grid; gap: 0.8rem; margin-top: 0.7rem; padding: 0.9rem; border-radius: var(--radius-sm); background: var(--cream-deep); }
+  .pc-ed__lista { display: grid; gap: 0.6rem; }
+  .pc-ed__trat { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .pc-ed__trat select, .pc-ed__trat input, .pc-ed textarea {
+    font: inherit; font-size: 0.9rem; padding: 0.45rem 0.6rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink);
+  }
+  .pc-ed__sel { flex: 1 1 14rem; min-width: 0; max-width: 100%; }
+  .pc-ed__otro { flex: 1 1 10rem; min-width: 0; }
+  .pc-ed__ses { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--ink-soft); }
+  .pc-ed__ses input { width: 3.6rem; }
+  .pc-ed__mas { justify-self: start; font-size: 0.88rem; }
   .pc-hist li:first-child { border-top: 0; }
   .pc-hist__f { font-weight: 600; }
   .pc-hist__d { color: var(--ink-soft); }
@@ -386,8 +525,7 @@
   .pc-anterior__fila input { font: inherit; padding: 0.45rem 0.7rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
   @media (max-width: 640px) {
     .pc-fila { grid-template-columns: 1fr; }
-    .pc-nac { max-width: none; }
-    .pc-hist li { grid-template-columns: 1fr; gap: 0.1rem; }
+    .pc-hist__fila { grid-template-columns: 1fr; gap: 0.1rem; }
     .pc-hist__e { text-align: left; }
   }
 </style>

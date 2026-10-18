@@ -13,7 +13,7 @@ create table if not exists pacientes (
   telefono              text,
   tel_norm              text,          -- teléfono en formato +598… para deduplicar
   email_norm            text,          -- email en minúsculas para deduplicar
-  notas                 text,          -- de contacto/agenda; sin datos clínicos
+  notas                 text,          -- de contacto/agenda (lo clínico va por consulta, abajo)
   recordatorio_activo   boolean not null default true,   -- Ceci lo apaga por paciente
   baja_recordatorios_at timestamptz,   -- la paciente pidió no recibirlo
   token_baja            text not null default replace(gen_random_uuid()::text, '-', ''),
@@ -32,6 +32,13 @@ alter table reservas add column if not exists paciente_id uuid references pacien
 -- Marca: ya se mandó el "volvé a consultar" por esta consulta (uno por consulta).
 alter table reservas add column if not exists vuelta_avisada_at timestamptz;
 create index if not exists reservas_paciente on reservas (paciente_id);
+
+-- Seguimiento clínico por consulta. Datos de salud (sensibles, Ley 18.331):
+-- el panel solo deja cargarlos si la ficha tiene la fecha del consentimiento.
+alter table pacientes add column if not exists consentimiento_fecha date;   -- firmó el consentimiento
+alter table reservas  add column if not exists tratamientos jsonb;          -- [{id, nombre, sesion, de}]
+alter table reservas  add column if not exists evolucion text;              -- nota de evolución de la consulta
+alter table reservas  add column if not exists atencion_at timestamptz;     -- última edición del registro
 
 -- Sin policies para anon: solo el backend lee/escribe.
 alter table pacientes enable row level security;

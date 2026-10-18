@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { getSql, ensureConfirmacion, ensurePacientes } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
+import { categoriasTratamientos } from '../../../data/tratamientos';
 import {
   baseUrl, enviarVueltas, estadosVuelta, hoyUY, normEmail, normTel, vincularPendientes,
 } from '../../../lib/pacientes';
@@ -13,6 +14,29 @@ function json(data: unknown, status = 200) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+
+/** Catálogo de tratamientos: id → nombre (lo que se puede registrar por consulta). */
+const CATALOGO = new Map(categoriasTratamientos.flatMap((c) => c.tratamientos.map((t) => [t.id, t.nombre] as const)));
+
+/** Valida la lista de tratamientos de una consulta. null = inválida. */
+function tratamientosValidos(v: unknown): { id: string; nombre: string; sesion: number | null; de: number | null }[] | null {
+  if (!Array.isArray(v) || v.length > 12) return null;
+  const sesNum = (x: unknown) => {
+    const n = Number(x);
+    return x === '' || x == null ? null : Number.isInteger(n) && n >= 1 && n <= 50 ? n : NaN;
+  };
+  const out = [];
+  for (const t of v) {
+    const id = str(t?.id, 60);
+    const nombre = id === 'otro' ? str(t?.nombre, 80) : CATALOGO.get(id);
+    if (!nombre) return null;
+    const sesion = sesNum(t?.sesion);
+    const de = sesNum(t?.de);
+    if (Number.isNaN(sesion) || Number.isNaN(de) || (sesion != null && de != null && sesion > de)) return null;
+    out.push({ id, nombre, sesion, de });
+  }
+  return out;
+}
 
 async function preparar() {
   const sql = getSql();
@@ -58,14 +82,14 @@ export const GET: APIRoute = async ({ url, cookies }) => {
 
     const f = (await sql`
       select id, nombre, fecha_nacimiento::text as fecha_nacimiento, email, telefono, notas,
-             recordatorio_activo, baja_recordatorios_at, created_at
+             recordatorio_activo, baja_recordatorios_at, consentimiento_fecha::text as consentimiento_fecha, created_at
         from pacientes where id = ${id}
     `) as any[];
     if (!f.length) return json({ ok: false, error: 'No existe esa ficha' }, 404);
     const historial = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, '') as sede, r.fecha::text as fecha,
              to_char(r.hora,'HH24:MI') as hora, r.estado::text as estado, r.expira_at,
-             r.vuelta_avisada_at
+             r.vuelta_avisada_at, r.notas, r.tratamientos, r.evolucion
         from reservas r left join sedes s on s.id = r.sede_id
        where r.paciente_id = ${id}
        order by r.fecha desc nulls last, r.created_at desc
@@ -85,6 +109,9 @@ export const GET: APIRoute = async ({ url, cookies }) => {
  *    recordatorio_activo, reactivar? }               → crea o edita la ficha
  *  { accion: 'consulta', id, fecha }                  → registra una consulta
  *    anterior (de antes de la web, o que no pasó por la agenda)
+ *  { accion: 'atencion', id, reserva_id, tratamientos, evolucion }
+ *                                                     → registra qué se hizo en
+ *    esa consulta (requiere consentimiento_fecha en la ficha)
  *  { accion: 'vuelta', id }                           → manda ahora el
  *    "volvé a consultar" a esta paciente, si le corresponde (misma regla que el cron)
  */
@@ -107,6 +134,9 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       const email = str(body.email, 160);
       const notas = str(body.notas, 1000);
       const nac = str(body.fecha_nacimiento, 10);
+      const consent = str(body.consentimiento_fecha, 10);
+      if (consent && (!/^\d{4}-\d{2}-\d{2}$/.test(consent) || consent < '2015-01-01' || consent > hoyUY()))
+        return json({ ok: false, error: 'La fecha del consentimiento no es válida.' }, 400);
       if (nombre.length < 2) return json({ ok: false, error: 'Poné el nombre (2 letras o más).' }, 400);
       const tn = telefono ? normTel(telefono) : null;
       if (telefono && !tn) return json({ ok: false, error: 'El teléfono no parece válido.' }, 400);
@@ -133,6 +163,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
              set nombre = ${nombre}, telefono = ${telefono || null}, tel_norm = ${tn},
                  email = ${email || null}, email_norm = ${en}, notas = ${notas || null},
                  fecha_nacimiento = ${nac || null}, recordatorio_activo = ${activo},
+                 consentimiento_fecha = ${consent || null},
                  baja_recordatorios_at = case when ${body.reactivar === true} then null else baja_recordatorios_at end,
                  updated_at = now()
            where id = ${id}
@@ -141,8 +172,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         if (!r.length) return json({ ok: false, error: 'No existe esa ficha' }, 404);
       } else {
         const r = (await sql`
-          insert into pacientes (nombre, telefono, tel_norm, email, email_norm, notas, fecha_nacimiento, recordatorio_activo)
-          values (${nombre}, ${telefono || null}, ${tn}, ${email || null}, ${en}, ${notas || null}, ${nac || null}, ${activo})
+          insert into pacientes (nombre, telefono, tel_norm, email, email_norm, notas, fecha_nacimiento, recordatorio_activo, consentimiento_fecha)
+          values (${nombre}, ${telefono || null}, ${tn}, ${email || null}, ${en}, ${notas || null}, ${nac || null}, ${activo}, ${consent || null})
           returning id
         `) as any[];
         fichaId = String(r[0].id);
@@ -166,6 +197,29 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         values ('manual', ${fecha}, null, ${f[0].nombre}, ${f[0].telefono || '—'}, ${f[0].email},
                 'confirmada', ${id}, 'Consulta anterior cargada desde la ficha')
       `;
+      return json({ ok: true });
+    }
+
+    if (body?.accion === 'atencion') {
+      // Datos de salud: solo con el consentimiento firmado registrado en la ficha.
+      const rid = typeof body.reserva_id === 'string' && UUID.test(body.reserva_id) ? body.reserva_id : null;
+      if (!rid) return json({ ok: false, error: 'Consulta inválida' }, 400);
+      const trats = tratamientosValidos(body.tratamientos ?? []);
+      if (!trats) return json({ ok: false, error: 'Revisá los tratamientos (y que la sesión no sea mayor que el total).' }, 400);
+      const evolucion = str(body.evolucion, 4000);
+      const f = (await sql`select consentimiento_fecha from pacientes where id = ${id}`) as any[];
+      if (!f.length) return json({ ok: false, error: 'No existe esa ficha' }, 404);
+      if (!f[0].consentimiento_fecha)
+        return json({ ok: false, error: 'Primero cargá en la ficha la fecha del consentimiento firmado.' }, 409);
+      const r = (await sql`
+        update reservas
+           set tratamientos = ${trats.length ? JSON.stringify(trats) : null}::jsonb,
+               evolucion = ${evolucion || null}, atencion_at = now()
+         where id = ${rid} and paciente_id = ${id} and estado = 'confirmada'
+           and fecha is not null and fecha <= ${hoyUY()}::date
+        returning id
+      `) as any[];
+      if (!r.length) return json({ ok: false, error: 'Solo se registran consultas confirmadas de hoy o anteriores.' }, 400);
       return json({ ok: true });
     }
 

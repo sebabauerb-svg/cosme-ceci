@@ -253,6 +253,16 @@ export async function ensurePrecios(sql: any) {
  *  - token_baja: va en el link de baja, sin login.
  * En reservas: paciente_id (la ficha) y vuelta_avisada_at (marca de que ya se
  * mandó el "volvé a consultar" por ESA consulta: uno solo por consulta).
+ *
+ * Seguimiento clínico (pedido de Sebas, oct-2026). Son datos de salud: datos
+ * sensibles para la Ley 18.331, así que solo se cargan si la ficha tiene la
+ * fecha del consentimiento firmado (lo controla /api/admin/pacientes):
+ *  - pacientes.consentimiento_fecha: cuándo firmó el consentimiento.
+ *  - reservas.tratamientos: jsonb [{ id, nombre, sesion, de }] de lo que se
+ *    hizo en esa consulta (id del catálogo de src/data/tratamientos.ts, o
+ *    'otro'; el nombre se guarda para que el historial no cambie si el
+ *    catálogo cambia).
+ *  - reservas.evolucion: nota de evolución de esa consulta.
  */
 export async function ensurePacientes(sql: any) {
   await sql`
@@ -277,6 +287,10 @@ export async function ensurePacientes(sql: any) {
   await sql`create index if not exists pacientes_email_norm on pacientes (email_norm)`;
   await sql`alter table reservas add column if not exists paciente_id uuid references pacientes(id) on delete set null`;
   await sql`alter table reservas add column if not exists vuelta_avisada_at timestamptz`;
+  await sql`alter table pacientes add column if not exists consentimiento_fecha date`;
+  await sql`alter table reservas add column if not exists tratamientos jsonb`;
+  await sql`alter table reservas add column if not exists evolucion text`;
+  await sql`alter table reservas add column if not exists atencion_at timestamptz`;
   await sql`create index if not exists reservas_paciente on reservas (paciente_id)`;
   await sql`alter table pacientes enable row level security`;
 }
