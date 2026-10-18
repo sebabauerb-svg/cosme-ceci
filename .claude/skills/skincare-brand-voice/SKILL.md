@@ -39,8 +39,9 @@ por encima de las recetas mágicas.
 
 - Prometer curar enfermedades o garantizar resultados.
 - Estadísticas inventadas ni falsa urgencia ("últimas horas").
-- Listar precios de tratamientos (solo la Consulta tiene precio visible; el resto "según
-  protocolo").
+- Precios sin contexto: los valores de tratamientos se muestran (desde oct-2026), pero siempre
+  como valor de referencia por sesión, con el plan final definido en consulta. Nada de
+  "oferta", "promo" ni urgencia alrededor del precio.
 - Presentar la práctica como que "no vende nada": el ángulo de consumo consciente es solo de la
   modalidad **Skincare Inteligente**.
 

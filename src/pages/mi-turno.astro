@@ -126,6 +126,9 @@ import { POLITICA_CANCELACION } from '../data/pago';
       b.addEventListener('click', () => {
         dias.querySelectorAll('.cal__day').forEach((x) => x.classList.toggle('is-sel', x === b));
         pintarHoras(s);
+        if (window.matchMedia('(max-width: 760px)').matches) {
+          $('mt-horas-label').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       });
       dias.appendChild(b);
     }
@@ -218,7 +221,7 @@ import { POLITICA_CANCELACION } from '../data/pago';
   .mt__datos { margin: 0; display: grid; gap: 0.45rem; }
   .mt__t { font-size: 1.35rem; margin-bottom: 0.3rem; }
   .mt__sub { color: var(--ink-soft); font-size: 0.9rem; line-height: 1.6; margin: 0 0 1.2rem; }
-  .mt__label { font-weight: 600; font-size: 0.9rem; margin: 1.2rem 0 0.7rem; color: var(--ink); }
+  .mt__label { font-weight: 600; font-size: 0.9rem; margin: 1.2rem 0 0.7rem; color: var(--ink); scroll-margin-top: 90px; }
   .mt__msg { color: var(--ink-soft); font-size: 0.92rem; text-align: center; }
   .mt__confirmar {
     margin-top: 1.6rem; padding-top: 1.3rem; border-top: 1px solid var(--sand); text-align: center;
@@ -260,6 +263,7 @@ import { POLITICA_CANCELACION } from '../data/pago';
   .mt .cal__slot {
     background: var(--cream-deep); border: 1px solid var(--sand); border-radius: var(--radius-sm);
     padding: 0.6rem 1.1rem; cursor: pointer; font: inherit; font-weight: 600; color: var(--ink);
+    min-height: 44px;
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .mt .cal__slot:hover { background: var(--sage); color: var(--cream); border-color: var(--sage); }
