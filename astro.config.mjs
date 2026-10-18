@@ -16,7 +16,9 @@ export default defineConfig({
   ],
   // Sitio estático + endpoints de servidor (las páginas siguen prerenderizadas;
   // solo /api/* corre en serverless, marcado con `export const prerender = false`).
-  adapter: vercel(),
+  // maxDuration: el research semanal (api/cron/research) busca en la web y
+  // puede tardar un par de minutos; el resto de las funciones termina enseguida.
+  adapter: vercel({ maxDuration: 300 }),
   build: {
     inlineStylesheets: 'auto',
   },

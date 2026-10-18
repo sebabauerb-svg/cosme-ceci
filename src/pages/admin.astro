@@ -300,8 +300,27 @@ if (authed) {
               {editorNovedades && <button type="button" class="btn btn--primary btn--sm" id="nv-nueva">Nueva entrada</button>}
             </div>
 
+            <div class="tm" id="tm">
+              <div class="tm__head">
+                <div>
+                  <h3>Agenda de temas</h3>
+                  <p class="nv-ayuda">Ideas para escribir. Todos los domingos se suman temas nuevos del research semanal (con sus fuentes), y te llega un mail. También podés anotar los tuyos.</p>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" id="tm-investigar" hidden>Investigar ahora</button>
+              </div>
+              <form id="tm-nuevo" class="tm-nuevo">
+                <label class="nv-campo">Anotar un tema
+                  <input type="text" name="titulo" maxlength="160" placeholder="Ej.: qué hacer con la piel después del verano" />
+                </label>
+                <button type="submit" class="btn btn--ghost btn--sm">Agregar</button>
+              </form>
+              <div id="tm-lista"><p class="ag-vacia">Cargando…</p></div>
+              <p id="tm-msg" class="guardar__msg" role="status"></p>
+            </div>
+
             <form id="nv-form" class="nv-form" hidden>
               <h3 id="nv-form-tit">Nueva entrada</h3>
+              <div id="nv-tema" class="nv-tema" hidden></div>
               <label class="nv-campo">Título
                 <input type="text" name="titulo" maxlength="140" required />
               </label>
@@ -1801,6 +1820,8 @@ if (authed) {
 
     function abrir(e: Entrada | null) {
       editando = e;
+      temaId = null;
+      temaBox.hidden = true;
       formTit.textContent = e ? 'Editar entrada' : 'Nueva entrada';
       campo('titulo').value = e?.titulo ?? '';
       campo('descripcion').value = e?.descripcion ?? '';
@@ -1814,7 +1835,26 @@ if (authed) {
       form!.scrollIntoView({ behavior: 'smooth', block: 'start' });
       campo('titulo').focus({ preventScroll: true });
     }
-    const cerrar = () => { form!.hidden = true; editando = null; };
+    const cerrar = () => { form!.hidden = true; editando = null; temaId = null; temaBox.hidden = true; };
+
+    // Escribir desde la agenda de temas: abre el editor con el título y el tipo
+    // del tema, y muestra el ángulo y las fuentes como guía (no van al texto).
+    const temaBox = document.getElementById('nv-tema')!;
+    let temaId: string | null = null;
+    window.addEventListener('tm:escribir', (ev) => {
+      const t = (ev as CustomEvent).detail as { id: string; titulo: string; tipo?: string; angulo?: string; fuentes?: { titulo: string; url: string }[] };
+      abrir(null);
+      temaId = t.id;
+      campo('titulo').value = t.titulo;
+      if (t.tipo) campo('tipo').value = t.tipo;
+      campo('publicado').checked = false;
+      const fuentes = (t.fuentes || []).map((f) => `<li><a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${esc(f.titulo || f.url)}</a></li>`).join('');
+      temaBox.innerHTML = `<strong>Escribiendo sobre un tema de la agenda</strong>
+        ${t.angulo ? `<p>Ángulo sugerido: ${esc(t.angulo)}</p>` : ''}
+        ${fuentes ? `<p>Fuentes para leer antes de escribir:</p><ul>${fuentes}</ul>` : ''}
+        <p class="nv-ayuda">Queda como borrador hasta que la marques como publicada. Revisá las fuentes: son sugerencias de una IA.</p>`;
+      temaBox.hidden = false;
+    });
 
     document.getElementById('nv-nueva')?.addEventListener('click', () => abrir(null));
     document.getElementById('nv-cancelar')?.addEventListener('click', cerrar);
@@ -1836,6 +1876,7 @@ if (authed) {
         const e: Entrada = d.entrada;
         entradas = [e, ...entradas.filter((x) => x.slug !== e.slug)].sort((a, b) => b.fecha.localeCompare(a.fecha));
         pintar();
+        if (temaId) window.dispatchEvent(new CustomEvent('tm:guardada', { detail: { id: temaId, slug: e.slug, publicado: e.publicado } }));
         cerrar();
         alert(e.publicado
           ? 'Guardado. En 1 o 2 minutos se ve en la web.'
@@ -1867,6 +1908,131 @@ if (authed) {
     });
 
     // Carga perezosa: recién cuando Ceci abre la pestaña (son llamadas a GitHub).
+    const tab = document.querySelector<HTMLButtonElement>('.tab[data-ir="novedades"]');
+    tab?.addEventListener('click', () => { if (!cargada) cargar(); });
+    if (tab?.getAttribute('aria-current') === 'true') cargar();
+  })();
+
+  // ---------- Agenda de temas (research de los domingos + ideas de Ceci) ----------
+  (() => {
+    const lista = document.getElementById('tm-lista');
+    const nuevo = document.getElementById('tm-nuevo') as HTMLFormElement | null;
+    if (!lista || !nuevo) return;
+    const msg = document.getElementById('tm-msg')!;
+    const btnInv = document.getElementById('tm-investigar') as HTMLButtonElement;
+    const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const TIPO: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
+    const EVID: Record<string, string> = { solida: 'evidencia sólida', emergente: 'evidencia emergente', moda: 'moda sin evidencia suficiente' };
+    const ESTADO: Record<string, string> = { idea: 'Idea', elegido: 'La voy a escribir', publicado: 'Publicada', descartado: 'Descartada' };
+
+    type Tema = { id: string; titulo: string; resumen: string | null; angulo: string | null; tipo: string | null; fuentes: { titulo: string; url: string }[]; evidencia: string | null; estado: string; origen: string; slug: string | null; created_at: string };
+    let temas: Tema[] = [];
+    let cargada = false;
+
+    async function api(body?: unknown) {
+      const res = await fetch('/api/admin/temas', body
+        ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+        : undefined);
+      if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo completar. Probá de nuevo.');
+      return d;
+    }
+
+    const fmt = (iso: string) => new Date(iso).toLocaleDateString('es-UY', { day: 'numeric', month: 'short', timeZone: 'America/Montevideo' });
+
+    function item(t: Tema) {
+      const meta = [t.origen === 'research' ? `Research del ${fmt(t.created_at)}` : `Anotado el ${fmt(t.created_at)}`, t.tipo ? TIPO[t.tipo] : '', t.evidencia ? EVID[t.evidencia] : ''].filter(Boolean).join(' · ');
+      const fuentes = (t.fuentes || []).map((f) => `<a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${esc(f.titulo || f.url)}</a>`).join('');
+      const acc = t.estado === 'idea' || t.estado === 'elegido'
+        ? `<button type="button" class="btn btn--primary btn--sm" data-acc="escribir">Escribir</button>
+           ${t.estado === 'idea' ? '<button type="button" class="btn btn--ghost btn--sm" data-acc="elegido">La voy a escribir</button>' : ''}
+           <button type="button" class="btn btn--ghost btn--sm" data-acc="descartado">Descartar</button>`
+        : t.estado === 'descartado'
+          ? '<button type="button" class="btn btn--ghost btn--sm" data-acc="idea">Recuperar</button>'
+          : (t.slug ? `<a class="btn btn--ghost btn--sm" href="/blog/${esc(t.slug)}" target="_blank" rel="noopener">Ver</a>` : '');
+      return `<div class="tm-item" data-id="${esc(t.id)}">
+        <span class="nv-item__meta">${esc(meta)}</span>
+        <strong class="nv-item__tit">${esc(t.titulo)}</strong>
+        <span class="nv-estado ${t.estado === 'elegido' || t.estado === 'publicado' ? 'is-pub' : ''}">${ESTADO[t.estado] || t.estado}</span>
+        ${t.resumen ? `<p class="tm-item__txt">${esc(t.resumen)}</p>` : ''}
+        ${t.angulo ? `<p class="tm-item__txt"><em>Ángulo:</em> ${esc(t.angulo)}</p>` : ''}
+        ${fuentes ? `<div class="tm-item__fuentes">${fuentes}</div>` : ''}
+        <div class="nv-item__acc tm-item__acc">${acc}</div>
+      </div>`;
+    }
+
+    function pintar() {
+      const activos = temas.filter((t) => t.estado === 'idea' || t.estado === 'elegido');
+      const cerrados = temas.filter((t) => !(t.estado === 'idea' || t.estado === 'elegido'));
+      lista!.innerHTML = (activos.length
+        ? activos.map(item).join('')
+        : '<p class="ag-vacia">No hay temas pendientes. El domingo llegan los del research, o anotá uno arriba.</p>')
+        + (cerrados.length ? `<details class="tm-cerrados"><summary>Publicados y descartados (${cerrados.length})</summary>${cerrados.map(item).join('')}</details>` : '');
+    }
+
+    async function cargar() {
+      try {
+        const d = await api();
+        temas = d.temas; cargada = true;
+        btnInv.hidden = !d.research;
+        pintar();
+      } catch (err) {
+        lista!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
+      }
+    }
+
+    lista.addEventListener('click', async (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-acc]');
+      const id = btn?.closest<HTMLElement>('.tm-item')?.dataset.id;
+      const t = temas.find((x) => x.id === id);
+      if (!btn || !t) return;
+      if (btn.dataset.acc === 'escribir') {
+        window.dispatchEvent(new CustomEvent('tm:escribir', { detail: t }));
+        return;
+      }
+      btn.disabled = true;
+      try { temas = (await api({ accion: 'estado', id: t.id, estado: btn.dataset.acc })).temas; pintar(); }
+      catch (err) { msg.textContent = (err as Error).message; btn.disabled = false; }
+    });
+
+    // Al guardar una entrada escrita desde un tema, el tema queda "elegido"
+    // (borrador) o "publicado", con el link a la entrada.
+    window.addEventListener('tm:guardada', async (ev) => {
+      const { id, slug, publicado } = (ev as CustomEvent).detail;
+      try { temas = (await api({ accion: 'estado', id, slug, estado: publicado ? 'publicado' : 'elegido' })).temas; pintar(); }
+      catch { /* el guardado de la entrada ya salió bien; el estado se puede cambiar a mano */ }
+    });
+
+    nuevo.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const input = nuevo.elements.namedItem('titulo') as HTMLInputElement;
+      if (!input.value.trim()) return;
+      try { temas = (await api({ accion: 'crear', titulo: input.value })).temas; input.value = ''; msg.textContent = ''; pintar(); }
+      catch (err) { msg.textContent = (err as Error).message; }
+    });
+
+    // Confirmación en dos toques (sin confirm() del navegador): cada corrida
+    // cuesta, así que el primer toque solo avisa y el segundo la lanza.
+    let armado: ReturnType<typeof setTimeout> | null = null;
+    const textoInv = btnInv.textContent;
+    btnInv.addEventListener('click', async () => {
+      if (!armado) {
+        btnInv.textContent = 'Tocá de nuevo para confirmar';
+        msg.textContent = 'Busca temas nuevos en la web. Tarda 1 a 3 minutos (y además corre solo todos los domingos).';
+        armado = setTimeout(() => { armado = null; btnInv.textContent = textoInv; msg.textContent = ''; }, 6000);
+        return;
+      }
+      clearTimeout(armado); armado = null; btnInv.textContent = textoInv;
+      btnInv.disabled = true; msg.textContent = 'Investigando… puede tardar unos minutos, no cierres la página.';
+      try {
+        const d = await api({ accion: 'investigar' });
+        temas = d.temas; pintar();
+        msg.textContent = d.nuevos ? `Listo: ${d.nuevos} temas nuevos.` : 'No encontró temas nuevos esta vez.';
+      } catch (err) { msg.textContent = (err as Error).message; }
+      btnInv.disabled = false;
+    });
+
     const tab = document.querySelector<HTMLButtonElement>('.tab[data-ir="novedades"]');
     tab?.addEventListener('click', () => { if (!cargada) cargar(); });
     if (tab?.getAttribute('aria-current') === 'true') cargar();
@@ -2486,6 +2652,28 @@ if (authed) {
   .nv-estado { justify-self: start; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--cream-deep); color: var(--ink-soft); }
   .nv-estado.is-pub { background: color-mix(in srgb, var(--sage) 18%, var(--white)); color: var(--sage-deep); }
   .nv-item__acc { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; flex-shrink: 0; }
+  /* Agenda de temas */
+  .tm { margin: 1.4rem 0 1.6rem; padding: 1.2rem; border: 1px solid var(--sand); border-radius: var(--radius); }
+  .tm__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+  .tm__head h3 { font-size: 1.15rem; margin: 0 0 0.3rem; }
+  .tm-nuevo { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; margin: 1rem 0 0.4rem; }
+  .tm-nuevo .nv-campo { flex: 1 1 240px; }
+  .tm-item { display: grid; gap: 0.3rem; padding: 0.9rem 0; border-top: 1px solid var(--sand); }
+  .tm-item__txt { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
+  .tm-item__fuentes { display: grid; gap: 0.15rem; font-size: 0.85rem; }
+  .tm-item__fuentes a { color: var(--sage-deep); text-decoration: underline; overflow-wrap: anywhere; }
+  .tm-item__acc { justify-content: flex-start; margin-top: 0.3rem; }
+  .tm-cerrados { margin-top: 0.6rem; }
+  .tm-cerrados summary { cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--ink-soft); padding: 0.5rem 0; }
+  .nv-tema { padding: 0.9rem 1rem; background: var(--white); border-radius: var(--radius-sm); font-size: 0.9rem; }
+  .nv-tema[hidden] { display: none; }
+  .nv-tema p { margin: 0.4rem 0 0; }
+  .nv-tema ul { margin: 0.3rem 0 0 1.2rem; }
+  .nv-tema a { color: var(--sage-deep); text-decoration: underline; overflow-wrap: anywhere; }
+  @media (max-width: 560px) {
+    .tm__head { flex-direction: column; }
+  }
+
   /* Newsletter */
   .nl-resumen { margin: 1.2rem 0 0.4rem; }
   .nl-cifras { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; font-size: 0.92rem; color: var(--ink-soft); margin-bottom: 0.4rem; }
