@@ -1,7 +1,9 @@
 import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
 
-// Colección de blog (Fase 2). Cada artículo es un .md en src/content/blog/
+// Blog y novedades: cada entrada es un .md en src/content/blog/.
+// `tipo` separa las notas largas de las entradas cortas (novedades y tips).
+// Cómo publicar una novedad: ver PUBLICAR-NOVEDADES.md en la raíz.
 const blog = defineCollection({
   loader: glob({ pattern: '**/*.md', base: './src/content/blog' }),
   schema: z.object({
@@ -9,6 +11,9 @@ const blog = defineCollection({
     descripcion: z.string(),
     fecha: z.coerce.date(),
     autora: z.string().default('Ceci'),
+    // nota = artículo largo · novedad = tendencia o noticia corta · tip = recomendación práctica
+    tipo: z.enum(['nota', 'novedad', 'tip']).default('nota'),
+    // false = borrador: no se publica (solo se ve con `npm run dev`).
     publicado: z.boolean().default(true),
   }),
 });

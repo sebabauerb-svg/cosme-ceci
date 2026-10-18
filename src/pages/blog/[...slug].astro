@@ -1,36 +1,48 @@
 ---
-import { getCollection, render } from 'astro:content';
+import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
 import WhatsappFloat from '../../components/WhatsappFloat.astro';
+import { getEntradas, fmtFecha, TIPOS } from '../../lib/blog';
 
 export async function getStaticPaths() {
-  const posts = await getCollection('blog', ({ data }) => data.publicado);
+  const posts = await getEntradas();
   return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
 }
 
 const { post } = Astro.props;
 const { Content } = await render(post);
-const fmt = (d: Date) =>
-  d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' });
+const tipo = TIPOS[post.data.tipo].label;
 ---
 
 <Base
   title={post.data.titulo}
   description={post.data.descripcion}
   path={`/blog/${post.id}`}
-  article={{ fecha: post.data.fecha, autora: post.data.autora }}
+  article={{ fecha: post.data.fecha, autora: post.data.autora, seccion: TIPOS[post.data.tipo].plural }}
+  noindex={!post.data.publicado}
 >
   <Nav />
-  <main class="post">
+  <main class="post" id="contenido">
     <article class="container">
-      <a class="post__back" href="/blog">← Volver al blog</a>
-      <time datetime={post.data.fecha.toISOString()}>{fmt(post.data.fecha)} · {post.data.autora}</time>
+      <a class="post__back" href="/blog">← Novedades y notas</a>
+      {!post.data.publicado && <p class="post__draft">Borrador · solo visible en desarrollo</p>}
+      <p class="post__meta">
+        <span class="post__tipo">{tipo}</span>
+        <time datetime={post.data.fecha.toISOString()}>{fmtFecha(post.data.fecha)} · {post.data.autora}</time>
+      </p>
       <h1>{post.data.titulo}</h1>
       <div class="post__body">
         <Content />
       </div>
+      <aside class="post__cta">
+        <p>Cada piel necesita algo distinto. Si querés saber qué le sirve a la tuya, lo vemos en la consulta.</p>
+        <div class="post__actions">
+          <a class="btn btn--primary" href="/reservar">Agendá tu valoración</a>
+          <a class="btn btn--ghost" href="/blog">Más novedades</a>
+        </div>
+      </aside>
     </article>
   </main>
   <Footer />
@@ -41,7 +53,31 @@ const fmt = (d: Date) =>
   .post { padding-block: clamp(3rem, 7vw, 5rem); }
   .post article { max-width: 70ch; }
   .post__back { color: var(--sage-deep); font-weight: 600; font-size: 0.92rem; }
-  .post time { display: block; margin: 1.5rem 0 0.5rem; font-size: 0.88rem; color: var(--ink-soft); }
+  .post__meta { margin: 1.5rem 0 0.5rem; font-size: 0.88rem; color: var(--ink-soft); }
+  .post__tipo {
+    margin-right: 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sage-deep);
+  }
+  .post__draft {
+    margin-top: 1rem;
+    padding: 0.6rem 0.9rem;
+    border-radius: var(--radius-sm);
+    background: var(--ink);
+    color: var(--cream);
+    font-size: 0.88rem;
+  }
+  .post h1 { overflow-wrap: anywhere; }
+  .post__cta {
+    margin-top: 2.5rem;
+    padding-top: 1.8rem;
+    border-top: 1px solid var(--sand);
+  }
+  .post__cta p { color: var(--ink); margin-bottom: 1.1rem; }
+  .post__actions { display: flex; flex-wrap: wrap; gap: 0.7rem; }
   .post h1 { margin-bottom: 1.5rem; }
   .post__body :global(h2) { font-size: 1.5rem; margin: 2rem 0 0.8rem; }
   .post__body :global(p) { margin-bottom: 1.1rem; }
