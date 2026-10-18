@@ -1859,8 +1859,18 @@ if (authed) {
       catch (err) { msg.textContent = (err as Error).message; }
     });
 
+    // Confirmación en dos toques (sin confirm() del navegador): cada corrida
+    // cuesta, así que el primer toque solo avisa y el segundo la lanza.
+    let armado: ReturnType<typeof setTimeout> | null = null;
+    const textoInv = btnInv.textContent;
     btnInv.addEventListener('click', async () => {
-      if (!confirm('Buscar temas nuevos ahora? Tarda 1 a 3 minutos (y además corre solo todos los lunes).')) return;
+      if (!armado) {
+        btnInv.textContent = 'Tocá de nuevo para confirmar';
+        msg.textContent = 'Busca temas nuevos en la web. Tarda 1 a 3 minutos (y además corre solo todos los lunes).';
+        armado = setTimeout(() => { armado = null; btnInv.textContent = textoInv; msg.textContent = ''; }, 6000);
+        return;
+      }
+      clearTimeout(armado); armado = null; btnInv.textContent = textoInv;
       btnInv.disabled = true; msg.textContent = 'Investigando… puede tardar unos minutos, no cierres la página.';
       try {
         const d = await api({ accion: 'investigar' });
