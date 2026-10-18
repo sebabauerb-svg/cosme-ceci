@@ -3,6 +3,11 @@
 Las novedades, tips y notas aparecen en `/blog` (menú **Novedades**) y las 3 más recientes en el
 bloque **Lo último** de la home. Se cargan desde el panel, sin tocar código.
 
+¿Sin idea de qué escribir? En la misma pestaña está la **Agenda de temas**: todos los lunes se
+suman temas nuevos de un research automático (con fuentes), y ahí también podés anotar los tuyos.
+Tocá **Escribir** en un tema y se abre el editor con el título listo. Detalle en
+`RESEARCH-NOVEDADES.md`.
+
 ## Desde el panel (lo normal)
 
 1. Entrá a `/admin` con tu contraseña y abrí la pestaña **Novedades**.
