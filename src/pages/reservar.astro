@@ -60,7 +60,7 @@ const senaLabel = fmt(SENA_UYU);
           <li data-ind="1" class="is-active">Modalidad</li>
           <li data-ind="2">Fecha y hora</li>
           <li data-ind="3">Tus datos</li>
-          <li data-ind="4">Pago</li>
+          <li data-ind="4">Reserva</li>
         </ol>
       </header>
 
@@ -114,13 +114,13 @@ const senaLabel = fmt(SENA_UYU);
         <h2 class="step__title">Tus datos</h2>
         <form id="form" class="form" novalidate>
           <label>Nombre y apellido
-            <input type="text" name="nombre" required autocomplete="name" placeholder="Tu nombre" />
+            <input type="text" name="nombre" required minlength="2" maxlength="120" autocomplete="name" placeholder="Tu nombre" />
           </label>
           <label>WhatsApp
-            <input type="tel" name="tel" required autocomplete="tel" placeholder="09x xxx xxx" />
+            <input type="tel" name="tel" required minlength="5" maxlength="40" autocomplete="tel" placeholder="09x xxx xxx" />
           </label>
           <label>Email
-            <input type="email" name="email" required autocomplete="email" placeholder="tu@email.com" />
+            <input type="email" name="email" required maxlength="160" autocomplete="email" placeholder="tu@email.com" />
           </label>
           <p class="form__note">A este correo te llega la confirmación con el día y la hora de tu turno. Tus datos se usan solo para coordinar tu atención.</p>
           <label class="form__check">
@@ -129,7 +129,7 @@ const senaLabel = fmt(SENA_UYU);
           </label>
           <div class="step__nav">
             <button type="button" class="btn btn--ghost" data-back>← Volver</button>
-            <button type="submit" class="btn btn--primary">Continuar al pago</button>
+            <button type="submit" class="btn btn--primary">Continuar con la reserva</button>
           </div>
         </form>
       </section>
@@ -140,10 +140,10 @@ const senaLabel = fmt(SENA_UYU);
         <div class="resumen" id="resumen"></div>
         {/* Transferencia primero (pedido de Ceci): quien quiere MercadoPago lo
             elige igual, y así la transferencia gana visibilidad. */}
-        <button class="btn btn--primary pay" id="coordinar">Transferencia desde tu banco</button>
+        <button class="btn btn--primary pay" id="coordinar">Transferir la seña y confirmar con Ceci</button>
         <p class="step__hint center tic" id="hint-coord">Te mostramos los datos y Ceci confirma al ver el pago</p>
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
-        <button class="btn btn--ghost pay" id="confirmar">MercadoPago</button>
+        <button class="btn btn--ghost pay" id="confirmar">Pagar la seña con Mercado Pago</button>
         <p class="step__hint center tic" id="hint-mp">Tu turno queda confirmado al instante</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
@@ -520,7 +520,7 @@ const senaLabel = fmt(SENA_UYU);
     const politica = $('#politica');
     if (politica) politica.hidden = esMemb;
     const coordBtn = $('#coordinar');
-    if (coordBtn) coordBtn.textContent = esMemb ? 'Coordinar con Ceci' : 'Transferencia desde tu banco';
+    if (coordBtn) coordBtn.textContent = esMemb ? 'Coordinar con Ceci' : 'Transferir la seña y confirmar con Ceci';
     const coordHint = $('#hint-coord');
     if (coordHint) coordHint.textContent = esMemb
       ? 'Ceci coordina con vos por WhatsApp'
@@ -609,6 +609,15 @@ const senaLabel = fmt(SENA_UYU);
         showAlert(data.error || 'Hay muchas reservas sin confirmar ahora. Probá de nuevo en un rato.');
         return null;
       }
+      // Datos rechazados por el servidor (nombre, teléfono o email): mostramos el
+      // motivo real y volvemos a "Tus datos" en vez de un error genérico.
+      if (res.status === 400 && data.error) {
+        btn.disabled = false; btn.textContent = orig;
+        const deDatos = /nombre|tel[eé]fono|email/i.test(data.error);
+        if (deDatos) goTo(3);
+        showAlert(deDatos ? `${data.error}. Revisalo y probá de nuevo.` : data.error);
+        return null;
+      }
       if (!res.ok || !data.ok) throw new Error(data.error || 'error');
       return data;
     } catch (e) {
@@ -690,7 +699,7 @@ const senaLabel = fmt(SENA_UYU);
       const btn = $('#confirmar');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'MercadoPago';
+        btn.textContent = 'Pagar la seña con Mercado Pago';
       }
     }
   });
@@ -874,7 +883,7 @@ const senaLabel = fmt(SENA_UYU);
   /* display:flex (no inline-flex, que es lo que trae .btn): un botón inline no
      se centra con margin auto y quedaba corrido a la izquierda respecto del
      resumen y del separador. */
-  .pay { display: flex; width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; }
+  .pay { display: flex; width: 100%; max-width: 460px; margin-inline: auto; justify-content: center; text-align: center; text-wrap: balance; }
   .pay:disabled { opacity: 0.7; cursor: default; }
   /* Separador "o" entre pagar ahora y coordinar con Ceci */
   .pay-sep { display: flex; align-items: center; gap: 0.8rem; max-width: 460px; margin: 0.5rem auto; color: var(--ink-soft); font-size: 0.8rem; }
