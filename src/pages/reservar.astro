@@ -114,13 +114,13 @@ const senaLabel = fmt(SENA_UYU);
         <h2 class="step__title">Tus datos</h2>
         <form id="form" class="form" novalidate>
           <label>Nombre y apellido
-            <input type="text" name="nombre" required autocomplete="name" placeholder="Tu nombre" />
+            <input type="text" name="nombre" required minlength="2" maxlength="120" autocomplete="name" placeholder="Tu nombre" />
           </label>
           <label>WhatsApp
-            <input type="tel" name="tel" required autocomplete="tel" placeholder="09x xxx xxx" />
+            <input type="tel" name="tel" required minlength="5" maxlength="40" autocomplete="tel" placeholder="09x xxx xxx" />
           </label>
           <label>Email
-            <input type="email" name="email" required autocomplete="email" placeholder="tu@email.com" />
+            <input type="email" name="email" required maxlength="160" autocomplete="email" placeholder="tu@email.com" />
           </label>
           <p class="form__note">A este correo te llega la confirmación con el día y la hora de tu turno. Tus datos se usan solo para coordinar tu atención.</p>
           <label class="form__check">
@@ -607,6 +607,15 @@ const senaLabel = fmt(SENA_UYU);
       if (res.status === 429) {
         btn.disabled = false; btn.textContent = orig;
         showAlert(data.error || 'Hay muchas reservas sin confirmar ahora. Probá de nuevo en un rato.');
+        return null;
+      }
+      // Datos rechazados por el servidor (nombre, teléfono o email): mostramos el
+      // motivo real y volvemos a "Tus datos" en vez de un error genérico.
+      if (res.status === 400 && data.error) {
+        btn.disabled = false; btn.textContent = orig;
+        const deDatos = /nombre|tel[eé]fono|email/i.test(data.error);
+        if (deDatos) goTo(3);
+        showAlert(deDatos ? `${data.error}. Revisalo y probá de nuevo.` : data.error);
         return null;
       }
       if (!res.ok || !data.ok) throw new Error(data.error || 'error');
