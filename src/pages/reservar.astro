@@ -361,6 +361,10 @@ const senaLabel = fmt(SENA_UYU);
 
     // Un mes a la vista con flechas: apilados (o lado a lado) los meses quedaban
     // chicos y empujaban los horarios hacia abajo.
+    const hint = document.createElement('p');
+    hint.className = 'cal2__hint';
+    hint.textContent = 'Tocá un día marcado para ver los horarios.';
+    cont.appendChild(hint);
     const wraps = [];
     const mostrarMes = (i) => wraps.forEach((w, j) => (w.hidden = i !== j));
     meses.forEach(({ y, m }, idx) => {
@@ -435,7 +439,7 @@ const senaLabel = fmt(SENA_UYU);
     const leg = document.createElement('div');
     leg.className = 'cal2__leg';
     leg.innerHTML =
-      '<span><i class="cal2__lg cal2__lg--on"></i> Disponible</span><span><i class="cal2__lg cal2__lg--full"></i> Lleno</span>';
+      '<span><i class="cal2__lg cal2__lg--on"></i> Disponible</span><span><i class="cal2__lg cal2__lg--sel"></i> Elegido</span><span><i class="cal2__lg cal2__lg--full"></i> Lleno</span>';
     cont.appendChild(leg);
   }
 
@@ -996,15 +1000,23 @@ const senaLabel = fmt(SENA_UYU);
   /* Día sin turnos: número tenue, sin caja. */
   .cal2__cell--off { color: color-mix(in srgb, var(--ink-soft) 42%, var(--cream)); }
   /* Día con turnos libres: tinte salvia, invita a tocar. */
+  /* Antes era un tinte salvia al 18%: en el celular se leía gris, como si el día
+     estuviera lleno. Ahora: blanco con borde salvia firme y un punto debajo. */
   .cal2__cell--on {
-    background: color-mix(in srgb, var(--sage) 18%, var(--cream));
-    border-color: color-mix(in srgb, var(--sage) 40%, var(--cream));
-    color: var(--sage-deep); cursor: pointer; font-weight: 600;
+    position: relative;
+    background: var(--white);
+    border: 1.5px solid var(--sage);
+    color: var(--sage-deep); cursor: pointer; font-weight: 700;
     transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
   }
+  .cal2__cell--on::after {
+    content: ''; position: absolute; bottom: 5px; left: 50%; translate: -50% 0;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--clay);
+  }
+  .cal2__cell--sel::after { background: var(--cream); }
   .cal2__cell--on:hover {
-    background: color-mix(in srgb, var(--sage) 30%, var(--cream));
-    border-color: color-mix(in srgb, var(--sage) 60%, var(--cream));
+    background: color-mix(in srgb, var(--sage) 12%, var(--white));
+    border-color: var(--sage-deep);
     transform: translateY(-1px);
   }
   .cal2__cell--on:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
@@ -1023,7 +1035,9 @@ const senaLabel = fmt(SENA_UYU);
   .cal2__leg { width: 100%; display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.76rem; color: var(--ink-soft); margin-top: 0.8rem; justify-content: center; }
   .cal2__leg span { display: inline-flex; align-items: center; gap: 0.4rem; }
   .cal2__lg { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
-  .cal2__lg--on { background: color-mix(in srgb, var(--sage) 30%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sage) 50%, var(--cream)); }
+  .cal2__lg--on { background: var(--white); border: 1.5px solid var(--sage); }
+  .cal2__lg--sel { background: var(--sage); border: 1.5px solid var(--sage); }
+  .cal2__hint { width: 100%; text-align: center; font-size: 0.85rem; color: var(--ink-soft); margin: 0 0 0.4rem; }
   .cal2__lg--full { background: color-mix(in srgb, var(--sand) 55%, var(--cream)); border: 1px solid color-mix(in srgb, var(--sand) 80%, var(--cream)); }
   /* Horarios agrupados (Mañana / Tarde) */
   .slots-group { margin-bottom: 1rem; }
