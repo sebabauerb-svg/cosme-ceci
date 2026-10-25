@@ -325,6 +325,9 @@ const config = {
     };
     const conConsent = () => !!ficha?.ficha?.consentimiento_fecha;
     const planActivo = () => (seg?.planes ?? []).find((p: any) => p.estado === 'en_curso') ?? null;
+    const cuentaSesiones = (p: any) => p.hechas
+      ? `Sesión ${p.hechas}${p.sesiones ? ' de ' + p.sesiones : ''}`
+      : `Todavía sin sesiones${p.sesiones ? ' (' + p.sesiones + ' previstas)' : ''}`;
 
     function puntos(hechas: number, de: number | null) {
       if (!de) return `<span class="pc-resumen">${hechas} ${hechas === 1 ? 'sesión hecha' : 'sesiones hechas'}</span>`;
@@ -346,6 +349,7 @@ const config = {
       const proxima = [...hist].reverse().find((r) => ['confirmada', 'a_confirmar', 'pendiente_pago'].includes(r.estado) && r.fecha && r.fecha > hoy);
       const sugerida = (seg?.sesiones ?? []).find((s: any) => s.proxima_fecha)?.proxima_fecha;
       const plan = planActivo();
+      const ultimoPlan = plan ? null : (seg?.planes ?? [])[0] ?? null;
       const ultSes = ultima && (seg?.sesiones ?? []).find((s: any) => s.id === ultima.id);
       const nSes = ultSes?.tratamientos?.[0]?.sesion;
       const desde = new Date(f.created_at).toLocaleDateString('es-UY', { month: 'long', year: 'numeric' });
@@ -373,10 +377,12 @@ const config = {
               : '<span class="pc-vacio">Sin cargar (pestaña Plan)</span>'}
           </div>
           <div class="pc-dato pc-dato--ancho">
-            <span class="pc-lbl">Tratamiento en curso</span>
+            <span class="pc-lbl">${plan || !ultimoPlan ? 'Tratamiento en curso' : 'Último tratamiento'}</span>
             ${plan
-              ? `<span>${esc(plan.tratamiento)}</span>${puntos(plan.hechas, plan.sesiones)}<span class="pc-resumen">Sesión ${plan.hechas}${plan.sesiones ? ' de ' + plan.sesiones : ''}${plan.frecuencia ? ' · ' + esc(plan.frecuencia) : ''}</span>`
-              : '<span class="pc-vacio">Ninguno (pestaña Plan)</span>'}
+              ? `<span>${esc(plan.tratamiento)}</span>${puntos(plan.hechas, plan.sesiones)}<span class="pc-resumen">${cuentaSesiones(plan)}${plan.frecuencia ? ' · ' + esc(plan.frecuencia) : ''}</span>`
+              : ultimoPlan
+                ? `<span>${esc(ultimoPlan.tratamiento)}</span><span class="pc-resumen">${esc(cfg.estadosPlan[ultimoPlan.estado])} · ${ultimoPlan.hechas}${ultimoPlan.sesiones ? ' de ' + ultimoPlan.sesiones : ''} sesiones${ultimoPlan.ultima ? ' · la última el ' + esc(fmt(ultimoPlan.ultima, false)) : ''}</span>`
+                : '<span class="pc-vacio">Ninguno (pestaña Plan)</span>'}
           </div>
           <div class="pc-dato"><span class="pc-lbl">Última visita</span><span>${ultima ? esc(fmt(ultima.fecha, false)) + (nSes ? ` · sesión ${nSes}` : '') : '—'}</span></div>
           <div class="pc-dato"><span class="pc-lbl">Próxima</span><span>${proxima ? esc(fmt(proxima.fecha, false)) + (proxima.hora ? ' · ' + esc(proxima.hora) : '') : sugerida && sugerida > hoy ? 'Sugerida: ' + esc(fmt(sugerida, false)) : 'Sin turno'}</span></div>
@@ -425,14 +431,16 @@ const config = {
       } else b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
     });
 
-    function guardarCon(btn: HTMLButtonElement, out: HTMLElement, fn: () => Promise<void>) {
+    /** Guarda y avisa. El aviso se busca de nuevo por id: la pestaña se redibuja al guardar. */
+    function guardarCon(btn: HTMLButtonElement, outId: string, fn: () => Promise<void>) {
+      const aviso = (cls: string, txt: string) => { const o = document.getElementById(outId); if (o) { o.className = 'guardar__msg ' + cls; o.textContent = txt; } };
       btn.addEventListener('click', async () => {
-        btn.disabled = true; out.className = 'guardar__msg'; out.textContent = 'Guardando…';
+        btn.disabled = true; aviso('', 'Guardando…');
         try {
           await fn();
-          out.className = 'guardar__msg guardar__msg--ok'; out.textContent = 'Guardado.';
+          aviso('guardar__msg--ok', 'Guardado.');
         } catch (err) {
-          out.className = 'guardar__msg guardar__msg--dirty'; out.textContent = (err as Error).message;
+          aviso('guardar__msg--dirty', (err as Error).message);
         }
         btn.disabled = false;
       });
@@ -457,7 +465,7 @@ const config = {
         <label class="nv-campo">Otros antecedentes<textarea id="an-otros" rows="2" maxlength="2000" placeholder="Lo que no entra en las opciones de arriba">${esc(a.otros ?? '')}</textarea></label>
         <div class="nv-acciones"><button type="button" class="btn btn--primary" id="an-guardar">Guardar anamnesis</button><span class="guardar__msg" id="an-msg" role="status"></span></div>`;
       const v = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
-      guardarCon($('an-guardar') as HTMLButtonElement, $('an-msg'), async () => {
+      guardarCon($('an-guardar') as HTMLButtonElement, 'an-msg', async () => {
         await apiSeg({ accion: 'anamnesis', id: fichaId, anamnesis: {
           antecedentes: leerOps(cont, 'antecedentes'), alergias: v('an-alergias'), medicacion: v('an-medicacion'),
           fototipo: leerOps(cont, 'fototipo')[0] ?? null, tipo_piel: leerOps(cont, 'tipo_piel')[0] ?? null,
@@ -511,7 +519,7 @@ const config = {
             <button type="button" class="pc-link pl-editar">Editar plan</button>
           </div>`).join('') : '<p class="ag-vacia">Todavía no tiene un plan. Agregalo para llevar la cuenta de sesiones.</p>'}</div>
         <button type="button" class="btn btn--ghost" id="pl-nuevo">Agregar un plan</button>`;
-      guardarCon($('pl-obj-guardar') as HTMLButtonElement, $('pl-obj-msg'), async () => {
+      guardarCon($('pl-obj-guardar') as HTMLButtonElement, 'pl-obj-msg', async () => {
         await apiSeg({ accion: 'anamnesis', id: fichaId, motivo: ($('pl-motivo') as HTMLTextAreaElement).value, objetivos: leerOps(cont, 'objetivos') });
         await recargarSeg();
       });
@@ -855,10 +863,14 @@ const config = {
     $('pc-nueva').addEventListener('click', () => abrir(null));
     $('pc-volver').addEventListener('click', () => { ver('lista'); if (!cargada) cargarLista(); });
 
-    // Carga perezosa: recién cuando Ceci abre la pestaña.
+    // Carga perezosa: recién cuando la pestaña queda activa. Se observa el
+    // atributo (y no el clic) porque el panel restaura la última pestaña usada
+    // después de que corre este script.
     const tabPanel = document.querySelector<HTMLButtonElement>('.tab[data-ir="pacientes"]');
-    tabPanel?.addEventListener('click', () => { if (!cargada && !vistaLista.hidden) cargarLista(); });
-    if (tabPanel?.getAttribute('aria-current') === 'true') cargarLista();
+    const siActiva = () => { if (tabPanel?.getAttribute('aria-current') === 'true' && !cargada && !vistaLista.hidden) cargarLista(); };
+    if (tabPanel) new MutationObserver(siActiva).observe(tabPanel, { attributes: true, attributeFilter: ['aria-current'] });
+    tabPanel?.addEventListener('click', siActiva);
+    siActiva();
   })();
 </script>
 
