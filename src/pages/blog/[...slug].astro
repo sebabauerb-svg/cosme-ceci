@@ -1,19 +1,26 @@
 ---
-import { render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
 import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
 import WhatsappFloat from '../../components/WhatsappFloat.astro';
-import { getEntradas, fmtFecha, TIPOS } from '../../lib/blog';
+import Suscripcion from '../../components/Suscripcion.astro';
+import { getEntradas, fmtFecha, TIPOS, fotoDeEntrada, minutosDeLectura } from '../../lib/blog';
+import { rutaCabecera, rutaFoto } from '../../data/galeria-newsletter';
+import { htmlDeNovedad } from '../../lib/formato-novedades';
 
 export async function getStaticPaths() {
   const posts = await getEntradas();
-  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post, todas: posts } }));
 }
 
-const { post } = Astro.props;
-const { Content } = await render(post);
+const { post, todas } = Astro.props;
+// El cuerpo pasa por el formateador de novedades (src/lib/formato-novedades.ts).
+const cuerpo = await htmlDeNovedad(post.body ?? '');
 const tipo = TIPOS[post.data.tipo].label;
+const portada = rutaCabecera(fotoDeEntrada(post));
+const minutos = minutosDeLectura(post.body);
+// Más novedades: las dos más recientes publicadas, sin contar esta.
+const mas = todas.filter((e) => e.id !== post.id && e.data.publicado).slice(0, 2);
 ---
 
 <Base
@@ -25,70 +32,140 @@ const tipo = TIPOS[post.data.tipo].label;
 >
   <Nav />
   <main class="post" id="contenido">
-    <article class="container">
-      <a class="post__back" href="/blog">← Novedades y notas</a>
-      {!post.data.publicado && <p class="post__draft">Borrador · solo visible en desarrollo</p>}
-      <p class="post__meta">
-        <span class="post__tipo">{tipo}</span>
-        <time datetime={post.data.fecha.toISOString()}>{fmtFecha(post.data.fecha)} · {post.data.autora}</time>
-      </p>
-      <h1>{post.data.titulo}</h1>
-      <div class="post__body">
-        <Content />
-      </div>
-      <aside class="post__cta">
-        <p>Cada piel necesita algo distinto. Si querés saber qué le sirve a la tuya, lo vemos en la consulta.</p>
-        <div class="post__actions">
-          <a class="btn btn--primary" href="/reservar">Agendá tu valoración</a>
-          <a class="btn btn--ghost" href="/blog">Más novedades</a>
+    <article>
+      <header class="container post__head">
+        <a class="post__back" href="/blog">← Novedades y notas</a>
+        {!post.data.publicado && <p class="post__draft">Borrador · solo visible en desarrollo</p>}
+        <p class="post__meta">
+          <span class="post__tipo">{tipo}</span>
+          <time datetime={post.data.fecha.toISOString()}>{fmtFecha(post.data.fecha)}</time>
+          <span aria-hidden="true">·</span>
+          <span>{minutos} min de lectura</span>
+        </p>
+        <h1>{post.data.titulo}</h1>
+        <p class="post__autora">
+          <img src="/email/ceci-firma.jpg" alt="" width="40" height="40" />
+          <span>Por <strong>{post.data.autora}</strong> · Cosmetología Médica</span>
+        </p>
+      </header>
+
+      <figure class="container post__portada">
+        <img src={portada} alt="" width="1200" height="520" fetchpriority="high" />
+      </figure>
+
+      <div class="container post__cuerpo">
+        <div class="post__body">
+          <Fragment set:html={cuerpo} />
         </div>
-      </aside>
+
+        <aside class="post__firma" aria-label="Sobre la autora">
+          <img src="/ceci.jpg" alt="Cecilia Gutiérrez" width="88" height="88" loading="lazy" />
+          <div>
+            <p class="post__firma-nombre">Cecilia Gutiérrez</p>
+            <p class="post__firma-sub">Cosmetología Médica · Montevideo y San José</p>
+            <p>Cada piel necesita algo distinto. Si querés saber qué le sirve a la tuya, lo vemos en la consulta.</p>
+            <div class="post__actions">
+              <a class="btn btn--primary" href="/reservar">Agendá tu valoración</a>
+              <a class="btn btn--ghost" href="/blog">Más novedades</a>
+            </div>
+          </div>
+        </aside>
+      </div>
     </article>
+
+    {mas.length > 0 && (
+      <section class="container post__mas" aria-labelledby="mas-tit">
+        <h2 id="mas-tit">Seguí leyendo</h2>
+        <ul>
+          {mas.map((e) => (
+            <li>
+              <a href={`/blog/${e.id}`}>
+                <img src={rutaFoto(fotoDeEntrada(e))} alt="" width="480" height="360" loading="lazy" />
+                <span class="post__mas-tipo">{TIPOS[e.data.tipo].label}</span>
+                <span class="post__mas-tit">{e.data.titulo}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    <div class="container post__nl">
+      <Suscripcion origen="blog" />
+    </div>
   </main>
   <Footer />
   <WhatsappFloat />
 </Base>
 
 <style>
-  .post { padding-block: clamp(3rem, 7vw, 5rem); }
-  .post article { max-width: 70ch; }
+  .post { padding-block: clamp(2.5rem, 6vw, 4.5rem); }
+  .post__head, .post__cuerpo { max-width: calc(68ch + 2 * var(--gutter, 1.25rem)); }
   .post__back { color: var(--sage-deep); font-weight: 600; font-size: 0.92rem; }
-  .post__meta { margin: 1.5rem 0 0.5rem; font-size: 0.88rem; color: var(--ink-soft); }
-  .post__tipo {
-    margin-right: 0.6rem;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--sage-deep);
-  }
-  .post__draft {
-    margin-top: 1rem;
-    padding: 0.6rem 0.9rem;
-    border-radius: var(--radius-sm);
-    background: var(--ink);
-    color: var(--cream);
-    font-size: 0.88rem;
-  }
-  .post h1 { overflow-wrap: anywhere; }
-  .post__cta {
-    margin-top: 2.5rem;
-    padding-top: 1.8rem;
-    border-top: 1px solid var(--sand);
-  }
-  .post__cta p { color: var(--ink); margin-bottom: 1.1rem; }
-  .post__actions { display: flex; flex-wrap: wrap; gap: 0.7rem; }
-  .post h1 { margin-bottom: 1.5rem; }
-  .post__body :global(h2) { font-size: 1.5rem; margin: 2rem 0 0.8rem; }
+  .post__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.5rem; margin: 1.5rem 0 0.6rem; font-size: 0.88rem; color: var(--ink-soft); }
+  .post__tipo { margin-right: 0.2rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sage-deep); }
+  .post__draft { margin-top: 1rem; padding: 0.6rem 0.9rem; border-radius: var(--radius-sm); background: var(--ink); color: var(--cream); font-size: 0.88rem; }
+  .post h1 { overflow-wrap: anywhere; text-wrap: balance; margin-bottom: 1.2rem; }
+  .post__autora { display: flex; align-items: center; gap: 0.7rem; font-size: 0.92rem; color: var(--ink-soft); }
+  .post__autora img { width: 40px; height: 40px; border-radius: 999px; object-fit: cover; }
+  .post__autora strong { color: var(--ink); font-weight: 600; }
+
+  .post__portada { max-width: 1040px; margin-block: clamp(1.6rem, 4vw, 2.4rem); }
+  .post__portada img { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 520; object-fit: cover; border-radius: var(--radius); }
+
+  /* Cuerpo: lo que arma src/lib/remark-novedades.mjs */
   .post__body :global(p) { margin-bottom: 1.1rem; }
-  .post__body :global(blockquote) {
-    padding: 1.2rem 1.4rem;
-    margin: 1.5rem 0;
-    font-style: italic;
-    color: var(--ink);
+  .post__body :global(.nv-lede) { font-family: var(--font-serif); font-size: clamp(1.2rem, 2.4vw, 1.4rem); line-height: 1.5; color: var(--ink); margin-bottom: 1.4rem; }
+  .post__body :global(h2) { font-size: clamp(1.3rem, 2.6vw, 1.55rem); line-height: 1.3; margin: 2.4rem 0 0.9rem; text-wrap: balance; }
+  .post__body :global(.nv-h) { display: flex; gap: 0.75rem; align-items: flex-start; }
+  .post__body :global(.nv-h::before) {
+    content: attr(data-emoji);
+    flex-shrink: 0;
+    display: grid; place-items: center;
+    width: 2.3rem; height: 2.3rem; margin-top: -0.15rem;
+    font-size: 1.1rem; line-height: 1;
+    border-radius: 999px;
     background: var(--cream-deep);
-    border-radius: var(--radius-sm);
   }
+  .post__body :global(.nv-caja) { margin: 2rem 0; padding: 1.3rem 1.4rem 0.4rem; border-radius: var(--radius); }
+  .post__body :global(.nv-caja .nv-h) { margin-top: 0; }
+  .post__body :global(.nv-caja--tip) { background: color-mix(in srgb, var(--sage) 12%, var(--white)); }
+  .post__body :global(.nv-caja--tip .nv-h::before) { background: var(--white); }
+  .post__body :global(.nv-caja--alerta) { background: color-mix(in srgb, var(--clay) 11%, var(--white)); }
+  .post__body :global(.nv-caja--alerta .nv-h::before) { background: var(--white); }
+  .post__body :global(.nv-paso) { padding-left: 1rem; border-left: 3px solid var(--sand); }
+  .post__body :global(.nv-caja .nv-paso) { border-left-color: color-mix(in srgb, var(--sage) 35%, var(--white)); }
+  .post__body :global(strong) { color: var(--ink); font-weight: 600; }
+  .post__body :global(ol), .post__body :global(ul) { margin: 0 0 1.2rem 1.3rem; display: grid; gap: 0.6rem; }
+  .post__body :global(ol li::marker) { font-family: var(--font-serif); color: var(--clay-deep); font-weight: 600; }
+  .post__body :global(.nv-senales ul) { list-style: none; margin-left: 0; gap: 0.5rem; }
+  .post__body :global(.nv-senales li) { position: relative; padding: 0.6rem 0.9rem 0.6rem 2.2rem; background: var(--white); border-radius: var(--radius-sm); }
+  .post__body :global(.nv-senales li::before) { content: ''; position: absolute; left: 0.9rem; top: 1.05rem; width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--clay); }
+  .post__body :global(.nv-senales li p) { margin: 0; }
+  .post__body :global(blockquote) { padding: 1.2rem 1.4rem; margin: 1.5rem 0; font-style: italic; color: var(--ink); background: var(--cream-deep); border-radius: var(--radius-sm); }
   .post__body :global(hr) { border: 0; border-top: 1px solid var(--sand); margin: 2rem 0; }
   .post__body :global(a) { color: var(--clay-deep); text-decoration: underline; }
+
+  .post__firma { display: flex; gap: 1.2rem; align-items: flex-start; margin-top: 2.6rem; padding: 1.5rem; background: var(--cream-deep); border-radius: var(--radius); }
+  .post__firma img { flex-shrink: 0; width: 88px; height: 88px; border-radius: 999px; object-fit: cover; }
+  .post__firma p { margin: 0 0 0.9rem; color: var(--ink); }
+  .post__firma .post__firma-nombre { font-family: var(--font-serif); font-size: 1.25rem; margin: 0; }
+  .post__firma .post__firma-sub { font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 0.8rem; }
+  .post__actions { display: flex; flex-wrap: wrap; gap: 0.7rem; }
+
+  .post__mas { max-width: 1040px; margin-top: clamp(2.8rem, 6vw, 4rem); }
+  .post__mas h2 { font-size: clamp(1.4rem, 3vw, 1.8rem); margin-bottom: 1.1rem; }
+  .post__mas ul { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.2rem; }
+  .post__mas a { display: grid; gap: 0.35rem; color: var(--ink); }
+  .post__mas img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius); margin-bottom: 0.5rem; }
+  .post__mas-tipo { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--sage-deep); }
+  .post__mas-tit { font-family: var(--font-serif); font-size: 1.2rem; line-height: 1.3; overflow-wrap: anywhere; }
+  .post__mas a:hover .post__mas-tit { color: var(--sage-deep); }
+  .post__nl { max-width: 1040px; margin-top: clamp(2.8rem, 6vw, 4rem); }
+
+  @media (max-width: 560px) {
+    .post__firma { flex-direction: column; gap: 0.9rem; padding: 1.2rem; }
+    .post__firma img { width: 64px; height: 64px; }
+    .post__body :global(.nv-caja) { padding: 1.1rem 1rem 0.3rem; margin-inline: -0.25rem; }
+  }
 </style>

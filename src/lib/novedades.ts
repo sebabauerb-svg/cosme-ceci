@@ -22,6 +22,8 @@ export interface Entrada {
   autora: string;
   tipo: Tipo;
   publicado: boolean;
+  /** Foto de portada: id de la galería (src/data/galeria-newsletter.ts); vacío = automática. */
+  imagen?: string;
   cuerpo: string;
 }
 
@@ -93,6 +95,7 @@ export function parsear(slug: string, texto: string): Entrada {
     autora: datos.autora || 'Ceci',
     tipo,
     publicado: datos.publicado !== 'false',
+    imagen: datos.imagen || undefined,
     cuerpo: (m ? m[2] : texto).replace(/^\s*\n/, '').replace(/\s+$/, ''),
   };
 }
@@ -107,6 +110,7 @@ export function serializar(e: Entrada): string {
     `autora: ${JSON.stringify(e.autora)}`,
     `tipo: ${e.tipo}`,
     `publicado: ${e.publicado}`,
+    ...(e.imagen ? [`imagen: ${e.imagen}`] : []),
     '---',
     '',
     e.cuerpo.replace(/\r\n/g, '\n').trim(),
