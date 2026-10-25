@@ -2426,7 +2426,9 @@ if (authed) {
   }
   .tab:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
   /* Sin JS no hay pestañas: se ve todo, que es mejor que no ver nada. */
-  .card[data-tab].is-oculta { display: none; }
+  /* Global: la pestaña Pacientes vive en su propio componente y un estilo scoped
+     de esta página no la alcanza (quedaba visible en todas las pestañas). */
+  :global(.card[data-tab].is-oculta) { display: none; }
 
   .panel__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
   .panel__head h1 { font-size: clamp(1.6rem, 3vw, 2rem); }
