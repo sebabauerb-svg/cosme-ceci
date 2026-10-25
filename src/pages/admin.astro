@@ -370,9 +370,14 @@ if (authed) {
               <fieldset class="nl-paso">
                 <legend>1. Elegí de 1 a 3 novedades</legend>
                 <div id="nl-entradas" class="nl-entradas"></div>
+                <div id="nl-fotos" class="nl-fotos" hidden></div>
               </fieldset>
               <fieldset class="nl-paso">
                 <legend>2. Escribí el mail</legend>
+                <div class="nl-foto-campo">
+                  <span class="nv-campo">Foto de arriba</span>
+                  <div id="nl-cabecera" class="nl-galeria" role="radiogroup" aria-label="Foto de arriba"></div>
+                </div>
                 <label class="nv-campo">Asunto
                   <input type="text" name="asunto" maxlength="120" required />
                 </label>
@@ -2158,9 +2163,45 @@ if (authed) {
 
     type Entrada = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
     type Envio = { id: string; asunto: string; total: number; enviados: number; created_at: string; terminado_at: string | null };
-    type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[] };
+    type Foto = { id: string; etiqueta: string; miniatura: string };
+    type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[]; galeria: Foto[]; cabeceraPorDefecto: string };
     let datos: Datos | null = null;
     let elegidas: string[] = [];
+    // Fotos del mail: la de arriba (siempre una) y, opcional, una por novedad.
+    let cabecera = '';
+    let fotosEnt: Record<string, string> = {};
+    const fotosEl = document.getElementById('nl-fotos')!;
+    const cabeceraEl = document.getElementById('nl-cabecera')!;
+
+    /** Fila de miniaturas para elegir una foto (radio). `sinFoto` agrega la opción vacía. */
+    function galeriaHTML(nombre: string, valor: string, sinFoto: boolean) {
+      const ops = (sinFoto ? [{ id: '', etiqueta: 'Sin foto', miniatura: '' }] : []).concat(datos!.galeria);
+      return ops.map((f) => `<label class="nl-foto${f.id ? '' : ' nl-foto--nada'}" title="${esc(f.etiqueta)}">
+          <input type="radio" name="${esc(nombre)}" value="${esc(f.id)}" ${f.id === valor ? 'checked' : ''} />
+          ${f.miniatura ? `<img src="${esc(f.miniatura)}" alt="${esc(f.etiqueta)}" loading="lazy" />` : '<span>Sin foto</span>'}
+        </label>`).join('');
+    }
+
+    function pintarFotos() {
+      cabeceraEl.innerHTML = galeriaHTML('nl-cab', cabecera, false);
+      const sel = elegidas.map((s) => datos!.entradas.find((e) => e.slug === s)).filter((e): e is Entrada => !!e);
+      fotosEl.hidden = !sel.length;
+      fotosEl.innerHTML = sel.length
+        ? '<p class="nv-campo">Foto de cada novedad <span class="nv-ayuda">(opcional)</span></p>' + sel.map((e) => `
+          <div class="nl-foto-fila">
+            <span class="nl-foto-tit">${esc(e.titulo)}</span>
+            <div class="nl-galeria" role="radiogroup" aria-label="Foto para ${esc(e.titulo)}">${galeriaHTML('nl-f-' + e.slug, fotosEnt[e.slug] || '', true)}</div>
+          </div>`).join('')
+        : '';
+    }
+
+    cabeceraEl.addEventListener('change', (ev) => { cabecera = (ev.target as HTMLInputElement).value; vista.hidden = true; });
+    fotosEl.addEventListener('change', (ev) => {
+      const r = ev.target as HTMLInputElement;
+      const slug = r.name.replace(/^nl-f-/, '');
+      if (r.value) fotosEnt[slug] = r.value; else delete fotosEnt[slug];
+      vista.hidden = true;
+    });
     let asuntoTocado = false;
     let cargada = false;
 
@@ -2232,7 +2273,12 @@ if (authed) {
       listaEl.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach((c) => { c.disabled = !c.checked && n >= 3; });
     }
 
-    const cuerpo = () => ({ entradas: elegidas, asunto: campo('asunto').value, intro: campo('intro').value });
+    const cuerpo = () => ({
+      entradas: elegidas,
+      asunto: campo('asunto').value,
+      intro: campo('intro').value,
+      fotos: { cabecera, porEntrada: Object.fromEntries(elegidas.filter((s) => fotosEnt[s]).map((s) => [s, fotosEnt[s]])) },
+    });
 
     listaEl.addEventListener('change', (ev) => {
       const c = ev.target as HTMLInputElement;
@@ -2244,6 +2290,7 @@ if (authed) {
         campo('asunto').value = primera ? primera.titulo : '';
       }
       vista.hidden = true;
+      pintarFotos();
       actualizarBotones();
     });
     campo('asunto').addEventListener('input', () => { asuntoTocado = !!campo('asunto').value; actualizarBotones(); });
@@ -2275,16 +2322,25 @@ if (authed) {
         : `¡Listo! Se mandó a ${plural(d.hechos, 'persona', 'personas')}.`;
     }
 
+    // Confirmación en dos toques (sin confirm(), que algunos navegadores bloquean):
+    // el primero avisa a cuántas personas va, el segundo manda.
+    let armadoEnviar: ReturnType<typeof setTimeout> | null = null;
     btnEnviar.addEventListener('click', async () => {
       const n = datos!.confirmados;
-      if (!confirm(`¿Mandar "${campo('asunto').value}" a ${plural(n, 'persona', 'personas')}? No se puede deshacer.`)) return;
+      if (!armadoEnviar) {
+        btnEnviar.textContent = 'Tocá de nuevo para enviar';
+        msg.textContent = `Se manda "${campo('asunto').value}" a ${plural(n, 'persona', 'personas')}. No se puede deshacer.`;
+        armadoEnviar = setTimeout(() => { armadoEnviar = null; msg.textContent = ''; pintarResumen(); }, 6000);
+        return;
+      }
+      clearTimeout(armadoEnviar); armadoEnviar = null;
       btnEnviar.disabled = true; msg.textContent = 'Enviando…';
       try {
         avisarResultado(await api({ accion: 'enviar', ...cuerpo() }));
-        elegidas = []; asuntoTocado = false;
+        elegidas = []; asuntoTocado = false; fotosEnt = {}; cabecera = datos!.cabeceraPorDefecto;
         campo('asunto').value = ''; campo('intro').value = '';
         vista.hidden = true;
-        pintarEntradas();
+        pintarEntradas(); pintarFotos();
       } catch (err) { msg.textContent = (err as Error).message; }
       actualizarBotones();
     });
@@ -2302,7 +2358,8 @@ if (authed) {
         datos = await api();
         cargada = true;
         campo('para').value = datos!.pruebaA;
-        pintarResumen(); pintarEntradas(); pintarEnvios();
+        cabecera = datos!.cabeceraPorDefecto;
+        pintarResumen(); pintarEntradas(); pintarEnvios(); pintarFotos();
         form!.hidden = false;
       } catch (err) {
         resumenEl!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
@@ -2768,6 +2825,20 @@ if (authed) {
   @media (max-width: 560px) {
     .tm__head { flex-direction: column; }
   }
+
+  /* Fotos del newsletter */
+  .nl-fotos { display: grid; gap: 0.8rem; padding-top: 0.4rem; }
+  .nl-fotos[hidden] { display: none; }
+  .nl-foto-campo { display: grid; gap: 0.4rem; }
+  .nl-foto-fila { display: grid; gap: 0.35rem; min-width: 0; }
+  .nl-foto-tit { font-size: 0.85rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .nl-galeria { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .nl-foto { position: relative; display: block; width: 84px; height: 63px; border-radius: var(--radius-sm); overflow: hidden; cursor: pointer; border: 2px solid transparent; background: var(--white); }
+  .nl-foto input { position: absolute; opacity: 0; pointer-events: none; }
+  .nl-foto img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .nl-foto--nada { display: grid; place-items: center; border-color: var(--sand); font-size: 0.75rem; color: var(--ink-soft); }
+  .nl-foto:has(input:checked) { border-color: var(--sage-deep); box-shadow: 0 0 0 2px var(--white) inset; }
+  .nl-foto:has(input:focus-visible) { outline: 2px solid var(--sage); outline-offset: 2px; }
 
   /* Suscriptas */
   .sus { margin-top: 1.6rem; border-top: 1px solid var(--sand); padding-top: 1rem; }
