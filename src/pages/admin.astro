@@ -424,6 +424,7 @@ if (authed) {
                 <a class="btn btn--ghost btn--sm" id="sus-csv" href="/api/admin/suscriptoras?formato=csv">Descargar CSV</a>
               </div>
               <div id="sus-lista"><p class="ag-vacia">Cargando…</p></div>
+              <p class="nv-ayuda">"Reenviar confirmación" le vuelve a mandar a esa persona el mail para confirmar (una por vez; como mucho cada 10 minutos). Hasta que no toque el link no recibe el newsletter.</p>
               <p class="nv-ayuda">"Eliminar" es para cuando alguien pide que borren sus datos (Ley 18.331): se borra el email y queda solo la constancia de la fecha. No se puede deshacer. Para dejar de mandarle mails alcanza con que se dé de baja.</p>
             </details>
           </section>
@@ -2067,7 +2068,7 @@ if (authed) {
     if (tab?.getAttribute('aria-current') === 'true') cargar();
   })();
 
-  // ---------- Suscriptas del newsletter (lista, filtro, CSV, supresión) ----------
+  // ---------- Suscriptas del newsletter (lista, filtro, CSV, reenvío, supresión) ----------
   (() => {
     const box = document.getElementById('sus') as HTMLDetailsElement | null;
     const lista = document.getElementById('sus-lista');
@@ -2079,9 +2080,21 @@ if (authed) {
     const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Montevideo' }) : '—';
     const ESTADO: Record<string, string> = { confirmado: 'Confirmada', pendiente: 'Sin confirmar', baja: 'Baja' };
     const ORIGEN: Record<string, string> = { blog: 'Novedades', home: 'Inicio', reserva: 'Al reservar' };
-    type Sus = { id: string; email: string; estado: string; origen: string | null; created_at: string; confirmado_at: string | null; baja_at: string | null };
+    type Sus = { id: string; email: string; estado: string; origen: string | null; created_at: string; confirmado_at: string | null; baja_at: string | null; confirmacion_enviada_at: string | null };
     let filas: Sus[] = [];
     let armado: string | null = null;
+    // Reenvío de la confirmación, también en dos toques. `reenvio` guarda el
+    // resultado por fila ("Enviado" o el error) hasta que se vuelve a cargar.
+    let armadoRe: string | null = null;
+    const reenvio: Record<string, string> = {};
+    const FRENO_MS = 10 * 60 * 1000;
+    const enFreno = (f: Sus) => !!f.confirmacion_enviada_at && Date.now() - new Date(f.confirmacion_enviada_at).getTime() < FRENO_MS;
+    function botonReenvio(f: Sus) {
+      if (f.estado !== 'pendiente') return '';
+      if (reenvio[f.id]) return `<span class="sus__nota">${esc(reenvio[f.id])}</span>`;
+      if (enFreno(f)) return '<span class="sus__nota">Mail enviado hace menos de 10 min</span>';
+      return `<button type="button" class="gs-rec" data-re>${armadoRe === f.id ? 'Tocá de nuevo para enviar' : 'Reenviar confirmación'}</button>`;
+    }
 
     const params = () => {
       const p = new URLSearchParams();
@@ -2101,7 +2114,7 @@ if (authed) {
             <span role="cell" data-l="Origen">${esc(ORIGEN[f.origen ?? ''] || f.origen || '—')}</span>
             <span role="cell" data-l="Alta">${fmt(f.created_at)}</span>
             <span role="cell" data-l="Confirmó">${f.estado === 'baja' ? 'Baja ' + fmt(f.baja_at) : fmt(f.confirmado_at)}</span>
-            <span role="cell"><button type="button" class="gs-rec" data-sup>${armado === f.id ? 'Tocá de nuevo para eliminar' : 'Eliminar'}</button></span>
+            <span role="cell" class="sus__acciones">${botonReenvio(f)}<button type="button" class="gs-rec" data-sup>${armado === f.id ? 'Tocá de nuevo para eliminar' : 'Eliminar'}</button></span>
           </div>`).join('')}
         </div>`;
     }
@@ -2113,7 +2126,7 @@ if (authed) {
         if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
         const d = await res.json();
         if (!d.ok) throw new Error(d.error || 'No se pudo leer la lista.');
-        filas = d.suscriptoras; pintar();
+        filas = d.suscriptoras; for (const k in reenvio) delete reenvio[k]; pintar();
       } catch (err) { lista!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`; }
     }
 
@@ -2121,6 +2134,26 @@ if (authed) {
     q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(cargar, 300); });
     est.addEventListener('change', cargar);
     box.addEventListener('toggle', () => { if (box.open) cargar(); });
+
+    // Reenviar la confirmación en dos toques (sin confirm()). Es manual y de a una:
+    // nunca se reenvía sola a toda la lista.
+    lista.addEventListener('click', async (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-re]');
+      const id = btn?.closest<HTMLElement>('.sus__fila')?.dataset.id;
+      if (!btn || !id) return;
+      if (armadoRe !== id) { armadoRe = id; pintar(); setTimeout(() => { if (armadoRe === id) { armadoRe = null; pintar(); } }, 6000); return; }
+      armadoRe = null; btn.disabled = true; btn.textContent = 'Enviando…';
+      try {
+        const res = await fetch('/api/admin/suscriptoras', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accion: 'reenviar', id }) });
+        if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página.');
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo reenviar.');
+        reenvio[id] = 'Confirmación enviada ✓';
+        const f = filas.find((x) => x.id === id);
+        if (f) f.confirmacion_enviada_at = new Date().toISOString();
+      } catch (err) { reenvio[id] = (err as Error).message; }
+      pintar();
+    });
 
     // Supresión en dos toques (sin confirm(), que el navegador puede bloquear).
     lista.addEventListener('click', async (ev) => {
@@ -2853,12 +2886,15 @@ if (authed) {
   .sus__fila { display: grid; grid-template-columns: minmax(0, 2.2fr) 1fr 0.9fr 0.9fr 1fr auto; gap: 0.6rem; align-items: center; padding: 0.55rem 0; border-top: 1px solid var(--sand); }
   .sus__fila--head { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); border-top: 0; }
   .sus__email { overflow-wrap: anywhere; color: var(--ink); font-weight: 600; }
+  .sus__acciones { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.3rem 0.6rem; }
+  .sus__nota { font-size: 0.8rem; color: var(--ink-soft); }
   @media (max-width: 640px) {
     .sus__fila--head { display: none; }
     .sus__fila { grid-template-columns: 1fr auto; gap: 0.2rem 0.8rem; }
     .sus__fila > [data-l] { grid-column: 1 / -1; font-size: 0.82rem; color: var(--ink-soft); }
     .sus__fila > [data-l]::before { content: attr(data-l) ': '; }
     .sus__fila > span:last-child { grid-column: 1 / -1; justify-self: start; }
+    .sus__acciones { justify-content: flex-start; }
   }
 
   /* Newsletter */

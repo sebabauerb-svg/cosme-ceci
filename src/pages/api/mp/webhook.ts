@@ -10,6 +10,7 @@ import { crearEventoReserva } from '../../../lib/calendar';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
 import { enviarWhatsApp } from '../../../lib/whatsapp';
+import { baseUrl, linkPendiente } from '../../../lib/newsletter';
 
 export const prerender = false;
 
@@ -184,6 +185,8 @@ export const POST: APIRoute = async ({ request }) => {
             // Lo cobrado por la web es la seña; el resto se abona en la consulta.
             sena,
             linkCambio: linkAutogestion(d.token_gestion),
+            // Si pidió las novedades al reservar y todavía no confirmó, otra oportunidad.
+            linkNewsletter: await linkPendiente(sql, d.email, baseUrl(request)),
           });
           // Mismo aviso por WhatsApp, desde el número de Ceci (si está activo).
           await enviarWhatsApp('confirmado', d.telefono, {

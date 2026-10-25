@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import crypto from 'node:crypto';
 import { isAdmin } from '../../../lib/admin';
 import { getSql, ensureNewsletter } from '../../../lib/db';
+import { baseUrl, reenviarConfirmacion } from '../../../lib/newsletter';
 
 export const prerender = false;
 
@@ -31,7 +32,7 @@ export const GET: APIRoute = async ({ cookies, url }) => {
     const sql = getSql();
     await ensureNewsletter(sql);
     const filas = (await sql`
-      select id, email, estado, origen, created_at, confirmado_at, baja_at
+      select id, email, estado, origen, created_at, confirmado_at, baja_at, confirmacion_enviada_at
         from newsletter_suscriptores
        where suprimido_at is null
          and (${filtroEstado}::text is null or estado = ${filtroEstado})
@@ -65,9 +66,11 @@ export const GET: APIRoute = async ({ cookies, url }) => {
   }
 };
 
-// POST /api/admin/suscriptoras  { accion: 'suprimir', id }
-// Derecho de supresión: borra el email (queda uno anónimo) y deja constancia de
-// la fecha. No se puede deshacer: si la persona quiere volver, se suscribe de nuevo.
+// POST /api/admin/suscriptoras  { accion: 'suprimir' | 'reenviar', id }
+// suprimir — derecho de supresión: borra el email (queda uno anónimo) y deja constancia
+//   de la fecha. No se puede deshacer: si la persona quiere volver, se suscribe de nuevo.
+// reenviar — vuelve a mandar el mail para confirmar a una que está sin confirmar
+//   (manual, de a una; con el freno de 10 minutos).
 export const POST: APIRoute = async ({ cookies, request }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
   let b: any;
@@ -76,7 +79,19 @@ export const POST: APIRoute = async ({ cookies, request }) => {
   } catch {
     return json({ ok: false, error: 'Cuerpo inválido' }, 400);
   }
-  if (b?.accion !== 'suprimir' || !uuidOk(b.id)) return json({ ok: false, error: 'Datos inválidos' }, 400);
+  if (!['suprimir', 'reenviar'].includes(b?.accion) || !uuidOk(b.id)) return json({ ok: false, error: 'Datos inválidos' }, 400);
+  if (b.accion === 'reenviar') {
+    try {
+      const sql = getSql();
+      await ensureNewsletter(sql);
+      const r = await reenviarConfirmacion(sql, b.id, baseUrl(request));
+      if (!r.ok) return json({ ok: false, error: r.error }, r.status);
+      return json({ ok: true });
+    } catch (e) {
+      console.error('POST /api/admin/suscriptoras (reenviar):', e instanceof Error ? e.message : e);
+      return json({ ok: false, error: 'No se pudo reenviar. Probá de nuevo en un rato.' }, 500);
+    }
+  }
   try {
     const sql = getSql();
     await ensureNewsletter(sql);

@@ -250,6 +250,21 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         }
       }
 
+      // Casilla opcional "quiero recibir las novedades" (desmarcada por defecto).
+      // Doble opt-in igual que en /blog, pero sin mail aparte: el link para
+      // confirmar va dentro del mail de la reserva, que la paciente sí abre.
+      // Un error acá nunca debe trabar la reserva.
+      let linkNewsletter: string | null = null;
+      const emailNl = body?.newsletter === true ? normalizarEmail(emailT) : null;
+      if (emailNl) {
+        try {
+          await ensureNewsletter(sql);
+          linkNewsletter = await pedirSuscripcion(sql, emailNl, 'reserva', baseUrl(request), { mandarMail: false });
+        } catch (e) {
+          console.error('newsletter desde reserva:', e instanceof Error ? e.message : e);
+        }
+      }
+
       // Aviso por email a Ceci y a la clienta. Fire-and-forget: la latencia de
       // Resend no debe demorar el redirect al checkout (notificarReserva nunca lanza).
       void notificarReserva({
@@ -263,20 +278,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         pagoOnline: !!initPoint,
         via,
         sena: precioNum,
+        linkNewsletter,
       });
-
-      // Casilla opcional "quiero recibir las novedades" (desmarcada por defecto).
-      // Mismo doble opt-in que en /blog: queda pendiente hasta que confirme
-      // desde el mail. Un error acá nunca debe trabar la reserva.
-      const emailNl = body?.newsletter === true ? normalizarEmail(emailT) : null;
-      if (emailNl) {
-        try {
-          await ensureNewsletter(sql);
-          await pedirSuscripcion(sql, emailNl, 'reserva', baseUrl(request));
-        } catch (e) {
-          console.error('newsletter desde reserva:', e instanceof Error ? e.message : e);
-        }
-      }
 
       return json({ ok: true, id: reservaId, initPoint, via });
     } catch (e: any) {

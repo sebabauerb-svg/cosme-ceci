@@ -51,6 +51,8 @@ type Datos = {
   sena?: number | null;
   /** link /mi-turno para que la paciente cambie el horario sola */
   linkCambio?: string | null;
+  /** link para confirmar la suscripción a las novedades (si la pidió y sigue pendiente) */
+  linkNewsletter?: string | null;
 };
 
 /** Escapa caracteres HTML: los datos del cliente van dentro del HTML del email. */
@@ -99,6 +101,21 @@ function bloqueCambio(d: Datos) {
 }
 
 /**
+ * Confirmación de la suscripción a las novedades, dentro del mail del turno: es
+ * el que la paciente abre, y así no le llega un mail aparte. Sigue siendo doble
+ * opt-in: sin el clic no recibe nada.
+ */
+function bloqueNewsletter(d: Datos) {
+  if (!d.linkNewsletter) return '';
+  return `<div style="background:#f6f4ef;border-radius:10px;padding:14px 18px;margin:18px 0 0;font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">
+    <p style="font-weight:600;margin:0 0 4px">Novedades por email</p>
+    <p style="margin:0 0 12px">Pediste recibir las novedades, tips y notas de Ceci. Para empezar a recibirlas, confirmá que este correo es tuyo:</p>
+    <p style="margin:0 0 10px"><a href="${esc(d.linkNewsletter)}" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-weight:600;padding:10px 20px;border-radius:999px">Sí, quiero recibirlas</a></p>
+    <p style="margin:0;font-size:13px;color:#55605a">Si no lo pediste, ignorá esta parte: sin confirmar no te escribimos, y tu turno no cambia en nada. Podés darte de baja cuando quieras.</p>
+  </div>`;
+}
+
+/**
  * Avisa que el turno quedó CONFIRMADO. Nunca lanza error.
  * opts.online (default true): pago acreditado por MercadoPago. Si es false, la
  * confirmó Ceci a mano desde el panel (sin pago online), y el copy lo refleja.
@@ -142,6 +159,7 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
            ${bloqueCobro(d)}
            ${bloqueCambio(d)}
            <p style="font-family:system-ui;color:#55605a">¡Te esperamos! Por cualquier duda, escribinos por WhatsApp.</p>
+           ${bloqueNewsletter(d)}
            ${bloquePolitica()}`
         )
       );
@@ -221,6 +239,7 @@ export async function notificarReserva(d: Datos) {
            ${detalle}
            ${coordinar ? bloqueTransferencia(d) : ''}
            <p style="font-family:system-ui;color:#55605a">${notaClienta}</p>
+           ${bloqueNewsletter(d)}
            ${bloquePolitica()}`
         )
       );

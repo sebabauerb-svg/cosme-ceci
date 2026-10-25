@@ -108,7 +108,7 @@ export function htmlConfirmacion(link: string) {
     `<h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">Confirmá tu suscripción</h2>
      <p style="${P}">Pediste recibir por email las novedades, tips y notas de ${esc(MARCA)}. Para empezar a recibirlas, confirmá que este correo es tuyo:</p>
      <p style="margin:22px 0"><a href="${esc(link)}" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">Sí, quiero recibirlas</a></p>
-     <p style="${P};color:#55605a;font-size:14px">Si no lo pediste vos, ignorá este mensaje: sin confirmar no te vamos a escribir.</p>`,
+     <p style="${P};color:#55605a;font-size:14px">Si no lo pediste vos, ignorá este mensaje: sin confirmar no te vamos a escribir. Y si te suscribís, podés darte de baja cuando quieras desde el link al pie de cada mail.</p>`,
     `${esc(MARCA)} · Montevideo y San José, Uruguay`
   );
 }
@@ -183,34 +183,59 @@ export function leerFotos(v: any, slugs: string[]): FotosEnvio {
 
 const nuevoToken = () => crypto.randomBytes(16).toString('hex');
 
+const linkConfirmar = (base: string, token: string) => `${base}/newsletter/confirmar?t=${token}`;
+const enFreno = (enviadaAt: unknown) =>
+  !!enviadaAt && Date.now() - new Date(enviadaAt as string).getTime() < REENVIO_MIN_MS;
+
+const mailConfirmacion = (email: string, link: string) =>
+  enviarUno({ to: email, subject: `Confirmá tu suscripción — ${MARCA}`, html: htmlConfirmacion(link) });
+
 /**
  * Pide la suscripción de un email: lo guarda como 'pendiente' y le manda el mail
  * para confirmar. Siempre responde lo mismo hacia afuera (no revela si el email
  * ya estaba en la lista). Si ya estaba confirmado, no hace nada.
+ *
+ * `mandarMail: false` (desde /reservar): no manda un mail aparte; devuelve el
+ * link de confirmación para que vaya dentro del mail de la reserva, que la
+ * paciente sí abre. Así no recibe dos mails y el doble opt-in sigue igual.
+ * Devuelve null si ya estaba confirmada.
  */
-export async function pedirSuscripcion(sql: any, email: string, origen: string, base: string) {
+export async function pedirSuscripcion(
+  sql: any,
+  email: string,
+  origen: string,
+  base: string,
+  opts: { mandarMail?: boolean } = {}
+): Promise<string | null> {
+  const mandarMail = opts.mandarMail !== false;
   const filas = (await sql`
     select id, estado, token, confirmacion_enviada_at from newsletter_suscriptores where email = ${email}
   `) as any[];
   const actual = filas[0];
-  if (actual?.estado === 'confirmado') return;
-  if (
-    actual?.estado === 'pendiente' &&
-    actual.confirmacion_enviada_at &&
-    Date.now() - new Date(actual.confirmacion_enviada_at).getTime() < REENVIO_MIN_MS
-  )
-    return;
+  if (actual?.estado === 'confirmado') return null;
 
   let token: string;
   if (!actual) {
     token = nuevoToken();
-    await sql`
+    const ins = (await sql`
       insert into newsletter_suscriptores (email, estado, token, origen, consentimiento_at, confirmacion_enviada_at)
       values (${email}, 'pendiente', ${token}, ${origen}, now(), now())
       on conflict (email) do nothing
+      returning id
+    `) as any[];
+    // Carrera con otro pedido del mismo email: ese ya manda su mail.
+    if (!ins.length) return null;
+  } else if (actual.estado === 'pendiente') {
+    // Sigue pendiente: mismo token (los links de mails anteriores siguen andando).
+    token = actual.token;
+    if (mandarMail && enFreno(actual.confirmacion_enviada_at)) return linkConfirmar(base, token);
+    await sql`
+      update newsletter_suscriptores
+         set origen = ${origen}, consentimiento_at = now(), confirmacion_enviada_at = now()
+       where id = ${actual.id}
     `;
   } else {
-    // Vuelve a pedirla (o se había dado de baja): nuevo consentimiento, nuevo token.
+    // Se había dado de baja y la vuelve a pedir: nuevo consentimiento, nuevo token.
     token = nuevoToken();
     await sql`
       update newsletter_suscriptores
@@ -219,12 +244,59 @@ export async function pedirSuscripcion(sql: any, email: string, origen: string, 
        where id = ${actual.id}
     `;
   }
-  if (!resendConfigurado()) return;
-  await enviarUno({
-    to: email,
-    subject: `Confirmá tu suscripción — ${MARCA}`,
-    html: htmlConfirmacion(`${base}/newsletter/confirmar?t=${token}`),
-  });
+  const link = linkConfirmar(base, token);
+  if (mandarMail && resendConfigurado()) await mailConfirmacion(email, link);
+  return link;
+}
+
+/**
+ * Link de confirmación de un email que sigue pendiente, para sumarlo a otro mail
+ * que igual sale (la confirmación del turno). null si no está pendiente. Nunca lanza.
+ */
+export async function linkPendiente(sql: any, email: string | null | undefined, base: string): Promise<string | null> {
+  const e = normalizarEmail(email);
+  if (!e) return null;
+  try {
+    const r = (await sql`
+      select token from newsletter_suscriptores
+       where email = ${e} and estado = 'pendiente' and suprimido_at is null
+    `) as any[];
+    return r[0]?.token ? linkConfirmar(base, r[0].token) : null;
+  } catch {
+    // Sin tabla todavía o la base no responde: el mail del turno sale igual.
+    return null;
+  }
+}
+
+/**
+ * Reenvío manual desde el panel (/admin → Suscriptas) a una que no confirmó.
+ * Mismo freno de 10 minutos que la suscripción, para no llenarle la casilla.
+ */
+export async function reenviarConfirmacion(
+  sql: any,
+  id: string,
+  base: string
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  if (!resendConfigurado()) return { ok: false, error: 'Los mails no están configurados (falta RESEND_API_KEY).', status: 503 };
+  const r = (await sql`
+    select email, estado, token, confirmacion_enviada_at from newsletter_suscriptores
+     where id = ${id} and suprimido_at is null
+  `) as any[];
+  const s = r[0];
+  if (!s) return { ok: false, error: 'Ya no está en la lista.', status: 404 };
+  if (s.estado !== 'pendiente') return { ok: false, error: 'Solo se reenvía a las que están sin confirmar.', status: 409 };
+  if (enFreno(s.confirmacion_enviada_at))
+    return { ok: false, error: 'Ya se le mandó hace menos de 10 minutos. Probá más tarde.', status: 429 };
+  // Se anota antes de mandar: dos toques simultáneos no mandan dos mails.
+  const marcado = (await sql`
+    update newsletter_suscriptores set confirmacion_enviada_at = now()
+     where id = ${id} and estado = 'pendiente'
+       and (confirmacion_enviada_at is null or confirmacion_enviada_at < now() - interval '10 minutes')
+     returning id
+  `) as any[];
+  if (!marcado.length) return { ok: false, error: 'Ya se le mandó hace menos de 10 minutos. Probá más tarde.', status: 429 };
+  await mailConfirmacion(s.email, linkConfirmar(base, s.token));
+  return { ok: true };
 }
 
 export const tokenValido = (t: unknown): t is string => typeof t === 'string' && /^[a-f0-9]{32}$/.test(t);

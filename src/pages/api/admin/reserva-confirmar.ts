@@ -7,6 +7,7 @@ import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
 import { enviarWhatsApp } from '../../../lib/whatsapp';
+import { baseUrl, linkPendiente } from '../../../lib/newsletter';
 
 export const prerender = false;
 
@@ -89,6 +90,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         // confirmar un turno sin haber visto el pago todavía.
         sena: pagado ? (montoCobrado ?? SENA_UYU) : null,
         linkCambio: linkAutogestion(d.token_gestion),
+        // Si pidió las novedades al reservar y todavía no confirmó, otra oportunidad.
+        linkNewsletter: await linkPendiente(sql, d.email, baseUrl(request)),
       },
       { online: false }
     );
