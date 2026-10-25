@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensurePacientes } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensureSeguimiento } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 import { categoriasTratamientos } from '../../../data/tratamientos';
 import {
@@ -41,7 +41,7 @@ function tratamientosValidos(v: unknown): { id: string; nombre: string; sesion: 
 async function preparar() {
   const sql = getSql();
   await ensureConfirmacion(sql);
-  await ensurePacientes(sql);
+  await ensureSeguimiento(sql);
   return sql;
 }
 
@@ -63,10 +63,20 @@ export const GET: APIRoute = async ({ url, cookies }) => {
     if (!id) {
       const extra = (await sql`
         select p.id, p.fecha_nacimiento::text as fecha_nacimiento,
+               p.consentimiento_fecha is not null as consentimiento,
+               (coalesce(jsonb_array_length(p.anamnesis->'antecedentes'), 0) > 0
+                 or coalesce(p.anamnesis->>'alergias', '') <> '') as alertas,
                (select count(*)::int from reservas r
                  where r.paciente_id = p.id and r.estado = 'confirmada'
-                   and r.fecha is not null and r.fecha < ${hoyUY()}::date) as consultas
+                   and r.fecha is not null and r.fecha < ${hoyUY()}::date) as consultas,
+               pl.tratamiento as plan, pl.sesiones as plan_de,
+               (select count(*)::int from reservas r where r.plan_id = pl.id and r.estado = 'confirmada') as plan_hechas
           from pacientes p
+          left join lateral (
+            select id, tratamiento, sesiones from planes
+             where paciente_id = p.id and estado = 'en_curso'
+             order by created_at desc limit 1
+          ) pl on true
       `) as any[];
       const porId = new Map(extra.map((e) => [e.id, e]));
       const pacientes = (await estadosVuelta(sql))
@@ -75,6 +85,11 @@ export const GET: APIRoute = async ({ url, cookies }) => {
           ultima: p.ult_fecha, proximo: p.prox_fecha, estado: p.estado,
           consultas: porId.get(p.id)?.consultas ?? 0,
           fecha_nacimiento: porId.get(p.id)?.fecha_nacimiento ?? null,
+          consentimiento: porId.get(p.id)?.consentimiento ?? false,
+          alertas: porId.get(p.id)?.alertas ?? false,
+          plan: porId.get(p.id)?.plan
+            ? { tratamiento: porId.get(p.id).plan, hechas: porId.get(p.id).plan_hechas, de: porId.get(p.id).plan_de }
+            : null,
         }))
         .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
       return json({ ok: true, pacientes, hoy: hoyUY() });
