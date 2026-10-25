@@ -203,6 +203,13 @@ export async function ensureNewsletter(sql: any) {
   // Fotos elegidas para el mail ({ cabecera, porEntrada: { slug: foto } }), para
   // que "Continuar envío" arme exactamente el mismo mail días después.
   await sql`alter table newsletter_envios add column if not exists fotos jsonb`;
+  // Desde oct-2026 el alta es directa (sin doble opt-in): quienes quedaron
+  // "pendiente" con el sistema anterior marcaron la casilla de consentimiento,
+  // así que pasan a suscriptas. Las altas nuevas ya no quedan pendientes.
+  await sql`
+    update newsletter_suscriptores set estado = 'confirmado', confirmado_at = coalesce(confirmado_at, now())
+     where estado = 'pendiente'
+  `;
 }
 
 /**
