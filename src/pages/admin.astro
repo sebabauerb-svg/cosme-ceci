@@ -7,6 +7,7 @@ import { getSql, ensureFranjas, ensureDuracionMin, ensureConfirmacion } from '..
 import { whatsappConfigurado } from '../lib/whatsapp';
 import { itemsVigentes, type ItemPrecio } from '../lib/precios-vigentes';
 import { githubConfigurado } from '../lib/novedades';
+import { GALERIA, rutaFoto } from '../data/galeria-newsletter';
 import Pacientes from '../components/admin/Pacientes.astro';
 
 // WhatsApp automático: cambia los textos del panel ("te avisamos por WhatsApp").
@@ -346,6 +347,14 @@ if (authed) {
               <label class="nv-campo">Texto <span class="nv-ayuda">(párrafos separados por una línea en blanco · **negrita** · listas con "1." o "-")</span>
                 <textarea name="cuerpo" rows="12" required></textarea>
               </label>
+              <div class="nv-campo">Foto de portada <span class="nv-ayuda">(se ve arriba de la nota y en las tarjetas; "Automática" elige una de la galería)</span>
+                <div class="nl-galeria" role="radiogroup" aria-label="Foto de portada">
+                  <label class="nl-foto nl-foto--nada" title="Automática"><input type="radio" name="imagen" value="" checked /><span>Automática</span></label>
+                  {GALERIA.map((f) => (
+                    <label class="nl-foto" title={f.etiqueta}><input type="radio" name="imagen" value={f.id} /><img src={rutaFoto(f.id)} alt={f.etiqueta} loading="lazy" /></label>
+                  ))}
+                </div>
+              </div>
               <label class="nv-check">
                 <input type="checkbox" name="publicado" />
                 Publicada <span class="nv-ayuda">(si no la marcás, queda guardada como borrador y no sale en la web)</span>
@@ -1791,7 +1800,7 @@ if (authed) {
     const descN = document.getElementById('nv-desc-n')!;
     const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
 
-    type Entrada = { slug: string; sha: string; titulo: string; descripcion: string; fecha: string; tipo: string; publicado: boolean; cuerpo: string };
+    type Entrada = { slug: string; sha: string; titulo: string; descripcion: string; fecha: string; tipo: string; publicado: boolean; cuerpo: string; imagen?: string };
     let entradas: Entrada[] = [];
     let editando: Entrada | null = null;
     let cargada = false;
@@ -1857,6 +1866,9 @@ if (authed) {
       campo('fecha').value = e?.fecha || hoy();
       campo('cuerpo').value = e?.cuerpo ?? '';
       campo('publicado').checked = e ? e.publicado : true;
+      const foto = form!.querySelector<HTMLInputElement>(`input[name="imagen"][value="${e?.imagen ?? ''}"]`)
+        ?? form!.querySelector<HTMLInputElement>('input[name="imagen"][value=""]');
+      if (foto) foto.checked = true;
       msg.textContent = '';
       contarDesc();
       form!.hidden = false;
@@ -1900,6 +1912,7 @@ if (authed) {
           fecha: campo('fecha').value,
           cuerpo: campo('cuerpo').value,
           publicado: campo('publicado').checked,
+          imagen: form.querySelector<HTMLInputElement>('input[name="imagen"]:checked')?.value || undefined,
         });
         const e: Entrada = d.entrada;
         entradas = [e, ...entradas.filter((x) => x.slug !== e.slug)].sort((a, b) => b.fecha.localeCompare(a.fecha));

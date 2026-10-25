@@ -12,6 +12,7 @@ import {
   type Entrada,
   type Tipo,
 } from '../../../lib/novedades';
+import { fotoValida } from '../../../data/galeria-newsletter';
 
 export const prerender = false;
 
@@ -103,7 +104,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       }
     }
 
-    const e: Entrada = { slug, titulo, descripcion, fecha, autora, tipo, publicado, cuerpo };
+    const imagen = fotoValida(b?.imagen) ? b.imagen : undefined;
+    const e: Entrada = { slug, titulo, descripcion, fecha, autora, tipo, publicado, cuerpo, imagen };
     const sha = await guardarEntrada(e, shaPrevio, `Novedades: ${editando ? 'edita' : 'nueva'} «${titulo}» (panel)`);
     return json({ ok: true, entrada: { ...e, sha } });
   } catch (e) {

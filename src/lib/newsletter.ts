@@ -21,7 +21,7 @@ import crypto from 'node:crypto';
 import { getCollection } from 'astro:content';
 import { esc, remitente } from './email';
 import { site } from '../data/site';
-import { renderNewsletter } from './plantillas-newsletter';
+import { renderBienvenida, renderNewsletter } from './plantillas-newsletter';
 import {
   CABECERA_POR_DEFECTO,
   RUTA_FIRMA,
@@ -31,6 +31,13 @@ import {
   rutaFoto,
   type FotoId,
 } from '../data/galeria-newsletter';
+
+/**
+ * Base de las imágenes del mail. Siempre el dominio público: los previews de
+ * Vercel piden login y Gmail no podría bajarlas. En un preview, las fotos
+ * nuevas recién se ven después del merge.
+ */
+const baseImagenes = () => (process.env.PUBLIC_SITE_URL || 'https://cgcosmetologiamedica.com').replace(/\/+$/, '');
 
 export const MAX_ENTRADAS = 3;
 /** Resend acepta hasta 100 mails por llamada a /emails/batch. */
@@ -90,28 +97,18 @@ const enviarLote = (ms: Mail[], idempotencia: string) =>
 // ---------- Plantillas ----------
 
 const MARCA = `${site.marca.nombre} · ${site.marca.subtitulo}`;
-const P = 'font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b';
 
-function marco(contenido: string, pie: string) {
-  return `<div lang="es" dir="ltr" style="background:#f6f4ef;padding:24px 12px">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:18px;padding:28px 24px">
-    <p style="font-family:Georgia,serif;font-size:18px;color:#2a302b;margin:0">${esc(site.marca.nombre)}</p>
-    <p style="font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#a76a4b;margin:2px 0 22px">${esc(site.marca.subtitulo)}</p>
-    ${contenido}
-  </div>
-  <div style="max-width:560px;margin:14px auto 0;font-family:system-ui,sans-serif;font-size:12px;line-height:1.6;color:#55605a;text-align:center">${pie}</div>
-</div>`;
-}
-
-/** Bienvenida al suscribirse: confirma que quedó anotada y trae la baja a mano. */
+/** Bienvenida al suscribirse, con la estética del newsletter (foto, logo y firma). */
 export function htmlBienvenida(base: string, linkBaja: string) {
-  return marco(
-    `<h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">¡Ya estás en la lista!</h2>
-     <p style="${P}">Desde ahora te van a llegar por email las novedades, tips y notas de ${esc(MARCA)}, solo cuando haya algo nuevo.</p>
-     <p style="margin:22px 0"><a href="${esc(base)}/blog" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">Ver las novedades</a></p>
-     <p style="${P};color:#55605a;font-size:14px">Si no te anotaste vos, o cambiás de idea, podés <a href="${esc(linkBaja)}" style="color:#55605a">darte de baja con un clic</a>. Cada mail trae ese mismo link.</p>`,
-    `${esc(MARCA)} · Montevideo y San José, Uruguay`
-  );
+  const img = baseImagenes();
+  return renderBienvenida({
+    preheader: 'Gracias por sumarte a las novedades de Ceci',
+    cabecera: img + rutaCabecera(CABECERA_POR_DEFECTO),
+    base,
+    linkBaja,
+    logo: img + RUTA_LOGO,
+    fotoCeci: img + RUTA_FIRMA,
+  });
 }
 
 export type EntradaNl = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
@@ -141,12 +138,6 @@ export async function entradasPublicadas(): Promise<EntradaNl[]> {
 /** Fotos elegidas para un envío: la de cabecera y, opcional, una por novedad (slug → foto). */
 export type FotosEnvio = { cabecera: FotoId; porEntrada: Record<string, FotoId> };
 
-/**
- * Base de las imágenes del mail. Siempre el dominio público: los previews de
- * Vercel piden login y Gmail no podría bajarlas. En un preview, las fotos
- * nuevas recién se ven después del merge.
- */
-const baseImagenes = () => (process.env.PUBLIC_SITE_URL || 'https://cgcosmetologiamedica.com').replace(/\/+$/, '');
 
 /** `baseImg`: solo para la vista previa del panel, que puede cargar las fotos del mismo sitio. */
 export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]; base: string; linkBaja: string; fotos: FotosEnvio; baseImg?: string }) {

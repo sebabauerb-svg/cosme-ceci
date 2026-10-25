@@ -61,29 +61,17 @@ const parrafos = (t: string, estilo: string) =>
 
 const leer = (e: EntradaMail) => (e.tipo === 'nota' ? 'Leer la nota' : 'Leer');
 
-export function renderNewsletter(o: DatosMail): string {
+/** Lo que comparten todos los mails de la lista: fotos, logo, firma y la baja. */
+export type MarcoMail = Pick<DatosMail, 'preheader' | 'cabecera' | 'base' | 'linkBaja' | 'logo' | 'fotoCeci'>;
+
+/**
+ * Marco común: foto de arriba, logo, el contenido, la firma de Ceci, un cierre
+ * y el pie con la baja. Lo usan el newsletter y el mail de bienvenida.
+ */
+function marcoMail(o: MarcoMail, contenido: string, cierre: string): string {
   const pre = o.preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${esc(o.preheader)}&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;</div>`
     : '';
-  const INTRO = `margin:0 0 16px;font-family:${SERIF};font-size:18px;line-height:29px;color:${C.ink}`;
-
-  const items = o.entradas
-    .map((e) => {
-      const img = e.imagen
-        ? `<td class="apila apila-img" width="168" valign="top" style="padding:0 20px 0 0"><a href="${esc(e.url)}"><img src="${esc(e.imagen)}" width="168" height="126" alt="" style="display:block;border:0;border-radius:10px"></a></td>`
-        : '';
-      return `<tr><td style="padding:22px 0;border-top:1px solid ${C.sand}">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${img}
-          <td class="apila" valign="top">
-            <div style="font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:${C.sage};margin:0 0 6px">${esc(TIPO[e.tipo] || e.tipo)}</div>
-            <a href="${esc(e.url)}" style="font-family:${SERIF};font-size:21px;line-height:27px;color:${C.ink};text-decoration:none">${esc(e.titulo)}</a>
-            <p style="margin:8px 0 10px;font-family:${SANS};font-size:15px;line-height:24px;color:${C.inkSoft}">${esc(e.descripcion)}</p>
-            <a href="${esc(e.url)}" style="font-family:${SANS};font-size:15px;font-weight:600;color:${C.clayDeep};text-decoration:none">${leer(e)} &rarr;</a>
-          </td></tr></table>
-      </td></tr>`;
-    })
-    .join('');
-
   return `<!doctype html>
 <html lang="es" xml:lang="es"><head><meta charset="utf-8"><meta http-equiv="Content-Language" content="es"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only">
@@ -109,8 +97,7 @@ export function renderNewsletter(o: DatosMail): string {
         <div style="font-family:${SANS};font-size:10px;line-height:16px;letter-spacing:2px;text-transform:uppercase;color:${C.clayDeep};font-weight:600">Cosmetología Médica</div></td>
     </tr></table>
   </td></tr>
-  ${o.intro ? `<tr><td class="px" style="padding:22px 40px 6px">${parrafos(o.intro, INTRO)}</td></tr>` : ''}
-  <tr><td class="px" style="padding:${o.intro ? '0' : '16px'} 40px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${items}</table></td></tr>
+  ${contenido}
   <tr><td class="px" style="padding:4px 40px 0">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:22px 0 0;border-top:1px solid ${C.sand}">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
@@ -120,11 +107,61 @@ export function renderNewsletter(o: DatosMail): string {
       </tr></table>
     </td></tr></table>
   </td></tr>
-  <tr><td class="px" style="padding:20px 40px 32px"><p style="margin:0;font-family:${SANS};font-size:14px;line-height:22px;color:${C.inkSoft}">Este contenido es informativo y no reemplaza una consulta. Si querés saber qué le sirve a tu piel, <a href="${esc(o.base)}/reservar" style="color:${C.sageDeep};font-weight:600">reservá tu consulta</a>.</p></td></tr>
+  <tr><td class="px" style="padding:20px 40px 32px"><p style="margin:0;font-family:${SANS};font-size:14px;line-height:22px;color:${C.inkSoft}">${cierre}</p></td></tr>
 </table>
 <table role="presentation" class="w" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td class="px" align="center" style="padding:20px 32px 8px;font-family:${SANS};font-size:12px;line-height:19px;color:${C.inkSoft}">
   Recibís este mail porque te suscribiste a las novedades de ${esc(MARCA)}.<br>
   <a href="${esc(o.linkBaja)}" style="color:${C.inkSoft}">Darme de baja</a> · <a href="${esc(o.base)}/aviso-legal#emails" style="color:${C.inkSoft}">Cómo usamos tu email</a> · Montevideo y San José, Uruguay
 </td></tr></table>
 </td></tr></table></div></body></html>`;
+}
+
+export function renderNewsletter(o: DatosMail): string {
+  const INTRO = `margin:0 0 16px;font-family:${SERIF};font-size:18px;line-height:29px;color:${C.ink}`;
+  const items = o.entradas
+    .map((e) => {
+      const img = e.imagen
+        ? `<td class="apila apila-img" width="168" valign="top" style="padding:0 20px 0 0"><a href="${esc(e.url)}"><img src="${esc(e.imagen)}" width="168" height="126" alt="" style="display:block;border:0;border-radius:10px"></a></td>`
+        : '';
+      return `<tr><td style="padding:22px 0;border-top:1px solid ${C.sand}">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${img}
+          <td class="apila" valign="top">
+            <div style="font-family:${SANS};font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:${C.sage};margin:0 0 6px">${esc(TIPO[e.tipo] || e.tipo)}</div>
+            <a href="${esc(e.url)}" style="font-family:${SERIF};font-size:21px;line-height:27px;color:${C.ink};text-decoration:none">${esc(e.titulo)}</a>
+            <p style="margin:8px 0 10px;font-family:${SANS};font-size:15px;line-height:24px;color:${C.inkSoft}">${esc(e.descripcion)}</p>
+            <a href="${esc(e.url)}" style="font-family:${SANS};font-size:15px;font-weight:600;color:${C.clayDeep};text-decoration:none">${leer(e)} &rarr;</a>
+          </td></tr></table>
+      </td></tr>`;
+    })
+    .join('');
+  return marcoMail(
+    o,
+    `${o.intro ? `<tr><td class="px" style="padding:22px 40px 6px">${parrafos(o.intro, INTRO)}</td></tr>` : ''}
+  <tr><td class="px" style="padding:${o.intro ? '0' : '16px'} 40px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${items}</table></td></tr>`,
+    `Este contenido es informativo y no reemplaza una consulta. Si querés saber qué le sirve a tu piel, <a href="${esc(o.base)}/reservar" style="color:${C.sageDeep};font-weight:600">reservá tu consulta</a>.`
+  );
+}
+
+/** Bienvenida al suscribirse, con la misma estética que el newsletter. */
+export function renderBienvenida(o: MarcoMail): string {
+  const fila = (titulo: string, texto: string) =>
+    `<tr><td valign="top" style="padding:0 12px 12px 0;font-family:${SERIF};font-size:18px;line-height:24px;color:${C.clay}">&bull;</td>
+      <td style="padding:0 0 12px;font-family:${SANS};font-size:15px;line-height:24px;color:${C.inkSoft}"><strong style="color:${C.ink}">${titulo}</strong> ${texto}</td></tr>`;
+  return marcoMail(
+    o,
+    `<tr><td class="px" style="padding:24px 40px 8px">
+      <h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:36px;font-weight:600;color:${C.ink}">¡Ya estás en la lista!</h1>
+      <p style="margin:0 0 18px;font-family:${SERIF};font-size:18px;line-height:29px;color:${C.ink}">Gracias por sumarte. Desde ahora te llegan por email las novedades del consultorio, solo cuando haya algo nuevo.</p>
+      <p style="margin:0 0 12px;font-family:${SANS};font-size:16px;line-height:26px;color:${C.ink}">Esto es lo que vas a recibir:</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        ${fila('Novedades:', 'tendencias y temas del momento, mirados con criterio.')}
+        ${fila('Tips:', 'recomendaciones prácticas para tu rutina.')}
+        ${fila('Notas:', 'artículos más largos para entender mejor tu piel.')}
+      </table>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 22px"><tr><td style="border-radius:999px;background:${C.sage}">
+        <a href="${esc(o.base)}/blog" style="display:inline-block;padding:12px 24px;font-family:${SANS};font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:999px">Ver las novedades</a>
+      </td></tr></table>
+    </td></tr>`,
+    `Si no te anotaste vos, o cambiás de idea, podés <a href="${esc(o.linkBaja)}" style="color:${C.sageDeep};font-weight:600">darte de baja con un clic</a>. Cada mail trae ese mismo link.`
+  );
 }

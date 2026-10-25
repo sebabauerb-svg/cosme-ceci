@@ -1,4 +1,5 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
+import { GALERIA, fotoValida, type FotoId } from '../data/galeria-newsletter';
 
 export type Entrada = CollectionEntry<'blog'>;
 export type Tipo = Entrada['data']['tipo'];
@@ -22,3 +23,19 @@ export async function getEntradas(): Promise<Entrada[]> {
 
 export const fmtFecha = (d: Date) =>
   d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * Foto de portada de una entrada (id de la galería): la que eligió Ceci, o si
+ * no eligió, una de la galería que depende del slug (siempre la misma para esa
+ * entrada, y entradas distintas no quedan todas con la misma foto).
+ */
+export function fotoDeEntrada(e: Entrada): FotoId {
+  if (fotoValida(e.data.imagen)) return e.data.imagen;
+  let h = 0;
+  for (const c of e.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return GALERIA[h % GALERIA.length].id;
+}
+
+/** Minutos de lectura aproximados (200 palabras por minuto). */
+export const minutosDeLectura = (cuerpo: string | undefined) =>
+  Math.max(1, Math.round((cuerpo || '').split(/\s+/).filter(Boolean).length / 200));
