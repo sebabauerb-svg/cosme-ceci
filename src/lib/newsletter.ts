@@ -21,6 +21,16 @@ import crypto from 'node:crypto';
 import { getCollection } from 'astro:content';
 import { esc, remitente } from './email';
 import { site } from '../data/site';
+import { renderNewsletter } from './plantillas-newsletter';
+import {
+  CABECERA_POR_DEFECTO,
+  RUTA_FIRMA,
+  RUTA_LOGO,
+  fotoValida,
+  rutaCabecera,
+  rutaFoto,
+  type FotoId,
+} from '../data/galeria-newsletter';
 
 export const MAX_ENTRADAS = 3;
 /** Resend acepta hasta 100 mails por llamada a /emails/batch. */
@@ -112,8 +122,6 @@ export type EntradaNl = { slug: string; titulo: string; descripcion: string; tip
  */
 const verBorradores = () => import.meta.env.DEV || process.env.VERCEL_ENV === 'preview';
 
-const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
-
 /** Entradas publicadas del blog (las que ya están en la web), de la más nueva a la más vieja. */
 export async function entradasPublicadas(): Promise<EntradaNl[]> {
   const todas = await getCollection('blog', ({ data }) => data.publicado || verBorradores());
@@ -129,33 +137,46 @@ export async function entradasPublicadas(): Promise<EntradaNl[]> {
     }));
 }
 
-/** Párrafos de texto plano (la intro que escribe Ceci), escapados. */
-const parrafos = (t: string) =>
-  t
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => `<p style="${P}">${esc(p).replace(/\n/g, '<br>')}</p>`)
-    .join('');
+/** Fotos elegidas para un envío: la de cabecera y, opcional, una por novedad (slug → foto). */
+export type FotosEnvio = { cabecera: FotoId; porEntrada: Record<string, FotoId> };
 
-export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]; base: string; linkBaja: string }) {
-  const tarjetas = o.entradas
-    .map((e) => {
-      const url = `${o.base}/blog/${encodeURIComponent(e.slug)}`;
-      return `<div style="border-top:1px solid #e4e0d8;padding:18px 0">
-        <p style="font-family:system-ui,sans-serif;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d7a63;margin:0 0 6px">${esc(TIPO_LBL[e.tipo] || e.tipo)}</p>
-        <h3 style="font-family:Georgia,serif;font-size:20px;line-height:1.3;color:#2a302b;margin:0 0 8px"><a href="${esc(url)}" style="color:#2a302b;text-decoration:none">${esc(e.titulo)}</a></h3>
-        <p style="${P};margin:0 0 10px">${esc(e.descripcion)}</p>
-        <a href="${esc(url)}" style="font-family:system-ui,sans-serif;font-weight:600;color:#a76a4b">${e.tipo === 'nota' ? 'Leer la nota' : 'Leer'} →</a>
-      </div>`;
-    })
-    .join('');
-  return marco(
-    `${o.intro ? parrafos(o.intro) : ''}${tarjetas}
-     <p style="${P};font-size:14px;color:#55605a;border-top:1px solid #e4e0d8;padding-top:16px;margin:4px 0 0">Este contenido es informativo y no reemplaza una consulta. Si querés ver qué le sirve a tu piel, <a href="${esc(o.base)}/reservar" style="color:#5d7a63;font-weight:600">reservá tu consulta</a>.</p>`,
-    `Recibís este mail porque te suscribiste a las novedades de ${esc(MARCA)}.<br>
-     <a href="${esc(o.linkBaja)}" style="color:#55605a">Darme de baja</a> · <a href="${esc(o.base)}/aviso-legal#emails" style="color:#55605a">Cómo usamos tu email</a>`
-  );
+/**
+ * Base de las imágenes del mail. Siempre el dominio público: los previews de
+ * Vercel piden login y Gmail no podría bajarlas. En un preview, las fotos
+ * nuevas recién se ven después del merge.
+ */
+const baseImagenes = () => (process.env.PUBLIC_SITE_URL || 'https://cgcosmetologiamedica.com').replace(/\/+$/, '');
+
+/** `baseImg`: solo para la vista previa del panel, que puede cargar las fotos del mismo sitio. */
+export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]; base: string; linkBaja: string; fotos: FotosEnvio; baseImg?: string }) {
+  const img = o.baseImg || baseImagenes();
+  return renderNewsletter({
+    preheader: o.entradas.map((e) => e.titulo).join(' · '),
+    intro: o.intro,
+    entradas: o.entradas.map((e) => {
+      const foto = o.fotos.porEntrada[e.slug];
+      return {
+        titulo: e.titulo,
+        descripcion: e.descripcion,
+        tipo: e.tipo,
+        url: `${o.base}/blog/${encodeURIComponent(e.slug)}`,
+        imagen: foto ? img + rutaFoto(foto) : null,
+      };
+    }),
+    cabecera: img + rutaCabecera(o.fotos.cabecera),
+    base: o.base,
+    linkBaja: o.linkBaja,
+    logo: img + RUTA_LOGO,
+    fotoCeci: img + RUTA_FIRMA,
+  });
+}
+
+/** Lee y valida las fotos que manda el panel (o las guardadas en un envío). */
+export function leerFotos(v: any, slugs: string[]): FotosEnvio {
+  const cabecera = fotoValida(v?.cabecera) ? v.cabecera : CABECERA_POR_DEFECTO;
+  const porEntrada: Record<string, FotoId> = {};
+  for (const s of slugs) if (fotoValida(v?.porEntrada?.[s])) porEntrada[s] = v.porEntrada[s];
+  return { cabecera, porEntrada };
 }
 
 // ---------- Suscripción ----------
@@ -256,7 +277,7 @@ export async function cupoHoy(sql: any): Promise<number> {
 const headersBaja = (urlBaja: string) => ({ 'List-Unsubscribe': `<${urlBaja}>` });
 
 /** Prueba a un solo email. El link de baja es de mentira (no da de baja a nadie). */
-export async function enviarPrueba(o: { to: string; asunto: string; intro?: string | null; entradas: EntradaNl[]; base: string }) {
+export async function enviarPrueba(o: { to: string; asunto: string; intro?: string | null; entradas: EntradaNl[]; base: string; fotos: FotosEnvio }) {
   await enviarUno({
     to: o.to,
     subject: `[Prueba] ${o.asunto}`,
@@ -277,6 +298,7 @@ export async function enviarTanda(sql: any, envioId: string, base: string) {
     .map((s) => todas.find((e) => e.slug === s))
     .filter((e): e is EntradaNl => !!e);
   if (!entradas.length) throw new Error('Las novedades de este envío ya no están publicadas');
+  const fotos = leerFotos(env.fotos, entradas.map((e) => e.slug));
 
   let cupo = await cupoHoy(sql);
   let enviados = 0;
@@ -295,7 +317,7 @@ export async function enviarTanda(sql: any, envioId: string, base: string) {
       return {
         to: d.email,
         subject: env.asunto,
-        html: htmlNewsletter({ intro: env.intro, entradas, base, linkBaja: urlBaja }),
+        html: htmlNewsletter({ intro: env.intro, entradas, base, linkBaja: urlBaja, fotos }),
         headers: headersBaja(urlBaja),
       };
     });

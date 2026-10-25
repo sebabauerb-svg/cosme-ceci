@@ -9,11 +9,13 @@ import {
   enviarPrueba,
   enviarTanda,
   htmlNewsletter,
+  leerFotos,
   normalizarEmail,
   resendConfigurado,
   topeDiario,
   type EntradaNl,
 } from '../../../lib/newsletter';
+import { GALERIA, CABECERA_POR_DEFECTO, rutaFoto } from '../../../data/galeria-newsletter';
 
 export const prerender = false;
 
@@ -49,6 +51,9 @@ export const GET: APIRoute = async ({ cookies }) => {
       resend: resendConfigurado(),
       pruebaA: process.env.CECI_NOTIF_EMAIL || '',
       entradas: await entradasPublicadas(),
+      // Galería de fotos fijas para elegir (miniaturas servidas por este mismo sitio).
+      galeria: GALERIA.map((f) => ({ ...f, miniatura: rutaFoto(f.id) })),
+      cabeceraPorDefecto: CABECERA_POR_DEFECTO,
       ...(await resumen(sql)),
     });
   } catch (e) {
@@ -58,6 +63,7 @@ export const GET: APIRoute = async ({ cookies }) => {
 };
 
 // POST /api/admin/newsletter
+//   (vista / prueba / enviar llevan además fotos: { cabecera, porEntrada: { slug: foto } })
 //   { accion: 'vista', entradas, asunto, intro }         → { html }
 //   { accion: 'prueba', entradas, asunto, intro, para }  → manda solo a `para`
 //   { accion: 'enviar', entradas, asunto, intro }        → crea el envío y manda la tanda de hoy
@@ -94,9 +100,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const asunto = typeof b?.asunto === 'string' ? b.asunto.trim().replace(/\s+/g, ' ').slice(0, 120) : '';
     const intro = typeof b?.intro === 'string' ? b.intro.trim().slice(0, 2000) : '';
     if (!asunto) return json({ ok: false, error: 'Falta el asunto.' }, 400);
+    const fotos = leerFotos(b?.fotos, slugs);
 
     if (accion === 'vista') {
-      return json({ ok: true, html: htmlNewsletter({ intro, entradas, base, linkBaja: `${base}/newsletter/baja?prueba=1` }) });
+      return json({ ok: true, html: htmlNewsletter({ intro, entradas, base, linkBaja: `${base}/newsletter/baja?prueba=1`, fotos, baseImg: new URL(request.url).origin }) });
     }
 
     if (!resendConfigurado()) return json({ ok: false, error: 'Falta configurar RESEND_API_KEY.' }, 503);
@@ -104,7 +111,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     if (accion === 'prueba') {
       const para = normalizarEmail(b?.para);
       if (!para) return json({ ok: false, error: 'Revisá el email de la prueba.' }, 400);
-      await enviarPrueba({ to: para, asunto, intro, entradas, base });
+      await enviarPrueba({ to: para, asunto, intro, entradas, base, fotos });
       return json({ ok: true });
     }
 
@@ -112,8 +119,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       const [{ n }] = (await sql`select count(*)::int as n from newsletter_suscriptores where estado = 'confirmado'`) as any[];
       if (!n) return json({ ok: false, error: 'Todavía no hay suscriptoras confirmadas.' }, 400);
       const [env] = (await sql`
-        insert into newsletter_envios (asunto, intro, entradas, total)
-        values (${asunto}, ${intro || null}, ${entradas.map((e) => e.slug)}, ${n})
+        insert into newsletter_envios (asunto, intro, entradas, total, fotos)
+        values (${asunto}, ${intro || null}, ${entradas.map((e) => e.slug)}, ${n}, ${JSON.stringify(fotos)}::jsonb)
         returning id
       `) as any[];
       const r = await enviarTanda(sql, env.id, base);

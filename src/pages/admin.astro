@@ -370,9 +370,14 @@ if (authed) {
               <fieldset class="nl-paso">
                 <legend>1. Elegí de 1 a 3 novedades</legend>
                 <div id="nl-entradas" class="nl-entradas"></div>
+                <div id="nl-fotos" class="nl-fotos" hidden></div>
               </fieldset>
               <fieldset class="nl-paso">
                 <legend>2. Escribí el mail</legend>
+                <div class="nl-foto-campo">
+                  <span class="nv-campo">Foto de arriba</span>
+                  <div id="nl-cabecera" class="nl-galeria" role="radiogroup" aria-label="Foto de arriba"></div>
+                </div>
                 <label class="nv-campo">Asunto
                   <input type="text" name="asunto" maxlength="120" required />
                 </label>
@@ -397,10 +402,30 @@ if (authed) {
                   <span id="nl-msg" class="guardar__msg" role="status"></span>
                 </div>
               </fieldset>
-              <iframe id="nl-vista" class="nl-vista" title="Vista previa del mail" sandbox="" hidden></iframe>
+              <iframe id="nl-vista" class="nl-vista" title="Vista previa del mail" sandbox="allow-same-origin" hidden></iframe>
             </form>
 
             <div id="nl-envios"></div>
+
+            <details class="sus" id="sus">
+              <summary><h3>Suscriptas</h3><span class="nv-ayuda">Ver la lista, buscar y descargar</span></summary>
+              <div class="sus__filtros">
+                <label class="nv-campo sus__q">Buscar
+                  <input type="search" id="sus-q" placeholder="parte del email" autocomplete="off" />
+                </label>
+                <label class="nv-campo">Estado
+                  <select id="sus-estado">
+                    <option value="">Todas</option>
+                    <option value="confirmado">Confirmadas</option>
+                    <option value="pendiente">Sin confirmar</option>
+                    <option value="baja">Bajas</option>
+                  </select>
+                </label>
+                <a class="btn btn--ghost btn--sm" id="sus-csv" href="/api/admin/suscriptoras?formato=csv">Descargar CSV</a>
+              </div>
+              <div id="sus-lista"><p class="ag-vacia">Cargando…</p></div>
+              <p class="nv-ayuda">"Eliminar" es para cuando alguien pide que borren sus datos (Ley 18.331): se borra el email y queda solo la constancia de la fecha. No se puede deshacer. Para dejar de mandarle mails alcanza con que se dé de baja.</p>
+            </details>
           </section>
 
           <section class="card" data-tab="agenda">
@@ -2042,6 +2067,77 @@ if (authed) {
     if (tab?.getAttribute('aria-current') === 'true') cargar();
   })();
 
+  // ---------- Suscriptas del newsletter (lista, filtro, CSV, supresión) ----------
+  (() => {
+    const box = document.getElementById('sus') as HTMLDetailsElement | null;
+    const lista = document.getElementById('sus-lista');
+    if (!box || !lista) return;
+    const q = document.getElementById('sus-q') as HTMLInputElement;
+    const est = document.getElementById('sus-estado') as HTMLSelectElement;
+    const csv = document.getElementById('sus-csv') as HTMLAnchorElement;
+    const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Montevideo' }) : '—';
+    const ESTADO: Record<string, string> = { confirmado: 'Confirmada', pendiente: 'Sin confirmar', baja: 'Baja' };
+    const ORIGEN: Record<string, string> = { blog: 'Novedades', home: 'Inicio', reserva: 'Al reservar' };
+    type Sus = { id: string; email: string; estado: string; origen: string | null; created_at: string; confirmado_at: string | null; baja_at: string | null };
+    let filas: Sus[] = [];
+    let armado: string | null = null;
+
+    const params = () => {
+      const p = new URLSearchParams();
+      if (q.value.trim()) p.set('q', q.value.trim());
+      if (est.value) p.set('estado', est.value);
+      return p;
+    };
+
+    function pintar() {
+      if (!filas.length) { lista!.innerHTML = '<p class="ag-vacia">No hay suscriptas con ese filtro.</p>'; return; }
+      lista!.innerHTML = `<p class="nv-ayuda">${filas.length} ${filas.length === 1 ? 'persona' : 'personas'}</p>
+        <div class="sus__tabla" role="table" aria-label="Suscriptas">
+          <div class="sus__fila sus__fila--head" role="row"><span role="columnheader">Email</span><span role="columnheader">Estado</span><span role="columnheader">Origen</span><span role="columnheader">Alta</span><span role="columnheader">Confirmó</span><span></span></div>
+          ${filas.map((f) => `<div class="sus__fila" role="row" data-id="${esc(f.id)}">
+            <span class="sus__email" role="cell">${esc(f.email)}</span>
+            <span role="cell"><span class="nv-estado ${f.estado === 'confirmado' ? 'is-pub' : ''}">${ESTADO[f.estado] || f.estado}</span></span>
+            <span role="cell" data-l="Origen">${esc(ORIGEN[f.origen ?? ''] || f.origen || '—')}</span>
+            <span role="cell" data-l="Alta">${fmt(f.created_at)}</span>
+            <span role="cell" data-l="Confirmó">${f.estado === 'baja' ? 'Baja ' + fmt(f.baja_at) : fmt(f.confirmado_at)}</span>
+            <span role="cell"><button type="button" class="gs-rec" data-sup>${armado === f.id ? 'Tocá de nuevo para eliminar' : 'Eliminar'}</button></span>
+          </div>`).join('')}
+        </div>`;
+    }
+
+    async function cargar() {
+      csv.href = '/api/admin/suscriptoras?' + new URLSearchParams([...params(), ['formato', 'csv']]).toString();
+      try {
+        const res = await fetch('/api/admin/suscriptoras?' + params().toString());
+        if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+        const d = await res.json();
+        if (!d.ok) throw new Error(d.error || 'No se pudo leer la lista.');
+        filas = d.suscriptoras; pintar();
+      } catch (err) { lista!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`; }
+    }
+
+    let t: ReturnType<typeof setTimeout>;
+    q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(cargar, 300); });
+    est.addEventListener('change', cargar);
+    box.addEventListener('toggle', () => { if (box.open) cargar(); });
+
+    // Supresión en dos toques (sin confirm(), que el navegador puede bloquear).
+    lista.addEventListener('click', async (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-sup]');
+      const id = btn?.closest<HTMLElement>('.sus__fila')?.dataset.id;
+      if (!btn || !id) return;
+      if (armado !== id) { armado = id; pintar(); setTimeout(() => { if (armado === id) { armado = null; pintar(); } }, 6000); return; }
+      armado = null; btn.disabled = true; btn.textContent = 'Eliminando…';
+      try {
+        const res = await fetch('/api/admin/suscriptoras', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accion: 'suprimir', id }) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo eliminar.');
+        filas = filas.filter((f) => f.id !== id); pintar();
+      } catch (err) { alert((err as Error).message); pintar(); }
+    });
+  })();
+
   // ---------- Newsletter ----------
   // Arma un mail con 1 a 3 novedades ya publicadas y lo manda por lotes. Si la
   // lista supera el cupo diario del plan de Resend, el envío queda a medias y
@@ -2067,9 +2163,45 @@ if (authed) {
 
     type Entrada = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
     type Envio = { id: string; asunto: string; total: number; enviados: number; created_at: string; terminado_at: string | null };
-    type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[] };
+    type Foto = { id: string; etiqueta: string; miniatura: string };
+    type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[]; galeria: Foto[]; cabeceraPorDefecto: string };
     let datos: Datos | null = null;
     let elegidas: string[] = [];
+    // Fotos del mail: la de arriba (siempre una) y, opcional, una por novedad.
+    let cabecera = '';
+    let fotosEnt: Record<string, string> = {};
+    const fotosEl = document.getElementById('nl-fotos')!;
+    const cabeceraEl = document.getElementById('nl-cabecera')!;
+
+    /** Fila de miniaturas para elegir una foto (radio). `sinFoto` agrega la opción vacía. */
+    function galeriaHTML(nombre: string, valor: string, sinFoto: boolean) {
+      const ops = (sinFoto ? [{ id: '', etiqueta: 'Sin foto', miniatura: '' }] : []).concat(datos!.galeria);
+      return ops.map((f) => `<label class="nl-foto${f.id ? '' : ' nl-foto--nada'}" title="${esc(f.etiqueta)}">
+          <input type="radio" name="${esc(nombre)}" value="${esc(f.id)}" ${f.id === valor ? 'checked' : ''} />
+          ${f.miniatura ? `<img src="${esc(f.miniatura)}" alt="${esc(f.etiqueta)}" loading="lazy" />` : '<span>Sin foto</span>'}
+        </label>`).join('');
+    }
+
+    function pintarFotos() {
+      cabeceraEl.innerHTML = galeriaHTML('nl-cab', cabecera, false);
+      const sel = elegidas.map((s) => datos!.entradas.find((e) => e.slug === s)).filter((e): e is Entrada => !!e);
+      fotosEl.hidden = !sel.length;
+      fotosEl.innerHTML = sel.length
+        ? '<p class="nv-campo">Foto de cada novedad <span class="nv-ayuda">(opcional)</span></p>' + sel.map((e) => `
+          <div class="nl-foto-fila">
+            <span class="nl-foto-tit">${esc(e.titulo)}</span>
+            <div class="nl-galeria" role="radiogroup" aria-label="Foto para ${esc(e.titulo)}">${galeriaHTML('nl-f-' + e.slug, fotosEnt[e.slug] || '', true)}</div>
+          </div>`).join('')
+        : '';
+    }
+
+    cabeceraEl.addEventListener('change', (ev) => { cabecera = (ev.target as HTMLInputElement).value; vista.hidden = true; });
+    fotosEl.addEventListener('change', (ev) => {
+      const r = ev.target as HTMLInputElement;
+      const slug = r.name.replace(/^nl-f-/, '');
+      if (r.value) fotosEnt[slug] = r.value; else delete fotosEnt[slug];
+      vista.hidden = true;
+    });
     let asuntoTocado = false;
     let cargada = false;
 
@@ -2141,7 +2273,12 @@ if (authed) {
       listaEl.querySelectorAll<HTMLInputElement>('input[type=checkbox]').forEach((c) => { c.disabled = !c.checked && n >= 3; });
     }
 
-    const cuerpo = () => ({ entradas: elegidas, asunto: campo('asunto').value, intro: campo('intro').value });
+    const cuerpo = () => ({
+      entradas: elegidas,
+      asunto: campo('asunto').value,
+      intro: campo('intro').value,
+      fotos: { cabecera, porEntrada: Object.fromEntries(elegidas.filter((s) => fotosEnt[s]).map((s) => [s, fotosEnt[s]])) },
+    });
 
     listaEl.addEventListener('change', (ev) => {
       const c = ev.target as HTMLInputElement;
@@ -2153,6 +2290,7 @@ if (authed) {
         campo('asunto').value = primera ? primera.titulo : '';
       }
       vista.hidden = true;
+      pintarFotos();
       actualizarBotones();
     });
     campo('asunto').addEventListener('input', () => { asuntoTocado = !!campo('asunto').value; actualizarBotones(); });
@@ -2184,16 +2322,25 @@ if (authed) {
         : `¡Listo! Se mandó a ${plural(d.hechos, 'persona', 'personas')}.`;
     }
 
+    // Confirmación en dos toques (sin confirm(), que algunos navegadores bloquean):
+    // el primero avisa a cuántas personas va, el segundo manda.
+    let armadoEnviar: ReturnType<typeof setTimeout> | null = null;
     btnEnviar.addEventListener('click', async () => {
       const n = datos!.confirmados;
-      if (!confirm(`¿Mandar "${campo('asunto').value}" a ${plural(n, 'persona', 'personas')}? No se puede deshacer.`)) return;
+      if (!armadoEnviar) {
+        btnEnviar.textContent = 'Tocá de nuevo para enviar';
+        msg.textContent = `Se manda "${campo('asunto').value}" a ${plural(n, 'persona', 'personas')}. No se puede deshacer.`;
+        armadoEnviar = setTimeout(() => { armadoEnviar = null; msg.textContent = ''; pintarResumen(); }, 6000);
+        return;
+      }
+      clearTimeout(armadoEnviar); armadoEnviar = null;
       btnEnviar.disabled = true; msg.textContent = 'Enviando…';
       try {
         avisarResultado(await api({ accion: 'enviar', ...cuerpo() }));
-        elegidas = []; asuntoTocado = false;
+        elegidas = []; asuntoTocado = false; fotosEnt = {}; cabecera = datos!.cabeceraPorDefecto;
         campo('asunto').value = ''; campo('intro').value = '';
         vista.hidden = true;
-        pintarEntradas();
+        pintarEntradas(); pintarFotos();
       } catch (err) { msg.textContent = (err as Error).message; }
       actualizarBotones();
     });
@@ -2211,7 +2358,8 @@ if (authed) {
         datos = await api();
         cargada = true;
         campo('para').value = datos!.pruebaA;
-        pintarResumen(); pintarEntradas(); pintarEnvios();
+        cabecera = datos!.cabeceraPorDefecto;
+        pintarResumen(); pintarEntradas(); pintarEnvios(); pintarFotos();
         form!.hidden = false;
       } catch (err) {
         resumenEl!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
@@ -2676,6 +2824,41 @@ if (authed) {
   .nv-tema a { color: var(--sage-deep); text-decoration: underline; overflow-wrap: anywhere; }
   @media (max-width: 560px) {
     .tm__head { flex-direction: column; }
+  }
+
+  /* Fotos del newsletter */
+  .nl-fotos { display: grid; gap: 0.8rem; padding-top: 0.4rem; }
+  .nl-fotos[hidden] { display: none; }
+  .nl-foto-campo { display: grid; gap: 0.4rem; }
+  .nl-foto-fila { display: grid; gap: 0.35rem; min-width: 0; }
+  .nl-foto-tit { font-size: 0.85rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .nl-galeria { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .nl-foto { position: relative; display: block; width: 84px; height: 63px; border-radius: var(--radius-sm); overflow: hidden; cursor: pointer; border: 2px solid transparent; background: var(--white); }
+  .nl-foto input { position: absolute; opacity: 0; pointer-events: none; }
+  .nl-foto img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .nl-foto--nada { display: grid; place-items: center; border-color: var(--sand); font-size: 0.75rem; color: var(--ink-soft); }
+  .nl-foto:has(input:checked) { border-color: var(--sage-deep); box-shadow: 0 0 0 2px var(--white) inset; }
+  .nl-foto:has(input:focus-visible) { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+  /* Suscriptas */
+  .sus { margin-top: 1.6rem; border-top: 1px solid var(--sand); padding-top: 1rem; }
+  .sus summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.8rem; cursor: pointer; list-style: none; }
+  .sus summary::-webkit-details-marker { display: none; }
+  .sus summary::before { content: '▸'; color: var(--ink-soft); }
+  .sus[open] summary::before { content: '▾'; }
+  .sus summary h3 { font-size: 1.1rem; margin: 0; }
+  .sus__filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem; margin: 1rem 0 0.6rem; }
+  .sus__q { flex: 1 1 200px; }
+  .sus__tabla { display: grid; margin: 0.4rem 0 0.8rem; font-size: 0.88rem; }
+  .sus__fila { display: grid; grid-template-columns: minmax(0, 2.2fr) 1fr 0.9fr 0.9fr 1fr auto; gap: 0.6rem; align-items: center; padding: 0.55rem 0; border-top: 1px solid var(--sand); }
+  .sus__fila--head { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); border-top: 0; }
+  .sus__email { overflow-wrap: anywhere; color: var(--ink); font-weight: 600; }
+  @media (max-width: 640px) {
+    .sus__fila--head { display: none; }
+    .sus__fila { grid-template-columns: 1fr auto; gap: 0.2rem 0.8rem; }
+    .sus__fila > [data-l] { grid-column: 1 / -1; font-size: 0.82rem; color: var(--ink-soft); }
+    .sus__fila > [data-l]::before { content: attr(data-l) ': '; }
+    .sus__fila > span:last-child { grid-column: 1 / -1; justify-self: start; }
   }
 
   /* Newsletter */
