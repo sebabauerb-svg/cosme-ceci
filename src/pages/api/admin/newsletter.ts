@@ -117,7 +117,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     if (accion === 'enviar') {
       const [{ n }] = (await sql`select count(*)::int as n from newsletter_suscriptores where estado = 'confirmado'`) as any[];
-      if (!n) return json({ ok: false, error: 'Todavía no hay suscriptoras confirmadas.' }, 400);
+      if (!n) return json({ ok: false, error: 'Todavía no hay nadie suscripto.' }, 400);
       const [env] = (await sql`
         insert into newsletter_envios (asunto, intro, entradas, total, fotos)
         values (${asunto}, ${intro || null}, ${entradas.map((e) => e.slug)}, ${n}, ${JSON.stringify(fotos)}::jsonb)

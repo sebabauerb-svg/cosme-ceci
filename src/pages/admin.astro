@@ -363,7 +363,7 @@ if (authed) {
 
           <section class="card" data-tab="newsletter">
             <h2>Newsletter</h2>
-            <p class="muted">Mandá por email las novedades que ya están en la web a quienes pidieron recibirlas. Solo les llega a quienes confirmaron desde su mail.</p>
+            <p class="muted">Mandá por email las novedades que ya están en la web a quienes pidieron recibirlas. Les llega a todas las suscriptas que no se dieron de baja.</p>
             <div id="nl-resumen" class="nl-resumen"><p class="ag-vacia">Cargando…</p></div>
 
             <form id="nl-form" class="nl-form" hidden>
@@ -416,8 +416,7 @@ if (authed) {
                 <label class="nv-campo">Estado
                   <select id="sus-estado">
                     <option value="">Todas</option>
-                    <option value="confirmado">Confirmadas</option>
-                    <option value="pendiente">Sin confirmar</option>
+                    <option value="confirmado">Suscriptas</option>
                     <option value="baja">Bajas</option>
                   </select>
                 </label>
@@ -2077,7 +2076,7 @@ if (authed) {
     const csv = document.getElementById('sus-csv') as HTMLAnchorElement;
     const esc = (s: string) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
     const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Montevideo' }) : '—';
-    const ESTADO: Record<string, string> = { confirmado: 'Confirmada', pendiente: 'Sin confirmar', baja: 'Baja' };
+    const ESTADO: Record<string, string> = { confirmado: 'Suscripta', pendiente: 'Sin confirmar', baja: 'Baja' };
     const ORIGEN: Record<string, string> = { blog: 'Novedades', home: 'Inicio', reserva: 'Al reservar' };
     type Sus = { id: string; email: string; estado: string; origen: string | null; created_at: string; confirmado_at: string | null; baja_at: string | null };
     let filas: Sus[] = [];
@@ -2094,13 +2093,13 @@ if (authed) {
       if (!filas.length) { lista!.innerHTML = '<p class="ag-vacia">No hay suscriptas con ese filtro.</p>'; return; }
       lista!.innerHTML = `<p class="nv-ayuda">${filas.length} ${filas.length === 1 ? 'persona' : 'personas'}</p>
         <div class="sus__tabla" role="table" aria-label="Suscriptas">
-          <div class="sus__fila sus__fila--head" role="row"><span role="columnheader">Email</span><span role="columnheader">Estado</span><span role="columnheader">Origen</span><span role="columnheader">Alta</span><span role="columnheader">Confirmó</span><span></span></div>
+          <div class="sus__fila sus__fila--head" role="row"><span role="columnheader">Email</span><span role="columnheader">Estado</span><span role="columnheader">Origen</span><span role="columnheader">Alta</span><span role="columnheader">Desde</span><span></span></div>
           ${filas.map((f) => `<div class="sus__fila" role="row" data-id="${esc(f.id)}">
             <span class="sus__email" role="cell">${esc(f.email)}</span>
             <span role="cell"><span class="nv-estado ${f.estado === 'confirmado' ? 'is-pub' : ''}">${ESTADO[f.estado] || f.estado}</span></span>
             <span role="cell" data-l="Origen">${esc(ORIGEN[f.origen ?? ''] || f.origen || '—')}</span>
             <span role="cell" data-l="Alta">${fmt(f.created_at)}</span>
-            <span role="cell" data-l="Confirmó">${f.estado === 'baja' ? 'Baja ' + fmt(f.baja_at) : fmt(f.confirmado_at)}</span>
+            <span role="cell" data-l="Desde">${f.estado === 'baja' ? 'Baja ' + fmt(f.baja_at) : fmt(f.confirmado_at)}</span>
             <span role="cell"><button type="button" class="gs-rec" data-sup>${armado === f.id ? 'Tocá de nuevo para eliminar' : 'Eliminar'}</button></span>
           </div>`).join('')}
         </div>`;
@@ -2219,13 +2218,12 @@ if (authed) {
       const d = datos!;
       resumenEl!.innerHTML = `
         <div class="nl-cifras">
-          <span><strong>${d.confirmados}</strong> ${d.confirmados === 1 ? 'persona confirmada' : 'personas confirmadas'}</span>
-          <span><strong>${d.pendientes}</strong> sin confirmar todavía</span>
+          <span><strong>${d.confirmados}</strong> ${d.confirmados === 1 ? 'persona suscripta' : 'personas suscriptas'}</span>
           <span><strong>${d.bajas}</strong> ${d.bajas === 1 ? 'baja' : 'bajas'}</span>
         </div>
         <p class="nv-ayuda">Hoy se pueden mandar ${plural(d.cupoHoy, 'mail', 'mails')} más del newsletter (tope diario: ${d.tope}, así queda lugar para los avisos de turnos).</p>
         ${d.resend ? '' : '<p class="login__err">Los mails todavía no están conectados (falta RESEND_API_KEY en Vercel). Podés armar el mail y verlo, pero no mandarlo.</p>'}`;
-      btnEnviar.textContent = d.confirmados ? `Enviar a ${plural(d.confirmados, 'persona', 'personas')}` : 'Enviar (todavía no hay nadie confirmado)';
+      btnEnviar.textContent = d.confirmados ? `Enviar a ${plural(d.confirmados, 'persona', 'personas')}` : 'Enviar (todavía no hay nadie suscripto)';
       actualizarBotones();
     }
 

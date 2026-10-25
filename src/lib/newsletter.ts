@@ -35,7 +35,7 @@ import {
 export const MAX_ENTRADAS = 3;
 /** Resend acepta hasta 100 mails por llamada a /emails/batch. */
 const LOTE_MAX = 100;
-/** No reenviar el mail de confirmación más seguido que esto (evita spam a terceros). */
+/** No mandar la bienvenida al mismo email más seguido que esto (evita spam a terceros). */
 const REENVIO_MIN_MS = 10 * 60 * 1000;
 
 export const topeDiario = () => {
@@ -93,7 +93,7 @@ const MARCA = `${site.marca.nombre} · ${site.marca.subtitulo}`;
 const P = 'font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b';
 
 function marco(contenido: string, pie: string) {
-  return `<div style="background:#f6f4ef;padding:24px 12px">
+  return `<div lang="es" dir="ltr" style="background:#f6f4ef;padding:24px 12px">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:18px;padding:28px 24px">
     <p style="font-family:Georgia,serif;font-size:18px;color:#2a302b;margin:0">${esc(site.marca.nombre)}</p>
     <p style="font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#a76a4b;margin:2px 0 22px">${esc(site.marca.subtitulo)}</p>
@@ -103,12 +103,13 @@ function marco(contenido: string, pie: string) {
 </div>`;
 }
 
-export function htmlConfirmacion(link: string) {
+/** Bienvenida al suscribirse: confirma que quedó anotada y trae la baja a mano. */
+export function htmlBienvenida(base: string, linkBaja: string) {
   return marco(
-    `<h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">Confirmá tu suscripción</h2>
-     <p style="${P}">Pediste recibir por email las novedades, tips y notas de ${esc(MARCA)}. Para empezar a recibirlas, confirmá que este correo es tuyo:</p>
-     <p style="margin:22px 0"><a href="${esc(link)}" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">Sí, quiero recibirlas</a></p>
-     <p style="${P};color:#55605a;font-size:14px">Si no lo pediste vos, ignorá este mensaje: sin confirmar no te vamos a escribir.</p>`,
+    `<h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">¡Ya estás en la lista!</h2>
+     <p style="${P}">Desde ahora te van a llegar por email las novedades, tips y notas de ${esc(MARCA)}, solo cuando haya algo nuevo.</p>
+     <p style="margin:22px 0"><a href="${esc(base)}/blog" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">Ver las novedades</a></p>
+     <p style="${P};color:#55605a;font-size:14px">Si no te anotaste vos, o cambiás de idea, podés <a href="${esc(linkBaja)}" style="color:#55605a">darte de baja con un clic</a>. Cada mail trae ese mismo link.</p>`,
     `${esc(MARCA)} · Montevideo y San José, Uruguay`
   );
 }
@@ -184,46 +185,45 @@ export function leerFotos(v: any, slugs: string[]): FotosEnvio {
 const nuevoToken = () => crypto.randomBytes(16).toString('hex');
 
 /**
- * Pide la suscripción de un email: lo guarda como 'pendiente' y le manda el mail
- * para confirmar. Siempre responde lo mismo hacia afuera (no revela si el email
- * ya estaba en la lista). Si ya estaba confirmado, no hace nada.
+ * Suscribe un email (alta directa, sin mail de confirmación: lo decidió Sebas
+ * en oct-2026). El consentimiento es la casilla que la persona marca; queda
+ * registrado con fecha y origen. Le llega un mail de bienvenida con el link de
+ * baja, así que si alguien anota un email ajeno, la persona se entera y se baja
+ * con un clic. Siempre responde igual hacia afuera (no revela si ya estaba).
+ * Si ya estaba suscripta, no hace nada.
  */
 export async function pedirSuscripcion(sql: any, email: string, origen: string, base: string) {
   const filas = (await sql`
-    select id, estado, token, confirmacion_enviada_at from newsletter_suscriptores where email = ${email}
+    select id, estado, confirmacion_enviada_at from newsletter_suscriptores where email = ${email}
   `) as any[];
   const actual = filas[0];
   if (actual?.estado === 'confirmado') return;
-  if (
-    actual?.estado === 'pendiente' &&
-    actual.confirmacion_enviada_at &&
-    Date.now() - new Date(actual.confirmacion_enviada_at).getTime() < REENVIO_MIN_MS
-  )
-    return;
 
-  let token: string;
+  // Vuelve a anotarse (o se había dado de baja): nuevo consentimiento, nuevo token.
+  const token = nuevoToken();
   if (!actual) {
-    token = nuevoToken();
     await sql`
-      insert into newsletter_suscriptores (email, estado, token, origen, consentimiento_at, confirmacion_enviada_at)
-      values (${email}, 'pendiente', ${token}, ${origen}, now(), now())
+      insert into newsletter_suscriptores (email, estado, token, origen, consentimiento_at, confirmado_at, confirmacion_enviada_at)
+      values (${email}, 'confirmado', ${token}, ${origen}, now(), now(), now())
       on conflict (email) do nothing
     `;
   } else {
-    // Vuelve a pedirla (o se había dado de baja): nuevo consentimiento, nuevo token.
-    token = nuevoToken();
     await sql`
       update newsletter_suscriptores
-         set estado = 'pendiente', token = ${token}, origen = ${origen}, consentimiento_at = now(),
-             confirmacion_enviada_at = now(), baja_at = null
+         set estado = 'confirmado', token = ${token}, origen = ${origen}, consentimiento_at = now(),
+             confirmado_at = now(), confirmacion_enviada_at = now(), baja_at = null
        where id = ${actual.id}
     `;
   }
-  if (!resendConfigurado()) return;
+  // Freno para no mandar bienvenidas seguidas al mismo email (alta, baja, alta…).
+  const reciente =
+    actual?.confirmacion_enviada_at && Date.now() - new Date(actual.confirmacion_enviada_at).getTime() < REENVIO_MIN_MS;
+  if (reciente || !resendConfigurado()) return;
   await enviarUno({
     to: email,
-    subject: `Confirmá tu suscripción — ${MARCA}`,
-    html: htmlConfirmacion(`${base}/newsletter/confirmar?t=${token}`),
+    subject: `Ya estás en la lista de novedades — ${MARCA}`,
+    html: htmlBienvenida(base, `${base}/newsletter/baja?t=${token}`),
+    headers: { 'List-Unsubscribe': `<${base}/newsletter/baja?t=${token}>` },
   });
 }
 

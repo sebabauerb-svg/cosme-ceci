@@ -85,7 +85,7 @@ export function renderNewsletter(o: DatosMail): string {
     .join('');
 
   return `<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="es" xml:lang="es"><head><meta charset="utf-8"><meta http-equiv="Content-Language" content="es"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap" rel="stylesheet">
 <style>
@@ -98,7 +98,7 @@ export function renderNewsletter(o: DatosMail): string {
     .apila-img img{width:100%!important;height:auto!important}
   }
 </style></head>
-<body style="margin:0;padding:0;background:${C.cream}">${pre}
+<body lang="es" style="margin:0;padding:0;background:${C.cream}"><div lang="es" dir="ltr">${pre}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.cream}"><tr><td align="center" style="padding:24px 10px">
 <table role="presentation" class="w" width="600" cellpadding="0" cellspacing="0" border="0" style="background:${C.white};border-radius:18px">
   <tr><td><img src="${esc(o.cabecera)}" width="600" alt="" class="w" style="display:block;width:100%;height:auto;border:0;border-radius:18px 18px 0 0"></td></tr>
@@ -126,5 +126,5 @@ export function renderNewsletter(o: DatosMail): string {
   Recibís este mail porque te suscribiste a las novedades de ${esc(MARCA)}.<br>
   <a href="${esc(o.linkBaja)}" style="color:${C.inkSoft}">Darme de baja</a> · <a href="${esc(o.base)}/aviso-legal#emails" style="color:${C.inkSoft}">Cómo usamos tu email</a> · Montevideo y San José, Uruguay
 </td></tr></table>
-</td></tr></table></body></html>`;
+</td></tr></table></div></body></html>`;
 }
