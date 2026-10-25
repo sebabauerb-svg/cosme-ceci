@@ -9,6 +9,7 @@ import { itemsVigentes, type ItemPrecio } from '../lib/precios-vigentes';
 import { githubConfigurado } from '../lib/novedades';
 import { GALERIA, rutaFoto } from '../data/galeria-newsletter';
 import Pacientes from '../components/admin/Pacientes.astro';
+import MisFotos from '../components/admin/MisFotos.astro';
 
 // WhatsApp automático: cambia los textos del panel ("te avisamos por WhatsApp").
 const waAuto = whatsappConfigurado();
@@ -107,6 +108,7 @@ if (authed) {
             <button class="tab" data-ir="precios">Precios</button>
             <button class="tab" data-ir="novedades">Novedades</button>
             <button class="tab" data-ir="newsletter">Newsletter</button>
+            <button class="tab" data-ir="fotos">Fotos</button>
           </nav>
 
           <section class="card" data-tab="agenda">
@@ -347,8 +349,8 @@ if (authed) {
               <label class="nv-campo">Texto <span class="nv-ayuda">(párrafos separados por una línea en blanco · **negrita** · listas con "1." o "-")</span>
                 <textarea name="cuerpo" rows="12" required></textarea>
               </label>
-              <div class="nv-campo">Foto de portada <span class="nv-ayuda">(se ve arriba de la nota y en las tarjetas; "Automática" elige una de la galería)</span>
-                <div class="nl-galeria" role="radiogroup" aria-label="Foto de portada">
+              <div class="nv-campo">Foto de portada <span class="nv-ayuda">(se ve arriba de la nota y en las tarjetas; "Automática" elige una de la galería) · <button type="button" class="nl-ir-fotos">Subir una foto tuya</button></span>
+                <div class="nl-galeria" id="nv-galeria" role="radiogroup" aria-label="Foto de portada">
                   <label class="nl-foto nl-foto--nada" title="Automática"><input type="radio" name="imagen" value="" checked /><span>Automática</span></label>
                   {GALERIA.map((f) => (
                     <label class="nl-foto" title={f.etiqueta}><input type="radio" name="imagen" value={f.id} /><img src={rutaFoto(f.id)} alt={f.etiqueta} loading="lazy" /></label>
@@ -384,7 +386,7 @@ if (authed) {
               <fieldset class="nl-paso">
                 <legend>2. Escribí el mail</legend>
                 <div class="nl-foto-campo">
-                  <span class="nv-campo">Foto de arriba</span>
+                  <span class="nv-campo">Foto de arriba <span class="nv-ayuda">· <button type="button" class="nl-ir-fotos">Subir una foto tuya</button></span></span>
                   <div id="nl-cabecera" class="nl-galeria" role="radiogroup" aria-label="Foto de arriba"></div>
                 </div>
                 <label class="nv-campo">Asunto
@@ -435,6 +437,8 @@ if (authed) {
               <p class="nv-ayuda">"Eliminar" es para cuando alguien pide que borren sus datos (Ley 18.331): se borra el email y queda solo la constancia de la fecha. No se puede deshacer. Para dejar de mandarle mails alcanza con que se dé de baja.</p>
             </details>
           </section>
+
+          <MisFotos />
 
           <section class="card" data-tab="agenda">
             <div class="card__head">
@@ -491,6 +495,13 @@ if (authed) {
 </Base>
 
 <script>
+  import { fotosSubidas, alCambiarFotos, irAFotos, type FotoSubida } from '../components/admin/fotos-cliente';
+
+  // "Subir una foto tuya" (selectores de Novedades y Newsletter) → pestaña Fotos.
+  document.addEventListener('click', (ev) => {
+    if ((ev.target as HTMLElement).closest('.nl-ir-fotos')) irAFotos();
+  });
+
   // ---------- Pestañas del panel ----------
   // Recuerda la última pestaña: Ceci suele entrar a hacer lo mismo varias veces
   // seguidas (cargar horarios, o confirmar una tanda de reservas).
@@ -1866,9 +1877,7 @@ if (authed) {
       campo('fecha').value = e?.fecha || hoy();
       campo('cuerpo').value = e?.cuerpo ?? '';
       campo('publicado').checked = e ? e.publicado : true;
-      const foto = form!.querySelector<HTMLInputElement>(`input[name="imagen"][value="${e?.imagen ?? ''}"]`)
-        ?? form!.querySelector<HTMLInputElement>('input[name="imagen"][value=""]');
-      if (foto) foto.checked = true;
+      elegirPortada(e?.imagen ?? '');
       msg.textContent = '';
       contarDesc();
       form!.hidden = false;
@@ -1876,6 +1885,33 @@ if (authed) {
       campo('titulo').focus({ preventScroll: true });
     }
     const cerrar = () => { form!.hidden = true; editando = null; temaId = null; temaBox.hidden = true; };
+
+    // Portada: las fotos que subió Ceci (pestaña Fotos) van entre "Automática"
+    // y las fijas. Si la foto de una entrada ya no está, queda "Automática".
+    const galeriaNv = document.getElementById('nv-galeria')!;
+    function pintarSubidas(fotos: FotoSubida[], actual?: string) {
+      const valor = actual ?? form!.querySelector<HTMLInputElement>('input[name="imagen"]:checked')?.value ?? '';
+      galeriaNv.querySelectorAll('.nl-foto--subida').forEach((n) => n.remove());
+      const auto = galeriaNv.querySelector('.nl-foto--nada')!;
+      auto.insertAdjacentHTML('afterend', fotos.map((f) => `<label class="nl-foto nl-foto--subida" title="${esc(f.etiqueta)}">
+          <input type="radio" name="imagen" value="${esc(f.ref)}" /><img src="${esc(f.miniatura)}" alt="${esc(f.etiqueta)}" loading="lazy" /></label>`).join(''));
+      marcarPortada(valor);
+    }
+    function marcarPortada(valor: string) {
+      const r = [...form!.querySelectorAll<HTMLInputElement>('input[name="imagen"]')];
+      (r.find((x) => x.value === valor) ?? r.find((x) => x.value === ''))!.checked = true;
+    }
+    function elegirPortada(valor: string) {
+      marcarPortada(valor);
+      if (!/^https:/.test(valor)) { fotosSubidas().then((f) => pintarSubidas(f)).catch(() => {}); return; }
+      // Una foto subida: hay que esperar la lista para poder marcarla. Si la
+      // lista no se puede leer, se ofrece igual como "Foto actual" para no
+      // perderla al guardar (el servidor revisa que siga existiendo).
+      fotosSubidas()
+        .then((f) => pintarSubidas(f, valor))
+        .catch(() => pintarSubidas([{ id: '', etiqueta: 'Foto actual', ref: valor, miniatura: valor + '.jpg' }], valor));
+    }
+    alCambiarFotos((f) => pintarSubidas(f));
 
     // Escribir desde la agenda de temas: abre el editor con el título y el tipo
     // del tema, y muestra el ángulo y las fuentes como guía (no van al texto).
@@ -2175,7 +2211,7 @@ if (authed) {
 
     type Entrada = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
     type Envio = { id: string; asunto: string; total: number; enviados: number; created_at: string; terminado_at: string | null };
-    type Foto = { id: string; etiqueta: string; miniatura: string };
+    type Foto = { id: string; etiqueta: string; miniatura: string; subida?: boolean };
     type Datos = { resend: boolean; pruebaA: string; entradas: Entrada[]; confirmados: number; pendientes: number; bajas: number; cupoHoy: number; tope: number; envios: Envio[]; galeria: Foto[]; cabeceraPorDefecto: string };
     let datos: Datos | null = null;
     let elegidas: string[] = [];
@@ -2208,6 +2244,21 @@ if (authed) {
     }
 
     cabeceraEl.addEventListener('change', (ev) => { cabecera = (ev.target as HTMLInputElement).value; vista.hidden = true; });
+
+    // Ceci subió, renombró o borró una foto en la pestaña Fotos: se rearma la
+    // galería. Lo elegido que ya no está vuelve a la cabecera por defecto / sin foto.
+    alCambiarFotos((subidas) => {
+      if (!datos) return;
+      datos.galeria = [
+        ...subidas.map((f) => ({ id: f.ref, etiqueta: f.etiqueta, miniatura: f.miniatura, subida: true })),
+        ...datos.galeria.filter((f) => !f.subida),
+      ];
+      const hay = (id: string) => datos!.galeria.some((f) => f.id === id);
+      if (!hay(cabecera)) cabecera = datos.cabeceraPorDefecto;
+      for (const s of Object.keys(fotosEnt)) if (!hay(fotosEnt[s])) delete fotosEnt[s];
+      vista.hidden = true;
+      pintarFotos();
+    });
     fotosEl.addEventListener('change', (ev) => {
       const r = ev.target as HTMLInputElement;
       const slug = r.name.replace(/^nl-f-/, '');

@@ -1,0 +1,310 @@
+---
+/**
+ * Pestaña "Fotos" del panel: Ceci sube sus fotos desde el celular (cámara o
+ * galería) para el newsletter y la portada de las novedades. El navegador la
+ * achica antes de mandarla (las fotos del teléfono pesan más de lo que acepta
+ * una función de Vercel) y el servidor la valida, la recorta a los dos tamaños
+ * de la galería y la guarda en Vercel Blob. Ver src/lib/fotos.ts.
+ *
+ * Solo fotos para mails y para la web pública: nada de fotos de pacientes.
+ */
+---
+
+<section class="card" data-tab="fotos">
+  <h2>Mis fotos</h2>
+  <p class="muted">Subí fotos tuyas para usarlas arriba del newsletter, en cada novedad del mail y como portada de las notas del blog. Aparecen junto a las fotos de siempre.</p>
+  <p class="mf-aviso">Son públicas: cualquiera que reciba el mail o entre al blog las ve. No subas fotos de pacientes ni nada que muestre datos de alguien.</p>
+
+  <p id="mf-sin-blob" class="mf-err" hidden>Todavía no está conectado el lugar donde se guardan las fotos (falta BLOB_READ_WRITE_TOKEN en Vercel). Sebas lo tiene que activar.</p>
+
+  <form id="mf-form" class="mf-form">
+    <label class="mf-elegir">
+      <input type="file" id="mf-archivo" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" />
+      <span class="btn btn--primary">Elegir o sacar una foto</span>
+    </label>
+
+    <div id="mf-nueva" class="mf-nueva" hidden>
+      <div class="mf-recortes">
+        <figure>
+          <div class="mf-recorte mf-recorte--ancha"><img id="mf-prev-ancha" alt="" /></div>
+          <figcaption>Arriba del mail y portada de la nota</figcaption>
+        </figure>
+        <figure>
+          <div class="mf-recorte mf-recorte--chica"><img id="mf-prev-chica" alt="" /></div>
+          <figcaption>Al lado de cada novedad</figcaption>
+        </figure>
+      </div>
+      <fieldset class="mf-encuadre">
+        <legend class="nv-campo">Encuadre <span class="nv-ayuda">(movelo hasta que se vea lo importante; queda tal cual lo ves arriba)</span></legend>
+        <label class="mf-rango">Arriba / abajo
+          <input type="range" name="y" min="0" max="100" value="50" />
+        </label>
+        <label class="mf-rango">Izquierda / derecha
+          <input type="range" name="x" min="0" max="100" value="50" />
+        </label>
+      </fieldset>
+      <label class="nv-campo">Nombre <span class="nv-ayuda">(corto, para reconocerla: "Gabinete", "Sérum nuevo"…)</span>
+        <input type="text" name="etiqueta" maxlength="40" required autocomplete="off" />
+      </label>
+      <div class="nv-acciones">
+        <button type="submit" class="btn btn--primary" id="mf-subir">Subir foto</button>
+        <button type="button" class="btn btn--ghost" id="mf-cancelar">Cancelar</button>
+      </div>
+    </div>
+    <p id="mf-msg" class="mf-msg" role="status"></p>
+  </form>
+
+  <div id="mf-lista" class="mf-lista"><p class="ag-vacia">Cargando…</p></div>
+</section>
+
+<script>
+  import { avisarCambioFotos, type FotoSubida } from './fotos-cliente';
+
+  (() => {
+    const form = document.getElementById('mf-form') as HTMLFormElement | null;
+    const lista = document.getElementById('mf-lista');
+    if (!form || !lista) return;
+    const archivoEl = document.getElementById('mf-archivo') as HTMLInputElement;
+    const nueva = document.getElementById('mf-nueva')!;
+    const prevAncha = document.getElementById('mf-prev-ancha') as HTMLImageElement;
+    const prevChica = document.getElementById('mf-prev-chica') as HTMLImageElement;
+    const msg = document.getElementById('mf-msg')!;
+    const btnSubir = document.getElementById('mf-subir') as HTMLButtonElement;
+    const sinBlob = document.getElementById('mf-sin-blob')!;
+    const campo = (n: string) => form.elements.namedItem(n) as HTMLInputElement;
+    const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
+    /** Lo que acepta el servidor (4 MB); el lado largo alcanza para la cabecera de 1200 px con margen para recortar. */
+    const MAX_BYTES = 4 * 1024 * 1024;
+    const LADO_MAX = 2400;
+
+    let fotos: FotoSubida[] = [];
+    let cargada = false;
+    let preparada: Blob | null = null;
+    let urlPrev: string | null = null;
+
+    // Misma cuenta que el servidor (object-position en %): lo que se ve es lo que queda.
+    const encuadrar = () => {
+      prevAncha.style.objectPosition = prevChica.style.objectPosition = `${campo('x').value}% ${campo('y').value}%`;
+    };
+    campo('x').addEventListener('input', encuadrar);
+    campo('y').addEventListener('input', encuadrar);
+
+    /**
+     * Achica la foto en el navegador a JPG (lado largo de 2400 px como mucho).
+     * Además convierte HEIC del iPhone (si el navegador la puede mostrar) y
+     * aplica la rotación de la cámara. Si algo falla, manda el original.
+     */
+    async function preparar(f: File): Promise<Blob> {
+      try {
+        const img = new Image();
+        const url = URL.createObjectURL(f);
+        img.src = url;
+        await img.decode();
+        const k = Math.min(1, LADO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k);
+        c.height = Math.round(img.naturalHeight * k);
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        const b = await new Promise<Blob | null>((ok) => c.toBlob(ok, 'image/jpeg', 0.88));
+        if (b && b.size > 0) return b;
+      } catch { /* sigue con el original */ }
+      return f;
+    }
+
+    function limpiarNueva() {
+      preparada = null;
+      if (urlPrev) URL.revokeObjectURL(urlPrev);
+      urlPrev = null;
+      archivoEl.value = '';
+      campo('etiqueta').value = '';
+      campo('x').value = campo('y').value = '50';
+      nueva.hidden = true;
+    }
+
+    archivoEl.addEventListener('change', async () => {
+      const f = archivoEl.files?.[0];
+      if (!f) return;
+      msg.textContent = 'Preparando la foto…';
+      if (f.type && !f.type.startsWith('image/')) { msg.textContent = 'Eso no es una foto.'; archivoEl.value = ''; return; }
+      if (/svg/i.test(f.type) || /\.svg$/i.test(f.name)) { msg.textContent = 'Los archivos SVG no se pueden subir. Elegí una foto.'; archivoEl.value = ''; return; }
+      const b = await preparar(f);
+      if (b.size > MAX_BYTES) { msg.textContent = 'La foto es demasiado pesada. Probá con otra o sacala de nuevo.'; archivoEl.value = ''; return; }
+      preparada = b;
+      if (urlPrev) URL.revokeObjectURL(urlPrev);
+      urlPrev = URL.createObjectURL(b);
+      prevAncha.src = prevChica.src = urlPrev;
+      encuadrar();
+      nueva.hidden = false;
+      msg.textContent = '';
+      campo('etiqueta').focus();
+    });
+
+    document.getElementById('mf-cancelar')!.addEventListener('click', () => { limpiarNueva(); msg.textContent = ''; });
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (!preparada) return;
+      const etiqueta = campo('etiqueta').value.trim();
+      if (!etiqueta) { msg.textContent = 'Ponele un nombre corto.'; campo('etiqueta').focus(); return; }
+      const fd = new FormData();
+      fd.append('foto', preparada, 'foto.jpg');
+      fd.append('etiqueta', etiqueta);
+      fd.append('x', campo('x').value);
+      fd.append('y', campo('y').value);
+      btnSubir.disabled = true; msg.textContent = 'Subiendo…';
+      try {
+        const res = await fetch('/api/admin/fotos', { method: 'POST', body: fd });
+        if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo subir. Probá de nuevo.');
+        fotos = d.fotos;
+        avisarCambioFotos(fotos);
+        pintar();
+        limpiarNueva();
+        msg.textContent = `Listo: "${d.foto.etiqueta}" ya se puede elegir en Novedades y en Newsletter.`;
+      } catch (err) {
+        msg.textContent = (err as Error).message;
+      }
+      btnSubir.disabled = false;
+    });
+
+    function pintar() {
+      if (!fotos.length) {
+        lista!.innerHTML = '<p class="ag-vacia">Todavía no subiste fotos. Las de siempre siguen disponibles en Novedades y en Newsletter.</p>';
+        return;
+      }
+      lista!.innerHTML = `<h3 class="mf-tit">Tus fotos (${fotos.length})</h3><ul class="mf-grilla">` + fotos.map((f) => `
+        <li class="mf-item" data-id="${esc(f.id)}">
+          <img src="${esc(f.miniatura)}" alt="" loading="lazy" width="480" height="360" />
+          <span class="mf-nombre">${esc(f.etiqueta)}</span>
+          <span class="mf-acc">
+            <button type="button" class="btn btn--ghost btn--sm" data-acc="renombrar">Cambiar nombre</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-acc="borrar">Borrar</button>
+          </span>
+        </li>`).join('') + '</ul>';
+    }
+
+    async function accion(body: unknown) {
+      const res = await fetch('/api/admin/fotos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudo completar. Probá de nuevo.');
+      fotos = d.fotos;
+      avisarCambioFotos(fotos);
+      return d;
+    }
+
+    // Borrar en dos toques (el navegador del panel suprime confirm()).
+    let armado: { id: string; t: ReturnType<typeof setTimeout> } | null = null;
+
+    lista.addEventListener('click', async (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-acc]');
+      const item = btn?.closest<HTMLElement>('.mf-item');
+      const f = fotos.find((x) => x.id === item?.dataset.id);
+      if (!btn || !item || !f) return;
+
+      if (btn.dataset.acc === 'renombrar') {
+        const span = item.querySelector('.mf-nombre')!;
+        span.innerHTML = `<input type="text" maxlength="40" value="${esc(f.etiqueta)}" aria-label="Nombre de la foto" />`;
+        btn.textContent = 'Guardar';
+        btn.dataset.acc = 'guardar';
+        span.querySelector('input')!.focus();
+        return;
+      }
+      if (btn.dataset.acc === 'guardar') {
+        const etiqueta = (item.querySelector<HTMLInputElement>('.mf-nombre input')?.value || '').trim();
+        btn.disabled = true;
+        try { await accion({ accion: 'renombrar', id: f.id, etiqueta }); pintar(); msg.textContent = 'Nombre cambiado.'; }
+        catch (err) { msg.textContent = (err as Error).message; btn.disabled = false; }
+        return;
+      }
+      if (btn.dataset.acc === 'borrar') {
+        if (!armado || armado.id !== f.id) {
+          if (armado) clearTimeout(armado.t);
+          pintar();
+          const b = lista!.querySelector<HTMLButtonElement>(`.mf-item[data-id="${CSS.escape(f.id)}"] button[data-acc="borrar"]`)!;
+          b.textContent = 'Tocá de nuevo para borrar';
+          b.classList.add('mf-borrar-armado');
+          msg.textContent = `Si una novedad usa "${f.etiqueta}", vuelve a la foto automática.`;
+          armado = { id: f.id, t: setTimeout(() => { armado = null; pintar(); msg.textContent = ''; }, 6000) };
+          return;
+        }
+        clearTimeout(armado.t); armado = null;
+        btn.disabled = true; btn.textContent = 'Borrando…';
+        try {
+          const d = await accion({ accion: 'borrar', id: f.id });
+          pintar();
+          const partes = [`Borrada "${f.etiqueta}".`];
+          if (d.novedades?.length) partes.push(`${d.novedades.map((t: string) => `"${t}"`).join(', ')} vuelve a la foto automática (se ve en la web en 1 o 2 minutos).`);
+          if (d.pendientes?.length) partes.push(`Ojo: la sigue usando ${d.pendientes.map((t: string) => `"${t}"`).join(', ')}; la foto queda guardada hasta que le cambies la portada en Novedades.`);
+          msg.textContent = partes.join(' ');
+        } catch (err) {
+          msg.textContent = (err as Error).message;
+          pintar();
+        }
+      }
+    });
+
+    async function cargar() {
+      try {
+        const res = await fetch('/api/admin/fotos');
+        if (res.status === 401) throw new Error('Tu sesión expiró. Recargá la página e ingresá de nuevo.');
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || !d.ok) throw new Error(d.error || 'No se pudieron leer tus fotos.');
+        cargada = true;
+        fotos = d.fotos;
+        sinBlob.hidden = !!d.configurado;
+        form!.hidden = !d.configurado;
+        pintar();
+      } catch (err) {
+        lista!.innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
+      }
+    }
+
+    // Carga perezosa: recién cuando Ceci abre la pestaña.
+    const tab = document.querySelector<HTMLButtonElement>('.tab[data-ir="fotos"]');
+    tab?.addEventListener('click', () => { if (!cargada) cargar(); });
+    if (tab?.getAttribute('aria-current') === 'true') cargar();
+  })();
+</script>
+
+<style is:global>
+  .mf-aviso { font-size: 0.85rem; color: var(--clay-deep); background: var(--white); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin: 0.8rem 0 0; line-height: 1.5; }
+  .mf-err { color: var(--clay-deep); font-size: 0.9rem; margin-top: 0.8rem; }
+  .mf-form { display: grid; gap: 1rem; margin-top: 1.2rem; }
+  .mf-form[hidden] { display: none; }
+  .mf-elegir { display: block; }
+  .mf-elegir input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .mf-elegir .btn { width: 100%; justify-content: center; text-align: center; cursor: pointer; }
+  .mf-elegir:has(input:focus-visible) .btn { outline: 2px solid var(--sage); outline-offset: 2px; }
+  @media (min-width: 640px) { .mf-elegir .btn { width: auto; } }
+  .mf-nueva { display: grid; gap: 1rem; }
+  .mf-nueva[hidden] { display: none; }
+  .mf-recortes { display: grid; grid-template-columns: 2.3fr 1fr; gap: 0.8rem; align-items: start; }
+  .mf-recortes figure { margin: 0; display: grid; gap: 0.3rem; min-width: 0; }
+  .mf-recortes figcaption { font-size: 0.78rem; color: var(--ink-soft); line-height: 1.4; }
+  .mf-recorte { border-radius: var(--radius-sm); overflow: hidden; background: var(--white); }
+  .mf-recorte img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .mf-recorte--ancha { aspect-ratio: 1200 / 520; }
+  .mf-recorte--chica { aspect-ratio: 480 / 360; }
+  .mf-encuadre { border: 0; padding: 0; margin: 0; display: grid; gap: 0.5rem; min-width: 0; }
+  .mf-encuadre legend { padding: 0; margin-bottom: 0.2rem; }
+  .mf-rango { display: grid; gap: 0.15rem; font-size: 0.82rem; color: var(--ink-soft); }
+  .mf-rango input { width: 100%; accent-color: var(--sage-deep); min-height: 32px; }
+  .mf-msg { font-size: 0.88rem; color: var(--ink-soft); margin: 0; min-height: 1.2em; line-height: 1.5; }
+  .mf-tit { font-size: 1.05rem; margin: 1.6rem 0 0.6rem; }
+  .mf-grilla { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.9rem; }
+  .mf-item { display: grid; gap: 0.35rem; align-content: start; min-width: 0; }
+  .mf-item img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-sm); background: var(--white); }
+  .mf-nombre { font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
+  .mf-nombre input { font: inherit; width: 100%; padding: 0.4rem 0.5rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); color: var(--ink); }
+  .mf-acc { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .mf-borrar-armado { color: var(--clay-deep); border-color: var(--clay-deep); }
+  /* "Subir una foto tuya" en los selectores de Novedades y Newsletter. */
+  .nl-ir-fotos { font: inherit; font-size: 0.8rem; color: var(--sage-deep); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+</style>

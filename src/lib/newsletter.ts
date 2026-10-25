@@ -26,16 +26,20 @@ import {
   CABECERA_POR_DEFECTO,
   RUTA_FIRMA,
   RUTA_LOGO,
-  fotoValida,
+  absoluta,
+  fotoFija,
+  fotoSubida,
   rutaCabecera,
   rutaFoto,
-  type FotoId,
+  type FotoRef,
 } from '../data/galeria-newsletter';
+import { refsDisponibles } from './fotos';
 
 /**
  * Base de las imágenes del mail. Siempre el dominio público: los previews de
  * Vercel piden login y Gmail no podría bajarlas. En un preview, las fotos
- * nuevas recién se ven después del merge.
+ * fijas nuevas recién se ven después del merge. Las que sube Ceci ya vienen con
+ * su dirección absoluta en Blob y se ven siempre.
  */
 const baseImagenes = () => (process.env.PUBLIC_SITE_URL || 'https://cgcosmetologiamedica.com').replace(/\/+$/, '');
 
@@ -136,7 +140,7 @@ export async function entradasPublicadas(): Promise<EntradaNl[]> {
 }
 
 /** Fotos elegidas para un envío: la de cabecera y, opcional, una por novedad (slug → foto). */
-export type FotosEnvio = { cabecera: FotoId; porEntrada: Record<string, FotoId> };
+export type FotosEnvio = { cabecera: FotoRef; porEntrada: Record<string, FotoRef> };
 
 
 /** `baseImg`: solo para la vista previa del panel, que puede cargar las fotos del mismo sitio. */
@@ -152,10 +156,10 @@ export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]
         descripcion: e.descripcion,
         tipo: e.tipo,
         url: `${o.base}/blog/${encodeURIComponent(e.slug)}`,
-        imagen: foto ? img + rutaFoto(foto) : null,
+        imagen: foto ? absoluta(rutaFoto(foto), img) : null,
       };
     }),
-    cabecera: img + rutaCabecera(o.fotos.cabecera),
+    cabecera: absoluta(rutaCabecera(o.fotos.cabecera), img),
     base: o.base,
     linkBaja: o.linkBaja,
     logo: img + RUTA_LOGO,
@@ -163,11 +167,17 @@ export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]
   });
 }
 
-/** Lee y valida las fotos que manda el panel (o las guardadas en un envío). */
-export function leerFotos(v: any, slugs: string[]): FotosEnvio {
-  const cabecera = fotoValida(v?.cabecera) ? v.cabecera : CABECERA_POR_DEFECTO;
-  const porEntrada: Record<string, FotoId> = {};
-  for (const s of slugs) if (fotoValida(v?.porEntrada?.[s])) porEntrada[s] = v.porEntrada[s];
+/**
+ * Lee y valida las fotos que manda el panel (o las guardadas en un envío).
+ * `subidas`: las fotos de Ceci que se pueden usar (ver refsDisponibles). Si
+ * una ya no está (la borró), la cabecera vuelve a la de por defecto y la
+ * novedad queda sin foto, como si no hubiera elegido.
+ */
+export function leerFotos(v: any, slugs: string[], subidas: Set<string>): FotosEnvio {
+  const ok = (f: unknown): f is FotoRef => fotoFija(f) || (fotoSubida(f) && subidas.has(f));
+  const cabecera = ok(v?.cabecera) ? v.cabecera : CABECERA_POR_DEFECTO;
+  const porEntrada: Record<string, FotoRef> = {};
+  for (const s of slugs) if (ok(v?.porEntrada?.[s])) porEntrada[s] = v.porEntrada[s];
   return { cabecera, porEntrada };
 }
 
@@ -289,7 +299,7 @@ export async function enviarTanda(sql: any, envioId: string, base: string) {
     .map((s) => todas.find((e) => e.slug === s))
     .filter((e): e is EntradaNl => !!e);
   if (!entradas.length) throw new Error('Las novedades de este envío ya no están publicadas');
-  const fotos = leerFotos(env.fotos, entradas.map((e) => e.slug));
+  const fotos = leerFotos(env.fotos, entradas.map((e) => e.slug), await refsDisponibles(sql, { conservadas: true }));
 
   let cupo = await cupoHoy(sql);
   let enviados = 0;
