@@ -294,3 +294,66 @@ export async function ensurePacientes(sql: any) {
   await sql`create index if not exists reservas_paciente on reservas (paciente_id)`;
   await sql`alter table pacientes enable row level security`;
 }
+
+/**
+ * Ficha de seguimiento (idempotente, solo agrega). Ver
+ * supabase/migrations/0009_ficha_seguimiento.sql y src/lib/seguimiento.ts.
+ * Todo esto es dato de salud: solo se escribe con consentimiento_fecha cargada
+ * (lo controla /api/admin/seguimiento).
+ *  - pacientes: motivo, objetivos (de src/data/ficha.ts), anamnesis (jsonb con
+ *    antecedentes, alergias, medicación, fototipo, tipo y condición de piel,
+ *    hábitos, rutina en casa, otros) y anamnesis_at (última revisión).
+ *  - planes: plan de tratamiento por paciente (protocolo, sesiones previstas,
+ *    frecuencia, estado). Las sesiones hechas se cuentan desde reservas.plan_id.
+ *  - reservas: plan_id, hizo (activos/equipo y parámetros), tolerancia,
+ *    indicaciones (para casa), proxima_fecha (sugerida). Se suman a los
+ *    tratamientos y evolucion que ya había.
+ *  - fotos: comprimidas en el navegador y guardadas en la base (bytea), con
+ *    una miniatura. Solo se sirven con sesión de admin, nunca por link público.
+ */
+export async function ensureSeguimiento(sql: any) {
+  await ensurePacientes(sql);
+  await sql`alter table pacientes add column if not exists motivo text`;
+  await sql`alter table pacientes add column if not exists objetivos text[]`;
+  await sql`alter table pacientes add column if not exists anamnesis jsonb`;
+  await sql`alter table pacientes add column if not exists anamnesis_at timestamptz`;
+  await sql`
+    create table if not exists planes (
+      id uuid primary key default gen_random_uuid(),
+      paciente_id uuid not null references pacientes(id) on delete cascade,
+      tratamiento_id text,
+      tratamiento text not null,
+      sesiones integer check (sesiones is null or sesiones between 1 and 50),
+      frecuencia text,
+      inicio date,
+      paquete text,
+      protocolo text,
+      estado text not null default 'en_curso' check (estado in ('en_curso', 'pausado', 'terminado')),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`create index if not exists planes_paciente on planes (paciente_id)`;
+  await sql`alter table planes enable row level security`;
+  await sql`alter table reservas add column if not exists plan_id uuid references planes(id) on delete set null`;
+  await sql`alter table reservas add column if not exists hizo text`;
+  await sql`alter table reservas add column if not exists tolerancia text`;
+  await sql`alter table reservas add column if not exists indicaciones text`;
+  await sql`alter table reservas add column if not exists proxima_fecha date`;
+  await sql`
+    create table if not exists fotos (
+      id uuid primary key default gen_random_uuid(),
+      paciente_id uuid not null references pacientes(id) on delete cascade,
+      reserva_id uuid references reservas(id) on delete set null,
+      fecha date not null,
+      etiqueta text,
+      mime text not null,
+      datos bytea not null,
+      mini bytea not null,
+      bytes integer not null,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`create index if not exists fotos_paciente on fotos (paciente_id)`;
+  await sql`alter table fotos enable row level security`;
+}
