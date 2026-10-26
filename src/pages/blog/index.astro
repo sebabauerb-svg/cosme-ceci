@@ -4,8 +4,7 @@ import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
 import WhatsappFloat from '../../components/WhatsappFloat.astro';
 import Suscripcion from '../../components/Suscripcion.astro';
-import { getEntradas, fmtFecha, TIPOS, fotoDeEntrada, type Tipo } from '../../lib/blog';
-import { rutaFoto } from '../../data/galeria-newsletter';
+import { getEntradas, fmtFecha, TIPOS, imgDeEntrada, type Tipo } from '../../lib/blog';
 
 const entradas = await getEntradas();
 // Solo se ofrecen filtros por los tipos que tienen al menos una entrada.
@@ -57,7 +56,7 @@ const schema = {
             {entradas.map((e) => (
               <li class="card" data-tipo={e.data.tipo}>
                 <a class="blog__img" href={`/blog/${e.id}`} aria-hidden="true" tabindex="-1">
-                  <img src={rutaFoto(fotoDeEntrada(e))} alt="" width="480" height="360" loading="lazy" />
+                  <img {...imgDeEntrada(e, false)} alt="" width="480" height="360" loading="lazy" />
                 </a>
                 <p class="blog__meta">
                   <span class={`blog__tipo blog__tipo--${e.data.tipo}`}>{TIPOS[e.data.tipo].label}</span>
