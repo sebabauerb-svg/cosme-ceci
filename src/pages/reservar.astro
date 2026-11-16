@@ -22,6 +22,7 @@ import {
 } from '../data/pago';
 
 const waReprogramar = whatsappLink('Hola Ceci! Necesito reprogramar mi turno reservado por la web.');
+const waSesion = whatsappLink('Hola Ceci! Ya soy paciente y quiero coordinar mi próxima sesión.');
 
 /** Pesos uruguayos con separador de miles: 1800 → $1.800 */
 const fmt = (n: number) => '$' + n.toLocaleString('es-UY');
@@ -81,6 +82,21 @@ const senaLabel = fmt(SENA_UYU);
               <span class="opt__cta" aria-hidden="true">Elegir →</span>
             </button>
           ))}
+        </div>
+
+        {/* Cómo funciona: la seña aparecía recién en el paso 4 y sorprendía; y mucha
+            gente le escribía a Ceci "¿cómo agendo?". Lo contamos antes de empezar. */}
+        <div class="como">
+          <p class="como__t">Así funciona la reserva</p>
+          <ol class="como__pasos">
+            <li><strong>Elegís el día y el horario</strong> que te quede bien.</li>
+            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Es parte del valor de la consulta: el resto lo abonás ese día.</li>
+            <li><strong>Te llega la confirmación por mail</strong> con el día y la hora.</li>
+          </ol>
+          <p class="como__extra">
+            ¿Querés un tratamiento? Todo empieza con la Consulta Presencial: ahí Ceci diseña tu protocolo.
+            ¿Ya sos paciente y querés coordinar tu próxima sesión? <a href={waSesion} target="_blank" rel="noopener">Escribile por WhatsApp</a>.
+          </p>
         </div>
       </section>
 
@@ -201,7 +217,7 @@ const senaLabel = fmt(SENA_UYU);
   </main>
 
   <Footer />
-  <WhatsappFloat />
+  <WhatsappFloat mensaje="Hola Ceci! Estoy reservando en la web y tengo una duda: " />
 </Base>
 
 <script define:vars={{ items, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0, conceptoPrefijo: CONCEPTO_PREFIJO }}>
@@ -668,17 +684,32 @@ const senaLabel = fmt(SENA_UYU);
     const waLink = $('#wa-link');
     if (waLink) {
       waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensajeCompartir())}`;
-      waLink.textContent = 'Avisar a Ceci por WhatsApp';
+      // Es LA acción que falta para confirmar: va como botón principal.
+      waLink.textContent = m.esMembresia
+        ? 'Avisar a Ceci por WhatsApp'
+        : hayBanco ? 'Mandar el comprobante por WhatsApp' : 'Pedirle los datos a Ceci por WhatsApp';
+      waLink.classList.replace('btn--ghost', 'btn--primary');
       waLink.hidden = false;
     }
     $('#pago-link').hidden = true;
+    const titulo = $('.done h2');
+    if (titulo && !m.esMembresia) titulo.textContent = 'Tu horario está guardado por 2 horas';
     $('#done-text').textContent = m.esMembresia
       ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-      : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó agendada para el ${state.fechaLabel} a las ${state.hora} h, a confirmar por Ceci.`;
+      : `${state.nombre}, separamos tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} para el ${state.fechaLabel} a las ${state.hora} h. Todavía no está confirmada: falta la seña.`;
     const hint = $('#done-hint');
-    if (hint) hint.textContent = m.esMembresia
-      ? 'Ceci coordina con vos a la brevedad. Avisale por WhatsApp con el botón de abajo.'
-      : `Tu cupo queda retenido 2 horas. Transferí la seña de ${m.senaLabel} y avisale a Ceci: cuando vea el pago te llega la confirmación por mail.`;
+    if (hint) {
+      if (m.esMembresia) {
+        hint.textContent = 'Ceci coordina con vos a la brevedad. Avisale por WhatsApp con el botón de abajo.';
+      } else {
+        // Los dos pasos que faltan, numerados: antes era un párrafo y no quedaba
+        // claro si la reserva ya estaba hecha.
+        hint.classList.add('done__pasos');
+        hint.innerHTML = hayBanco
+          ? `<strong>Para confirmarla:</strong><br>1. Transferí la seña de ${m.senaLabel} con los datos de abajo.<br>2. Mandale el comprobante a Ceci por WhatsApp.<br>Cuando lo vea, te llega la confirmación por mail.`
+          : `<strong>Para confirmarla:</strong><br>1. Escribile a Ceci por WhatsApp y te pasa los datos para la seña de ${m.senaLabel}.<br>2. Transferí y mandale el comprobante.<br>Cuando lo vea, te llega la confirmación por mail.`;
+      }
+    }
     // Los datos para transferir solo aplican a un turno, no a la membresía.
     const banco = $('#datos-banco');
     if (banco) banco.hidden = !!m.esMembresia;
@@ -824,6 +855,21 @@ const senaLabel = fmt(SENA_UYU);
     .booking__steps li.is-active:not(:has(~ li.is-active)) { font-size: 0.82rem; gap: 0.4rem; }
   }
 
+  .como {
+    margin-top: 1.8rem;
+    padding: 1.2rem 1.3rem;
+    border: 1px solid var(--sand);
+    border-radius: var(--radius-sm);
+    background: var(--cream);
+    font-size: 0.92rem;
+    color: var(--ink-soft);
+  }
+  .como__t { font-weight: 600; color: var(--ink); margin-bottom: 0.7rem; }
+  .como__pasos { margin: 0 0 0.9rem 1.2rem; display: grid; gap: 0.45rem; }
+  .como__pasos strong { color: var(--ink); font-weight: 600; }
+  .como__extra { margin: 0; padding-top: 0.8rem; border-top: 1px solid var(--sand); }
+  .como__extra a { color: var(--sage-deep); font-weight: 600; }
+
   .step { animation: fade 0.4s ease both; }
   .step__title { font-size: 1.45rem; margin-bottom: 0.4rem; text-align: center; }
   .step__hint { font-size: 0.9rem; color: var(--ink-soft); text-align: center; margin-bottom: 1.4rem; }
@@ -927,6 +973,17 @@ const senaLabel = fmt(SENA_UYU);
   .done p { margin-bottom: 1rem; }
   /* Los tres botones del cierre comparten ancho y centrado (antes cada uno
      tenía el suyo y quedaban desalineados). */
+  .step__hint.done__pasos {
+    text-align: left;
+    line-height: 1.7;
+    max-width: 44ch;
+    margin: 1.2rem auto;
+    padding: 1rem 1.2rem;
+    border: 1px solid var(--sand);
+    border-radius: var(--radius-sm);
+    background: var(--cream);
+    color: var(--ink);
+  }
   .done__acciones { display: grid; gap: 0.7rem; justify-items: center; margin-top: 1.6rem; }
 
   /* Datos para señar por transferencia */
