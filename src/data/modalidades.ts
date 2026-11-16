@@ -31,7 +31,10 @@ export const modalidades: Modalidad[] = [
       'Confección de historia clínica estética, diagnóstico inicial de autor y diseño ' +
       'estratégico de tu primer protocolo de tratamiento personalizado.',
     precio: '$1.800',
-    precioNota: 'Se bonifica al contratar un protocolo el mismo día', // del anexo de tarifas
+    // Regla confirmada por Ceci (nov-2026): la evaluación es sin costo si ese
+    // mismo día hace el tratamiento. "Se bonifica al contratar un protocolo" no
+    // se entendía (¿gratis o descuento?, ¿qué es un protocolo?).
+    precioNota: 'Sin costo si ese mismo día hacés tu primer tratamiento',
     ctaTexto: 'Reservar consulta',
   },
   {

@@ -5,7 +5,7 @@ import { vincularPendientes } from '../../lib/pacientes';
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
-import { senaOnline } from '../../lib/precios';
+import { senaOnline, requiereSede } from '../../lib/precios';
 
 export const prerender = false;
 
@@ -13,6 +13,7 @@ const NOMBRE_MODALIDAD: Record<string, string> = {
   presencial: 'Consulta Presencial',
   virtual: 'Consulta Virtual',
   'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
+  sesion: 'Sesión de tratamiento',
   club: 'Club de las Estaciones',
 };
 
@@ -119,7 +120,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   }
   // Una consulta presencial necesita sede real: sin esto, un POST directo caería
   // en el cupo 'online' y bloquearía los horarios de las consultas virtuales.
-  if (modalidad === 'presencial' && !nombreSede(str(sede)))
+  if (requiereSede(modalidad) && !nombreSede(str(sede)))
     return json({ ok: false, error: 'Elegí la sede (Montevideo o San José)' }, 400);
 
   // El monto lo fija el servidor según la modalidad. NUNCA se toma del cliente
@@ -134,7 +135,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   const estadoInicial = via === 'coordinar' ? 'a_confirmar' : 'pendiente_pago';
   const holdMin = via === 'coordinar' ? 120 : 30;
   const expira = new Date(Date.now() + holdMin * 60 * 1000).toISOString();
-  const capSlug = modalidad === 'presencial' ? str(sede) : 'online';
+  const capSlug = requiereSede(modalidad) ? str(sede) : 'online';
 
   try {
     const sql = getSql();
@@ -154,7 +155,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     if (nombreS) {
       const r = await sql`select id from sedes where nombre = ${nombreS} limit 1`;
       sedeId = r[0]?.id ? String(r[0].id) : null;
-      if (modalidad === 'presencial' && !sedeId)
+      if (requiereSede(modalidad) && !sedeId)
         return json({ ok: false, error: 'Elegí la sede (Montevideo o San José)' }, 400);
     }
 

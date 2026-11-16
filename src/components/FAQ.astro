@@ -12,9 +12,9 @@ const faqs = [
     q: '¿Cómo reservo un turno?',
     a:
       'Desde el botón “Reservar consulta”: elegís la modalidad, el día y el horario, dejás tus datos ' +
-      `y una seña de $${SENA_UYU.toLocaleString('es-UY')} por transferencia o Mercado Pago (es parte del valor ` +
-      'de la consulta; el resto lo abonás ese día). Te llega la confirmación por mail. Si preferís, ' +
-      'también podés escribirme por WhatsApp y lo coordinamos por ahí.',
+      `y una seña de $${SENA_UYU.toLocaleString('es-UY')} por transferencia o Mercado Pago (se descuenta ` +
+      'de lo que abonás ese día). Te llega la confirmación por mail. Si ya sos paciente, elegí ' +
+      '“Ya soy paciente: mi próxima sesión”.',
   },
   {
     q: '¿Atendés presencial y online?',
@@ -29,9 +29,11 @@ const faqs = [
       'Es una evaluación clínica completa: analizamos el estado de tu piel, tus antecedentes y ' +
       'objetivos, armamos tu historia clínica estética y diseñamos tu primer protocolo ' +
       'personalizado. ' +
+      'Si ese mismo día hacés tu primer tratamiento (es lo más habitual), la evaluación no tiene costo. ' +
       (valorConsulta
-        ? `Tiene un valor de ${valorConsulta}, que se bonifica si contratás un protocolo el mismo día.`
-        : 'Su valor se bonifica si contratás un protocolo el mismo día.'),
+        ? `Si solo venís a la evaluación, tiene un valor de ${valorConsulta}. `
+        : '') +
+      'En los dos casos, la seña que dejaste al reservar se descuenta y el resto lo abonás ese día.',
   },
   {
     q: '¿Los valores de los tratamientos son finales?',

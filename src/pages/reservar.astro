@@ -5,7 +5,7 @@ import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
 import { site, whatsappLink } from '../data/site';
-import { SENA_UYU, senaOnline } from '../lib/precios';
+import { SENA_UYU, SESION_ID, senaOnline } from '../lib/precios';
 import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
 import { cacheCdn } from '../lib/cache';
 
@@ -22,12 +22,26 @@ import {
 } from '../data/pago';
 
 const waReprogramar = whatsappLink('Hola Ceci! Necesito reprogramar mi turno reservado por la web.');
-const waSesion = whatsappLink('Hola Ceci! Ya soy paciente y quiero coordinar mi próxima sesión.');
 
 /** Pesos uruguayos con separador de miles: 1800 → $1.800 */
 const fmt = (n: number) => '$' + n.toLocaleString('es-UY');
 
-const items = modalidades.map((m) => ({
+// Pacientes que ya se atienden con Ceci: la mayoría de los "¿cómo agendo?"
+// eran para la próxima sesión. Va primero, con sede y la misma seña; el valor
+// depende del tratamiento, así que no se muestra una cifra.
+const itemSesion = {
+  id: SESION_ID,
+  nombre: 'Ya soy paciente: mi próxima sesión',
+  subtitulo: 'Para continuar tu tratamiento en Montevideo o San José',
+  // Sin cifra en la esquina (en celular apretaba el título); va en la nota.
+  precio: '',
+  precioNota: 'El valor depende de tu tratamiento',
+  esMembresia: false,
+  sena: senaOnline(SESION_ID),
+  senaLabel: fmt(SENA_UYU),
+};
+
+const itemsModalidades = modalidades.map((m) => ({
   id: m.id,
   nombre: m.nombre,
   subtitulo: m.subtitulo,
@@ -41,6 +55,7 @@ const items = modalidades.map((m) => ({
   sena: senaOnline(m.id),
   senaLabel: senaOnline(m.id) != null ? fmt(SENA_UYU) : null,
 }));
+const items = [itemSesion, ...itemsModalidades];
 
 // Datos bancarios para señar por transferencia. Si todavía no se cargaron en
 // src/data/pago.ts, la web no inventa nada: dice que Ceci los pasa por WhatsApp.
@@ -75,7 +90,7 @@ const senaLabel = fmt(SENA_UYU);
             <button class="opt" data-id={m.id}>
               <span class="opt__head">
                 <span class="opt__name">{m.nombre}</span>
-                <span class="opt__price">{m.precio}</span>
+                {m.precio && <span class="opt__price">{m.precio}</span>}
               </span>
               <span class="opt__sub">{m.subtitulo}</span>
               {m.precioNota && <span class="opt__nota">{m.precioNota}</span>}
@@ -90,12 +105,13 @@ const senaLabel = fmt(SENA_UYU);
           <p class="como__t">Así funciona la reserva</p>
           <ol class="como__pasos">
             <li><strong>Elegís el día y el horario</strong> que te quede bien.</li>
-            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Es parte del valor de la consulta: el resto lo abonás ese día.</li>
+            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Se descuenta de lo que abonás ese día.</li>
             <li><strong>Te llega la confirmación por mail</strong> con el día y la hora.</li>
           </ol>
           <p class="como__extra">
-            ¿Querés un tratamiento? Todo empieza con la Consulta Presencial: ahí Ceci diseña tu protocolo.
-            ¿Ya sos paciente y querés coordinar tu próxima sesión? <a href={waSesion} target="_blank" rel="noopener">Escribile por WhatsApp</a>.
+            <strong>¿Primera vez?</strong> Empezá por la Consulta Presencial: Ceci evalúa tu piel y, si ese
+            mismo día hacés tu primer tratamiento, la evaluación no tiene costo.
+            <strong>¿Ya sos paciente?</strong> Elegí “Ya soy paciente: mi próxima sesión”.
           </p>
         </div>
       </section>
@@ -295,7 +311,8 @@ const senaLabel = fmt(SENA_UYU);
       const stepFecha = $('.booking__steps li[data-ind="2"]');
       if (stepFecha) stepFecha.hidden = m.esMembresia;
       if (m.esMembresia) return goTo(3);
-      const presencial = m.id === 'presencial';
+      // Consulta Presencial y Sesión de tratamiento se atienden en una sede física.
+      const presencial = m.id === 'presencial' || m.id === 'sesion';
       $('#sede').hidden = !presencial;
       $('#agenda').hidden = true;
       $$('.sede__btn').forEach((s) => s.classList.remove('is-sel'));
@@ -522,9 +539,16 @@ const senaLabel = fmt(SENA_UYU);
     // La web cobra una seña, no el total: lo dejamos explícito para que nadie
     // llegue a la consulta creyendo que ya pagó todo.
     if (m.sena != null) {
-      filas.push(`<div class="resumen__row"><span>Valor de la consulta</span><strong>${m.precio}</strong></div>`);
+      const esSesion = m.id === 'sesion';
+      filas.push(`<div class="resumen__row"><span>${esSesion ? 'Valor de la sesión' : 'Valor de la consulta'}</span><strong>${esSesion ? 'Según tu tratamiento' : m.precio}</strong></div>`);
       filas.push(`<div class="resumen__row resumen__row--total"><span>Seña para reservar</span><strong>${m.senaLabel}</strong></div>`);
-      filas.push(`<p class="resumen__nota">El saldo lo abonás en la consulta.</p>`);
+      // Regla de Ceci (nov-2026): la evaluación es sin costo si ese mismo día hace
+      // el tratamiento; la seña se descuenta y el resto se abona ese día.
+      filas.push(`<p class="resumen__nota">${
+        m.id === 'presencial'
+          ? 'Si ese mismo día hacés tu primer tratamiento, la evaluación no tiene costo. La seña se descuenta y el resto lo abonás ese día.'
+          : 'La seña se descuenta y el resto lo abonás ese día.'
+      }</p>`);
     } else {
       filas.push(`<div class="resumen__row resumen__row--total"><span>Total</span><strong>${m.precio}</strong></div>`);
     }
