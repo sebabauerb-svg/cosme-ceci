@@ -32,6 +32,9 @@ const fmt = (n: number) => '$' + n.toLocaleString('es-UY');
 const itemSesion = {
   id: SESION_ID,
   nombre: 'Ya soy paciente: mi próxima sesión',
+  // Cómo se nombra en el resumen, la confirmación y el WhatsApp ("tu Sesión de
+  // tratamiento", no "tu Ya soy paciente: …").
+  servicio: 'Sesión de tratamiento',
   subtitulo: 'Para continuar tu tratamiento en Montevideo o San José',
   // Sin cifra en la esquina (en celular apretaba el título); va en la nota.
   precio: '',
@@ -44,6 +47,7 @@ const itemSesion = {
 const itemsModalidades = modalidades.map((m) => ({
   id: m.id,
   nombre: m.nombre,
+  servicio: m.nombre,
   subtitulo: m.subtitulo,
   precio: precioModalidadTexto(precios, m) ?? 'A coordinar',
   precioNota: m.precioNota ?? '',
@@ -533,7 +537,7 @@ const senaLabel = fmt(SENA_UYU);
     const cuando = m.esMembresia
       ? 'Membresía anual (coordinamos la primera consulta al sumarte)'
       : `${state.fechaLabel} · ${state.hora} h`;
-    const filas = [`<div class="resumen__row"><span>Servicio</span><strong>${m.nombre}</strong></div>`];
+    const filas = [`<div class="resumen__row"><span>Servicio</span><strong>${m.servicio}</strong></div>`];
     if (state.lugar)
       filas.push(`<div class="resumen__row"><span>Dónde</span><strong>${state.lugar}</strong></div>`);
     filas.push(`<div class="resumen__row"><span>Cuándo</span><strong>${cuando}</strong></div>`);
@@ -578,8 +582,8 @@ const senaLabel = fmt(SENA_UYU);
   function waMensajeCompartir() {
     const m = state.modalidad;
     const l = m.esMembresia
-      ? ['Hola Ceci! Me gustaría sumarme al Club de las Estaciones:', `• ${m.nombre}`]
-      : ['Hola Ceci! Me gustaría agendar este turno por la web:', `• ${m.nombre}`];
+      ? ['Hola Ceci! Me gustaría sumarme al Club de las Estaciones:', `• ${m.servicio}`]
+      : ['Hola Ceci! Me gustaría agendar este turno por la web:', `• ${m.servicio}`];
     if (state.lugar) l.push(`• Sede: ${state.lugar}`);
     if (!m.esMembresia) l.push(`• Día y hora: ${state.fechaLabel} · ${state.hora} h`);
     l.push(`• A nombre de: ${state.nombre}`);
@@ -595,7 +599,7 @@ const senaLabel = fmt(SENA_UYU);
 
   function waMensaje() {
     const m = state.modalidad;
-    const l = ['Hola Ceci! Acabo de reservar por la web:', `• ${m.nombre}`];
+    const l = ['Hola Ceci! Acabo de reservar por la web:', `• ${m.servicio}`];
     if (state.lugar) l.push(`• Sede: ${state.lugar}`);
     if (!m.esMembresia) l.push(`• Día y hora: ${state.fechaLabel} · ${state.hora} h`);
     l.push(`• A nombre de: ${state.nombre}`);
@@ -681,7 +685,7 @@ const senaLabel = fmt(SENA_UYU);
     // Guardamos el detalle para armar el mensaje "PAGO CONFIRMADO" al volver de MP.
     try {
       sessionStorage.setItem('reservaPago', JSON.stringify({
-        rid: data.id, nombre: state.nombre, modalidad: m.nombre,
+        rid: data.id, nombre: state.nombre, modalidad: m.servicio,
         lugar: state.lugar, fechaLabel: state.fechaLabel, hora: state.hora, esMembresia: !!m.esMembresia,
       }));
     } catch { /* sessionStorage puede fallar en modo privado */ }
@@ -691,8 +695,8 @@ const senaLabel = fmt(SENA_UYU);
     const waLink = $('#wa-link');
     if (waLink) { waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`; waLink.hidden = false; }
     $('#done-text').textContent = m.esMembresia
-      ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-      : `${state.nombre}, tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
+      ? `${state.nombre}, registramos tu interés en ${m.servicio}.`
+      : `${state.nombre}, tu ${m.servicio}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
     const hint = $('#done-hint');
     if (hint) hint.textContent = m.esMembresia
       ? 'Coordinamos la primera consulta al sumarte. Avisale a Ceci por WhatsApp con el botón de abajo.'
@@ -721,8 +725,8 @@ const senaLabel = fmt(SENA_UYU);
     const titulo = $('.done h2');
     if (titulo && !m.esMembresia) titulo.textContent = 'Tu horario está guardado por 2 horas';
     $('#done-text').textContent = m.esMembresia
-      ? `${state.nombre}, registramos tu interés en ${m.nombre}.`
-      : `${state.nombre}, separamos tu ${m.nombre}${state.lugar ? ' en ' + state.lugar : ''} para el ${state.fechaLabel} a las ${state.hora} h. Todavía no está confirmada: falta la seña.`;
+      ? `${state.nombre}, registramos tu interés en ${m.servicio}.`
+      : `${state.nombre}, separamos tu ${m.servicio}${state.lugar ? ' en ' + state.lugar : ''} para el ${state.fechaLabel} a las ${state.hora} h. Todavía no está confirmada: falta la seña.`;
     const hint = $('#done-hint');
     if (hint) {
       if (m.esMembresia) {
