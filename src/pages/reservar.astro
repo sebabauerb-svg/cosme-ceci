@@ -84,6 +84,24 @@ const senaLabel = fmt(SENA_UYU);
 
       <!-- Paso 1: Modalidad (renderizado en el servidor → estilos aplican) -->
       <section class="step is-active" data-step="1" aria-label="Elegí la modalidad">
+        {/* Cómo funciona: la seña aparecía recién en el paso 4 y sorprendía; y mucha
+            gente le escribía a Ceci "¿cómo agendo?". Va arriba, antes de elegir. */}
+        <div class="como">
+          <p class="como__t">Así funciona la reserva</p>
+          <ol class="como__pasos">
+            <li><strong>Elegís qué reservar, el día y el horario.</strong></li>
+            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Es para todas las reservas, seas paciente o vengas por primera vez, y se descuenta de lo que abonás ese día.</li>
+            <li><strong>Te llega la confirmación por mail</strong> con el día y la hora.</li>
+          </ol>
+          <p class="como__extra">
+            <strong>¿Primera vez?</strong> Empezá por la Consulta Presencial: Ceci evalúa tu piel y, si ese
+            mismo día hacés tu primer tratamiento, la evaluación no tiene costo.
+          </p>
+          <p class="como__extra como__extra--pac">
+            <strong>¿Ya sos paciente?</strong> Elegí “Ya soy paciente: mi próxima sesión”.
+          </p>
+        </div>
+
         <h2 class="step__title">¿Qué querés reservar?</h2>
         <div class="opts">
           {items.map((m) => (
@@ -97,22 +115,6 @@ const senaLabel = fmt(SENA_UYU);
               <span class="opt__cta" aria-hidden="true">Elegir →</span>
             </button>
           ))}
-        </div>
-
-        {/* Cómo funciona: la seña aparecía recién en el paso 4 y sorprendía; y mucha
-            gente le escribía a Ceci "¿cómo agendo?". Lo contamos antes de empezar. */}
-        <div class="como">
-          <p class="como__t">Así funciona la reserva</p>
-          <ol class="como__pasos">
-            <li><strong>Elegís el día y el horario</strong> que te quede bien.</li>
-            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Se descuenta de lo que abonás ese día.</li>
-            <li><strong>Te llega la confirmación por mail</strong> con el día y la hora.</li>
-          </ol>
-          <p class="como__extra">
-            <strong>¿Primera vez?</strong> Empezá por la Consulta Presencial: Ceci evalúa tu piel y, si ese
-            mismo día hacés tu primer tratamiento, la evaluación no tiene costo.
-            <strong>¿Ya sos paciente?</strong> Elegí “Ya soy paciente: mi próxima sesión”.
-          </p>
         </div>
       </section>
 
@@ -880,7 +882,7 @@ const senaLabel = fmt(SENA_UYU);
   }
 
   .como {
-    margin-top: 1.8rem;
+    margin-bottom: 2rem;
     padding: 1.2rem 1.3rem;
     border: 1px solid var(--sand);
     border-radius: var(--radius-sm);
@@ -892,7 +894,8 @@ const senaLabel = fmt(SENA_UYU);
   .como__pasos { margin: 0 0 0.9rem 1.2rem; display: grid; gap: 0.45rem; }
   .como__pasos strong { color: var(--ink); font-weight: 600; }
   .como__extra { margin: 0; padding-top: 0.8rem; border-top: 1px solid var(--sand); }
-  .como__extra a { color: var(--sage-deep); font-weight: 600; }
+  .como__extra--pac { border-top: 0; padding-top: 0.4rem; }
+  .como__extra strong { color: var(--ink); }
 
   .step { animation: fade 0.4s ease both; }
   .step__title { font-size: 1.45rem; margin-bottom: 0.4rem; text-align: center; }
