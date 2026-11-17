@@ -74,6 +74,12 @@ const dev = import.meta.env.DEV;
                         )}
                       </p>
                     )}
+                    {/* Cada tratamiento se reserva directo, con la misma agenda que
+                        las consultas (pedido nov-2026). */}
+                    <a class="trat__reservar" href={`/reservar?tratamiento=${t.id}`}>
+                      Reservar <span aria-hidden="true">→</span>
+                      <span class="sr-only"> {t.nombre}</span>
+                    </a>
                   </li>
                 );
               })}
@@ -166,7 +172,22 @@ const dev = import.meta.env.DEV;
     border: 1px solid var(--sand);
     border-radius: var(--radius-sm);
     padding: 1.2rem;
+    display: flex;
+    flex-direction: column;
   }
+  .trat__reservar {
+    margin-top: auto;
+    align-self: flex-end;
+    padding-top: 0.8rem;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--clay-deep);
+  }
+  .trat__reservar:hover { color: var(--ink); }
   .trat__list h4 {
     font-family: var(--font-serif);
     font-size: 1.08rem;

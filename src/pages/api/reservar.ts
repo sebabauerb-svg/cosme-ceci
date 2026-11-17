@@ -5,7 +5,8 @@ import { vincularPendientes } from '../../lib/pacientes';
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
-import { senaOnline, requiereSede } from '../../lib/precios';
+import { senaOnline, requiereSede, SESION_ID } from '../../lib/precios';
+import { categoriasTratamientos } from '../../data/tratamientos';
 
 export const prerender = false;
 
@@ -85,6 +86,15 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   }
 
   const { modalidad, sede, fecha, hora, nombre, telefono, email } = body ?? {};
+  // Tratamiento elegido desde la home (solo para la sesión en sede). Se valida
+  // contra el catálogo: un id desconocido se ignora y queda como sesión genérica.
+  const tratamientoNombre =
+    modalidad === SESION_ID && typeof body?.tratamiento === 'string'
+      ? categoriasTratamientos.flatMap((c) => c.tratamientos).find((t) => t.id === body.tratamiento)?.nombre ?? null
+      : null;
+  const servicioNombre = tratamientoNombre
+    ? `Sesión de tratamiento: ${tratamientoNombre}`
+    : NOMBRE_MODALIDAD[modalidad] ?? modalidad;
   // El email es obligatorio: la confirmación del turno (con día y hora) se manda
   // por ese medio, tanto si paga por MercadoPago como si la confirma Ceci.
   if (!modalidad || !nombre || !telefono || !email) {
@@ -205,6 +215,16 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       `;
       const reservaId = String(ins[0].id);
 
+      // El tratamiento elegido queda en las notas de la reserva, que Ceci ve y
+      // edita en el panel (Gestión). Nunca traba la reserva.
+      if (tratamientoNombre) {
+        try {
+          await sql`update reservas set notas = ${'Tratamiento elegido en la web: ' + tratamientoNombre} where id = ${reservaId}`;
+        } catch (e) {
+          console.error('reservar → tratamiento en notas:', e instanceof Error ? e.message : e);
+        }
+      }
+
       // Ficha de la paciente: la vincula (o la crea). Nunca traba la reserva.
       try {
         await ensurePacientes(sql);
@@ -229,7 +249,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
           const tituloItem =
             'Seña — ' +
             [
-              NOMBRE_MODALIDAD[modalidad] ?? modalidad,
+              servicioNombre,
               nombreS,
               esMembresia ? null : labelFecha(fecha),
               esMembresia ? null : hora ? `${hora} h` : null,
@@ -254,7 +274,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       // Aviso por email a Ceci y a la clienta. Fire-and-forget: la latencia de
       // Resend no debe demorar el redirect al checkout (notificarReserva nunca lanza).
       void notificarReserva({
-        modalidad: NOMBRE_MODALIDAD[modalidad] ?? modalidad,
+        modalidad: servicioNombre,
         sede: nombreS,
         fechaLabel: esMembresia ? null : labelFecha(fecha),
         hora: esMembresia ? null : hora,
