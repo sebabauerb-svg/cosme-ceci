@@ -12,7 +12,9 @@ import {
   type Entrada,
   type Tipo,
 } from '../../../lib/novedades';
-import { fotoValida } from '../../../data/galeria-newsletter';
+import { fotoFija, fotoSubida } from '../../../data/galeria-newsletter';
+import { getSql } from '../../../lib/db';
+import { refsDisponibles } from '../../../lib/fotos';
 
 export const prerender = false;
 
@@ -104,7 +106,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       }
     }
 
-    const imagen = fotoValida(b?.imagen) ? b.imagen : undefined;
+    // Portada: una foto fija, o una de las que subió Ceci (si todavía está en "Mis fotos").
+    const imagen = fotoFija(b?.imagen) || (fotoSubida(b?.imagen) && (await refsDisponibles(getSql())).has(b.imagen))
+      ? (b.imagen as string)
+      : undefined;
     const e: Entrada = { slug, titulo, descripcion, fecha, autora, tipo, publicado, cuerpo, imagen };
     const sha = await guardarEntrada(e, shaPrevio, `Novedades: ${editando ? 'edita' : 'nueva'} «${titulo}» (panel)`);
     return json({ ok: true, entrada: { ...e, sha } });

@@ -1,5 +1,5 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
-import { GALERIA, fotoValida, type FotoId } from '../data/galeria-newsletter';
+import { GALERIA, fotoSubida, fotoValida, rutaCabecera, rutaFoto, type FotoRef } from '../data/galeria-newsletter';
 
 export type Entrada = CollectionEntry<'blog'>;
 export type Tipo = Entrada['data']['tipo'];
@@ -24,16 +24,32 @@ export async function getEntradas(): Promise<Entrada[]> {
 export const fmtFecha = (d: Date) =>
   d.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-/**
- * Foto de portada de una entrada (id de la galería): la que eligió Ceci, o si
- * no eligió, una de la galería que depende del slug (siempre la misma para esa
- * entrada, y entradas distintas no quedan todas con la misma foto).
- */
-export function fotoDeEntrada(e: Entrada): FotoId {
-  if (fotoValida(e.data.imagen)) return e.data.imagen;
+/** Foto fija que le toca a una entrada según el slug (siempre la misma, y entradas distintas no quedan todas iguales). */
+function fijaDeEntrada(e: Entrada) {
   let h = 0;
   for (const c of e.id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return GALERIA[h % GALERIA.length].id;
+}
+
+/**
+ * Foto de portada de una entrada (fija o subida por Ceci): la que eligió, o si
+ * no eligió, la fija que le toca.
+ */
+export function fotoDeEntrada(e: Entrada): FotoRef {
+  return fotoValida(e.data.imagen) ? e.data.imagen : fijaDeEntrada(e);
+}
+
+/**
+ * Atributos src (y onerror) de la portada (`ancha`) o de la tarjeta, para usar
+ * con spread en el <img>. Si la foto es de las subidas y Ceci la borra, el .md
+ * vuelve a la automática con un commit; hasta que termina ese deploy, el
+ * onerror cambia una sola vez a la fija que le toca a la entrada.
+ */
+export function imgDeEntrada(e: Entrada, ancha: boolean): { src: string; onerror?: string } {
+  const ruta = ancha ? rutaCabecera : rutaFoto;
+  const f = fotoDeEntrada(e);
+  if (!fotoSubida(f)) return { src: ruta(f) };
+  return { src: ruta(f), onerror: `this.onerror=null;this.src='${ruta(fijaDeEntrada(e))}'` };
 }
 
 /** Minutos de lectura aproximados (200 palabras por minuto). */

@@ -16,6 +16,7 @@ import {
   type EntradaNl,
 } from '../../../lib/newsletter';
 import { GALERIA, CABECERA_POR_DEFECTO, rutaFoto } from '../../../data/galeria-newsletter';
+import { listarFotos, refsDisponibles } from '../../../lib/fotos';
 
 export const prerender = false;
 
@@ -51,8 +52,12 @@ export const GET: APIRoute = async ({ cookies }) => {
       resend: resendConfigurado(),
       pruebaA: process.env.CECI_NOTIF_EMAIL || '',
       entradas: await entradasPublicadas(),
-      // Galería de fotos fijas para elegir (miniaturas servidas por este mismo sitio).
-      galeria: GALERIA.map((f) => ({ ...f, miniatura: rutaFoto(f.id) })),
+      // Galería para elegir: primero las fotos que subió Ceci, después las fijas
+      // (miniaturas servidas por este mismo sitio). `id` es lo que se guarda.
+      galeria: [
+        ...(await listarFotos(sql)).map((f) => ({ id: f.ref, etiqueta: f.etiqueta, miniatura: f.miniatura, subida: true })),
+        ...GALERIA.map((f) => ({ ...f, miniatura: rutaFoto(f.id) })),
+      ],
       cabeceraPorDefecto: CABECERA_POR_DEFECTO,
       ...(await resumen(sql)),
     });
@@ -100,7 +105,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const asunto = typeof b?.asunto === 'string' ? b.asunto.trim().replace(/\s+/g, ' ').slice(0, 120) : '';
     const intro = typeof b?.intro === 'string' ? b.intro.trim().slice(0, 2000) : '';
     if (!asunto) return json({ ok: false, error: 'Falta el asunto.' }, 400);
-    const fotos = leerFotos(b?.fotos, slugs);
+    const fotos = leerFotos(b?.fotos, slugs, await refsDisponibles(sql));
 
     if (accion === 'vista') {
       return json({ ok: true, html: htmlNewsletter({ intro, entradas, base, linkBaja: `${base}/newsletter/baja?prueba=1`, fotos, baseImg: new URL(request.url).origin }) });

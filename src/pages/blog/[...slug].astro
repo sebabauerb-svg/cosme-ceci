@@ -4,8 +4,7 @@ import Nav from '../../components/Nav.astro';
 import Footer from '../../components/Footer.astro';
 import WhatsappFloat from '../../components/WhatsappFloat.astro';
 import Suscripcion from '../../components/Suscripcion.astro';
-import { getEntradas, fmtFecha, TIPOS, fotoDeEntrada, minutosDeLectura } from '../../lib/blog';
-import { rutaCabecera, rutaFoto } from '../../data/galeria-newsletter';
+import { getEntradas, fmtFecha, TIPOS, imgDeEntrada, minutosDeLectura } from '../../lib/blog';
 import { htmlDeNovedad } from '../../lib/formato-novedades';
 
 export async function getStaticPaths() {
@@ -17,7 +16,7 @@ const { post, todas } = Astro.props;
 // El cuerpo pasa por el formateador de novedades (src/lib/formato-novedades.ts).
 const cuerpo = await htmlDeNovedad(post.body ?? '');
 const tipo = TIPOS[post.data.tipo].label;
-const portada = rutaCabecera(fotoDeEntrada(post));
+const portada = imgDeEntrada(post, true);
 const minutos = minutosDeLectura(post.body);
 // Más novedades: las dos más recientes publicadas, sin contar esta.
 const mas = todas.filter((e) => e.id !== post.id && e.data.publicado).slice(0, 2);
@@ -50,7 +49,7 @@ const mas = todas.filter((e) => e.id !== post.id && e.data.publicado).slice(0, 2
       </header>
 
       <figure class="container post__portada">
-        <img src={portada} alt="" width="1200" height="520" fetchpriority="high" />
+        <img {...portada} alt="" width="1200" height="520" fetchpriority="high" />
       </figure>
 
       <div class="container post__cuerpo">
@@ -80,7 +79,7 @@ const mas = todas.filter((e) => e.id !== post.id && e.data.publicado).slice(0, 2
           {mas.map((e) => (
             <li>
               <a href={`/blog/${e.id}`}>
-                <img src={rutaFoto(fotoDeEntrada(e))} alt="" width="480" height="360" loading="lazy" />
+                <img {...imgDeEntrada(e, false)} alt="" width="480" height="360" loading="lazy" />
                 <span class="post__mas-tipo">{TIPOS[e.data.tipo].label}</span>
                 <span class="post__mas-tit">{e.data.titulo}</span>
               </a>
