@@ -14,6 +14,7 @@ const NOMBRE_MODALIDAD: Record<string, string> = {
   presencial: 'Consulta Presencial',
   virtual: 'Consulta Virtual',
   'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
+  sesion: 'Sesión de tratamiento',
   club: 'Club de las Estaciones',
   manual: 'Reserva manual',
 };

@@ -31,8 +31,11 @@ export const modalidades: Modalidad[] = [
       'Confección de historia clínica estética, diagnóstico inicial de autor y diseño ' +
       'estratégico de tu primer protocolo de tratamiento personalizado.',
     precio: '$1.800',
-    precioNota: 'Se bonifica al contratar un protocolo el mismo día', // del anexo de tarifas
-    ctaTexto: 'Agendar consulta',
+    // Regla confirmada por Ceci (nov-2026): la evaluación es sin costo si ese
+    // mismo día hace el tratamiento. "Se bonifica al contratar un protocolo" no
+    // se entendía (¿gratis o descuento?, ¿qué es un protocolo?).
+    precioNota: 'Sin costo si ese mismo día hacés tu primer tratamiento',
+    ctaTexto: 'Reservar consulta',
   },
   {
     id: 'virtual',
@@ -47,7 +50,7 @@ export const modalidades: Modalidad[] = [
       'actuales y desarrollo integral de una rutina domiciliaria optimizada.',
     precio: '$1.500',
     precioNota: 'Sesión por videollamada',
-    ctaTexto: 'Coordinar videollamada',
+    ctaTexto: 'Reservar videollamada',
   },
   {
     id: 'skincare-inteligente',
@@ -62,7 +65,7 @@ export const modalidades: Modalidad[] = [
       'rutina maximizando el valor de tu inversión.',
     precio: '$1.600',
     precioNota: 'Sesión única',
-    ctaTexto: 'Optimizar mi rutina',
+    ctaTexto: 'Reservar asesoramiento',
   },
   {
     id: 'club',

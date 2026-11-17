@@ -1234,7 +1234,7 @@ if (authed) {
     // consultas online van online, las manuales a cualquiera.
     const sedeSel = document.createElement('select');
     const fisicas: Array<[string, string]> = [['montevideo', 'Montevideo'], ['san-jose', 'San José']];
-    const posibles: Array<[string, string]> = r.modalidadId === 'presencial' ? fisicas
+    const posibles: Array<[string, string]> = r.modalidadId === 'presencial' || r.modalidadId === 'sesion' ? fisicas
       : r.modalidadId === 'virtual' || r.modalidadId === 'skincare-inteligente' ? [['online', 'Online']]
       : [...fisicas, ['online', 'Online']];
     posibles.forEach(([v, t]) => opcion(sedeSel, v, t));

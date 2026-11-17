@@ -30,6 +30,19 @@ export const PRECIOS_UYU: Record<string, number | null> = {
   club: null,
 };
 
+/**
+ * Sesión de tratamiento para pacientes que ya atiende Ceci (pedido nov-2026: la
+ * mayoría de los "¿cómo agendo?" eran pacientes buscando su próxima sesión).
+ * No tiene precio fijo —depende del tratamiento— pero se reserva con la misma
+ * seña y en una sede física, igual que la Consulta Presencial.
+ */
+export const SESION_ID = 'sesion';
+
+/** Modalidades que se atienden en una sede física (Montevideo / San José). */
+export function requiereSede(modalidad: unknown): boolean {
+  return modalidad === 'presencial' || modalidad === SESION_ID;
+}
+
 /** Precio total de la modalidad, o null si no tiene precio fijo publicado. */
 export function precioTotal(modalidad: unknown): number | null {
   if (typeof modalidad !== 'string') return null;
@@ -43,6 +56,7 @@ export function precioTotal(modalidad: unknown): number | null {
  * que ambos lados tienen que salir de esta misma función.
  */
 export function senaOnline(modalidad: unknown): number | null {
+  if (modalidad === SESION_ID) return SENA_UYU;
   if (precioTotal(modalidad) == null) return null;
   return SENA_UYU;
 }
