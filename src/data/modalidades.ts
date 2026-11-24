@@ -69,17 +69,17 @@ export const modalidades: Modalidad[] = [
   },
   {
     id: 'club',
-    nombre: 'El Club de las Estaciones',
+    nombre: 'Club de las Estaciones Premium',
     subtitulo: 'Membresía anual de cuidado evolutivo',
     descripcion:
       'La piel es un órgano vivo que cambia con el clima, las estaciones y el tiempo. Una rutina ' +
       'fija todo el año es una rutina obsoleta. El Club es el acompañamiento continuo de tu piel.',
     alcance:
-      'Suscripción anual con una consulta diagnóstica en cada cambio de estación (otoño, invierno, ' +
-      'primavera, verano) para reevaluar tu piel y adaptar el recetario domiciliario. Cuidado ' +
-      'preventivo, cíclico y fundamentado, durante todo el año.',
-    precio: '$4.800 / año',
-    precioNota: '4 pagos de $1.200, uno por estación',
+      '4 consultas presenciales al año, una en cada cambio de estación, y un registro de ' +
+      'seguimiento de tu piel, tus productos y las nuevas recomendaciones, que revisamos juntas ' +
+      'en una consulta online.',
+    precio: 'U$S 200 / año',
+    precioNota: '10% de descuento por transferencia o hasta 3 cuotas con Mercado Pago',
     destacado: true,
     ctaTexto: 'Quiero saber más',
   },

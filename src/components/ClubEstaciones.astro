@@ -1,6 +1,7 @@
 ---
 import { club } from '../data/club';
 import { whatsappLink } from '../data/site';
+import { formasDePago } from '../data/pago';
 ---
 
 <section class="section club" id="club">
@@ -11,7 +12,7 @@ import { whatsappLink } from '../data/site';
       <p class="lead mx-auto text-center">{club.intro}</p>
       <a
         class="club__more"
-        href={whatsappLink('Hola Ceci! Me gustaría saber más sobre el Club de las Estaciones.')}
+        href={whatsappLink('Hola Ceci! Me gustaría saber más sobre el Club de las Estaciones Premium.')}
         target="_blank"
         rel="noopener"
       >
@@ -45,9 +46,12 @@ import { whatsappLink } from '../data/site';
       <aside class="club__precio">
         <span class="club__monto">{club.precio}</span>
         <span class="club__periodo">{club.precioPeriodo}</span>
-        <span class="club__cuotas">{club.cuotas}</span>
+        <ul class="club__pago">
+          <li>{formasDePago.transferencia}</li>
+          <li>{formasDePago.cuotas}</li>
+        </ul>
         <a
-          href={whatsappLink('Hola Ceci! Me interesa el Club de las Estaciones. ¿Me contás los planes?')}
+          href={whatsappLink('Hola Ceci! Me interesa sumarme al Club de las Estaciones Premium. ¿Cómo hago?')}
           class="btn btn--primary"
           target="_blank"
           rel="noopener"
@@ -143,7 +147,10 @@ import { whatsappLink } from '../data/site';
   }
   .club__monto { font-family: var(--font-serif); font-size: 2.6rem; color: var(--ink); line-height: 1; }
   .club__periodo { color: var(--ink-soft); font-size: 0.95rem; }
-  .club__cuotas { color: var(--ink-soft); font-size: 0.85rem; margin: 0.4rem 0 1rem; max-width: 22ch; }
+  .club__pago {
+    list-style: none; display: grid; gap: 0.3rem;
+    color: var(--ink-soft); font-size: 0.85rem; margin: 0.6rem 0 1rem; max-width: 26ch;
+  }
   .club__precio .btn { width: 100%; justify-content: center; }
 
   @media (max-width: 860px) {

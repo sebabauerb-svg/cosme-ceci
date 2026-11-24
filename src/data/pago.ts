@@ -49,6 +49,16 @@ export const POLITICA_CANCELACION =
   'cancelaciones deben realizarse con al menos 24 horas de anticipación. De lo contrario, ' +
   'o en caso de inasistencia, el turno no será reembolsable.';
 
+/**
+ * Formas de pago de tratamientos, paquetes y Club (pedido de Ceci, nov-2026). Se
+ * muestran debajo de cada precio. NO aplican a la seña online de las consultas,
+ * que es un monto fijo (SENA_UYU).
+ */
+export const formasDePago = {
+  transferencia: '10% de descuento por transferencia bancaria',
+  cuotas: 'Hasta 3 cuotas con Mercado Pago',
+};
+
 /** ¿Hay datos bancarios cargados como para mostrarlos en la web? */
 export function hayDatosTransferencia(): boolean {
   return Boolean(transferencia.banco && transferencia.cuentaBrou);
