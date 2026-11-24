@@ -102,7 +102,9 @@ const uid = `nl-${origen}`;
   .nl--oscuro .nl__tit { color: var(--cream); }
   .nl--oscuro .nl__lead { color: var(--sand); opacity: 0.85; }
 
-  .nl__form { display: grid; gap: 0.8rem; }
+  /* minmax(0, 1fr): sin esto la fila email + botón empujaba la columna más allá
+     de la pantalla en tablet (768 px). */
+  .nl__form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.8rem; }
   .nl__fila { display: flex; gap: 0.5rem; }
   .nl__fila input {
     flex: 1;
@@ -132,8 +134,11 @@ const uid = `nl-${origen}`;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
   }
 
+  /* Tablet: dos columnas dejan muy poco lugar al email; texto arriba, formulario abajo. */
+  @media (max-width: 980px) {
+    .nl { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  }
   @media (max-width: 760px) {
-    .nl { grid-template-columns: 1fr; gap: 1rem; }
     .nl__fila { flex-direction: column; }
     .nl__fila .btn { width: 100%; }
   }

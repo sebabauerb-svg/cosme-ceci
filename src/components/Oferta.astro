@@ -36,7 +36,7 @@ for (const cat of categoriasTratamientos) {
       <h2 id="oferta-titulo">¿Por dónde empezamos?</h2>
       <p>
         Si no sabés qué necesita tu piel, empezá por la Consulta Presencial: ahí lo
-        definimos juntas.
+        definimos en conjunto.
       </p>
     </header>
 
@@ -227,31 +227,6 @@ for (const cat of categoriasTratamientos) {
   }
 </style>
 
-<!-- Cada categoría de tratamientos abre y lleva a su bloque dentro del catálogo
-     (en mobile el catálogo arranca plegado). Sin JS, el link va a #tratamientos. -->
-<script is:inline>
-  (() => {
-    document.querySelectorAll('#oferta a[data-grupo]').forEach((a) => {
-      a.addEventListener('click', (e) => {
-        // Se busca al hacer clic: este script corre antes de que exista el catálogo.
-        const cats = Array.from(document.querySelectorAll('#tratamientos .trat__cat'));
-        const grupo = a.getAttribute('data-grupo');
-        const destino = cats.filter(
-          (d) => d.querySelector('.trat__grupo')?.textContent.trim() === grupo
-        );
-        if (!destino.length) return; // sigue al ancla #tratamientos
-        e.preventDefault();
-        destino.forEach((d) => d.setAttribute('open', ''));
-        const nav = document.querySelector('.nav');
-        // offsetTop y no getBoundingClientRect: el bloque todavía puede tener el
-        // desplazamiento de la animación .reveal y el salto quedaría corto.
-        let y = 0;
-        for (let el = destino[0]; el; el = el.offsetParent) y += el.offsetTop;
-        const top = y - (nav ? nav.offsetHeight : 0) - 16;
-        const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        window.scrollTo({ top, behavior: quieto ? 'auto' : 'smooth' });
-        history.replaceState(null, '', '#tratamientos');
-      });
-    });
-  })();
-</script>
+<!-- Cada categoría de tratamientos abre su bloque dentro del catálogo (y pliega
+     el resto): lo resuelve NavInterna.astro con data-grupo. Sin JS, el link va a
+     #tratamientos. -->

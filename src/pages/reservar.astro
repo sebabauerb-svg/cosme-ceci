@@ -773,10 +773,21 @@ const senaLabel = fmt(SENA_UYU);
     goTo(5);
   });
 
-  // Volver
+  // Volver. Si la persona llegó desde otra página del sitio con la opción ya
+  // elegida (ej. "Consulta Presencial" en el índice de la home), "Volver" en ese
+  // primer paso la devuelve adonde estaba, no al paso 1 que nunca vio.
+  let pasoEntrada = null;
+  const vieneDelSitio = () => {
+    try {
+      return history.length > 1 && new URL(document.referrer).origin === location.origin;
+    } catch {
+      return false;
+    }
+  };
   $$('[data-back]').forEach((b) =>
     b.addEventListener('click', () => {
       const cur = Number(b.closest('.step').dataset.step);
+      if (cur === pasoEntrada && vieneDelSitio()) return history.back();
       goTo(cur === 3 && state.modalidad?.esMembresia ? 1 : cur - 1);
     })
   );
@@ -860,11 +871,13 @@ const senaLabel = fmt(SENA_UYU);
     if (trat) {
       const base = items.find((i) => i.id === 'sesion');
       elegir({ ...base, servicio: trat.nombre, precio: trat.precio, tratamientoId: trat.id });
+      pasoEntrada = 2;
       history.replaceState(null, '', '/reservar');
     } else if (pre) {
       const btn = $$('.opt').find((b) => b.dataset.id === pre);
       if (btn) {
         btn.click();
+        pasoEntrada = state.modalidad?.esMembresia ? 3 : 2;
         history.replaceState(null, '', '/reservar'); // limpiamos el query
       }
     }

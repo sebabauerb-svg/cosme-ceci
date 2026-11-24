@@ -63,7 +63,7 @@ export const club = {
       incluye: [
         '4 consultas presenciales al año, una en cada cambio de estación',
         'Tu registro de seguimiento: cómo sentís tu piel, tus productos actuales y las nuevas recomendaciones',
-        'Una consulta online para revisar juntas tu registro, y ayuda para completarlo cuando lo necesites',
+        'Una consulta online para revisar tu registro en conjunto, y ayuda para completarlo cuando lo necesites',
         'Adaptación de tu recetario domiciliario en cada estación',
       ],
     },
