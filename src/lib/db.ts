@@ -137,7 +137,7 @@ export async function ensureAutogestion(sql: any) {
 
 /**
  * Compras online del Club y de los paquetes (idempotente, solo agrega columnas).
- * Ver supabase/migrations/0011_pago_membresias.sql y src/lib/compras.ts.
+ * Ver supabase/migrations/0012_pago_membresias.sql y src/lib/compras.ts.
  */
 export async function ensureCompras(sql: any) {
   await sql`alter table reservas add column if not exists producto text`;
