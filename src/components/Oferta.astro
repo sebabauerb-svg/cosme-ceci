@@ -1,0 +1,255 @@
+---
+/**
+ * "Perfil de entrada" (pedido de Ceci, nov-2026): apenas termina el Hero, la
+ * visitante ve cómo se ordena todo lo que ofrece — Consultas, Tratamientos por
+ * categoría y el Club — y cada entrada la lleva a su sección o a /reservar.
+ *
+ * Todo sale de los datos existentes (modalidades.ts, tratamientos.ts, club.ts):
+ * si Ceci cambia un nombre o suma una categoría, este índice se actualiza solo.
+ * A propósito no muestra precios: los valores viven en cada sección.
+ */
+import { modalidades } from '../data/modalidades';
+import { categoriasTratamientos } from '../data/tratamientos';
+import { club } from '../data/club';
+
+const consultas = modalidades.filter((m) => m.id !== 'club');
+
+// Las categorías del catálogo agrupadas por `grupo` (Faciales tiene dos).
+const grupos: { grupo: string; nombre: string; detalle: string }[] = [];
+for (const cat of categoriasTratamientos) {
+  const g = grupos.find((x) => x.grupo === cat.grupo);
+  if (g) g.detalle += ` · ${cat.titulo}`;
+  else
+    grupos.push({
+      grupo: cat.grupo,
+      nombre: cat.grupo.replace(/^Tratamientos\s+/i, ''),
+      detalle: cat.titulo,
+    });
+}
+---
+
+<section class="oferta" id="oferta" aria-labelledby="oferta-titulo">
+  <div class="container">
+    <header class="oferta__head">
+      <h2 id="oferta-titulo">¿Por dónde empezamos?</h2>
+      <p>
+        Si no sabés qué necesita tu piel, empezá por la Consulta Presencial: ahí lo
+        definimos juntas.
+      </p>
+    </header>
+
+    <div class="oferta__cols">
+      <div class="oferta__grupo">
+        <h3>Consultas</h3>
+        <ul class="oferta__lista">
+          {consultas.map((m) => (
+            <li>
+              <a href={`/reservar?modalidad=${m.id}`} class="oferta__item">
+                <span class="oferta__nombre">{m.nombre}</span>
+                <span class="oferta__detalle">{m.subtitulo}</span>
+                <span class="oferta__flecha" aria-hidden="true">→</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <a href="#modalidades" class="oferta__mas">Qué incluye cada una</a>
+      </div>
+
+      <div class="oferta__grupo">
+        <h3>Tratamientos</h3>
+        <ul class="oferta__lista">
+          {grupos.map((g) => (
+            <li>
+              <a href="#tratamientos" class="oferta__item" data-grupo={g.grupo}>
+                <span class="oferta__nombre">{g.nombre}</span>
+                <span class="oferta__detalle">{g.detalle}</span>
+                <span class="oferta__flecha" aria-hidden="true">→</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <a href="#tratamientos" class="oferta__mas">Todos los tratamientos y valores</a>
+      </div>
+    </div>
+
+    <a href="#club" class="oferta__club">
+      <span class="oferta__clubNombre">{club.nombre}</span>
+      <span class="oferta__clubSub">{club.subtitulo}</span>
+      <span class="oferta__clubIr">Conocer el Club <span aria-hidden="true">→</span></span>
+    </a>
+  </div>
+</section>
+
+<style>
+  .oferta {
+    /* Continúa al Hero sobre el mismo fondo: es la segunda mitad del arranque. */
+    padding-block: 0 clamp(3rem, 6vw, 4.5rem);
+    scroll-margin-top: 88px;
+  }
+  .oferta .container {
+    border-top: 1px solid var(--sand);
+    padding-top: clamp(1.7rem, 3vw, 2.2rem);
+  }
+
+  .oferta__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.4rem 2.5rem;
+    margin-bottom: clamp(1.4rem, 3vw, 2rem);
+  }
+  .oferta__head h2 { font-size: clamp(1.6rem, 3vw, 2.15rem); text-wrap: balance; }
+  .oferta__head p { max-width: 46ch; font-size: 0.98rem; text-wrap: pretty; }
+
+  .oferta__cols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(1.8rem, 4vw, 3.5rem);
+  }
+
+  .oferta__grupo h3 {
+    font-size: 0.82rem;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sage-deep);
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .oferta__lista { list-style: none; }
+  .oferta__lista li { border-bottom: 1px solid var(--sand); }
+
+  .oferta__item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 1rem;
+    align-items: center;
+    padding: 0.85rem 0.25rem;
+    min-height: 60px;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.25s ease;
+  }
+  .oferta__nombre {
+    font-family: var(--font-serif);
+    font-size: 1.14rem;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--ink);
+  }
+  .oferta__detalle {
+    grid-column: 1;
+    margin-top: 0.15rem;
+    font-size: 0.86rem;
+    line-height: 1.4;
+    color: var(--ink-soft);
+  }
+  .oferta__flecha {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    color: var(--clay-deep);
+    font-size: 1.1rem;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .oferta__item:hover { background-color: var(--cream-deep); }
+  .oferta__item:hover .oferta__flecha,
+  .oferta__item:focus-visible .oferta__flecha { transform: translateX(4px); }
+
+  .oferta__mas {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    margin-top: 0.3rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--sage-deep);
+    text-decoration: underline;
+    text-decoration-color: var(--sand);
+    text-underline-offset: 4px;
+  }
+  .oferta__mas:hover { text-decoration-color: currentColor; }
+
+  /* El Club no es una consulta suelta: es la membresía anual, va aparte y destacado. */
+  .oferta__club {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.3rem 1.4rem;
+    margin-top: clamp(1.6rem, 3vw, 2.2rem);
+    padding: 1.15rem 1.5rem;
+    border-radius: var(--radius);
+    background: var(--sage-deep);
+    color: var(--cream);
+    transition: background-color 0.25s ease;
+  }
+  .oferta__club:hover { background: var(--ink); }
+  .oferta__clubNombre {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  .oferta__clubSub { font-size: 0.92rem; opacity: 0.88; }
+  .oferta__clubIr {
+    font-size: 0.92rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .oferta__clubIr span {
+    display: inline-block;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .oferta__club:hover .oferta__clubIr span,
+  .oferta__club:focus-visible .oferta__clubIr span { transform: translateX(4px); }
+
+  @media (max-width: 760px) {
+    .oferta { padding-bottom: 2.6rem; }
+    .oferta .container { padding-top: 1.7rem; }
+    .oferta__head { margin-bottom: 1.1rem; }
+    .oferta__cols { grid-template-columns: 1fr; gap: 1.6rem; }
+    .oferta__item { min-height: 56px; padding-block: 0.7rem; }
+    .oferta__nombre { font-size: 1.06rem; }
+    .oferta__club {
+      grid-template-columns: minmax(0, 1fr) auto;
+      padding: 1rem 1.15rem;
+    }
+    .oferta__clubNombre { grid-column: 1; }
+    .oferta__clubSub { grid-column: 1; }
+    .oferta__clubIr { grid-column: 2; grid-row: 1 / span 2; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .oferta__flecha, .oferta__clubIr span { transition: none; }
+  }
+</style>
+
+<!-- Cada categoría de tratamientos abre y lleva a su bloque dentro del catálogo
+     (en mobile el catálogo arranca plegado). Sin JS, el link va a #tratamientos. -->
+<script is:inline>
+  (() => {
+    document.querySelectorAll('#oferta a[data-grupo]').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        // Se busca al hacer clic: este script corre antes de que exista el catálogo.
+        const cats = Array.from(document.querySelectorAll('#tratamientos .trat__cat'));
+        const grupo = a.getAttribute('data-grupo');
+        const destino = cats.filter(
+          (d) => d.querySelector('.trat__grupo')?.textContent.trim() === grupo
+        );
+        if (!destino.length) return; // sigue al ancla #tratamientos
+        e.preventDefault();
+        destino.forEach((d) => d.setAttribute('open', ''));
+        const nav = document.querySelector('.nav');
+        // offsetTop y no getBoundingClientRect: el bloque todavía puede tener el
+        // desplazamiento de la animación .reveal y el salto quedaría corto.
+        let y = 0;
+        for (let el = destino[0]; el; el = el.offsetParent) y += el.offsetTop;
+        const top = y - (nav ? nav.offsetHeight : 0) - 16;
+        const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        window.scrollTo({ top, behavior: quieto ? 'auto' : 'smooth' });
+        history.replaceState(null, '', '#tratamientos');
+      });
+    });
+  })();
+</script>
