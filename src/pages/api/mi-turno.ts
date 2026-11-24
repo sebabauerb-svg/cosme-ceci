@@ -8,7 +8,7 @@ import {
   horasHasta,
   NOMBRE_MODALIDAD,
   MAX_CAMBIOS_PACIENTE,
-  ANTICIPACION_MIN_H,
+  anticipacionH,
 } from '../../lib/reprogramar';
 import { notificarReprogramacion } from '../../lib/email';
 import { enviarWhatsApp } from '../../lib/whatsapp';
@@ -57,7 +57,9 @@ async function buscar(sql: any, token: string) {
 function puedeCambiar(r: any): { ok: boolean; motivo?: string } {
   if (r.estado !== 'confirmada' || !r.fecha || !r.hora)
     return { ok: false, motivo: r.estado === 'cancelada' ? 'cancelado' : 'no_confirmado' };
-  if (horasHasta(r.fecha, r.hora) < ANTICIPACION_MIN_H) return { ok: false, motivo: 'menos_24h' };
+  // 'menos_24h' queda como código aunque en San José sean 48 h: el texto lo arma
+  // /mi-turno con `anticipacion`.
+  if (horasHasta(r.fecha, r.hora) < anticipacionH(r.sede)) return { ok: false, motivo: 'menos_24h' };
   if (Number(r.cambios_paciente ?? 0) >= MAX_CAMBIOS_PACIENTE) return { ok: false, motivo: 'tope_cambios' };
   return { ok: true };
 }
@@ -72,6 +74,7 @@ function vista(r: any) {
     fechaLarga: fechaLarga(r.fecha),
     hora: r.hora,
     cambiosRestantes: Math.max(0, MAX_CAMBIOS_PACIENTE - Number(r.cambios_paciente ?? 0)),
+    anticipacion: anticipacionH(r.sede),
   };
 }
 

@@ -13,7 +13,7 @@
  * cuándo, dónde y cuánto — y así deberían quedarse.
  */
 
-import { transferencia, hayDatosTransferencia, CONCEPTO_PREFIJO, POLITICA_CANCELACION } from '../data/pago';
+import { transferencia, hayDatosTransferencia, CONCEPTO_PREFIJO, POLITICA_CANCELACION, anticipacionH } from '../data/pago';
 import { sedeConDireccion } from '../data/sedes';
 
 export type PlantillaId = 'confirmacion' | 'transferencia' | 'recordatorio' | 'reprogramar' | 'reprogramado';
@@ -93,7 +93,7 @@ function bloqueSaldo(d: DatosMensaje): string[] {
 
 /** Link para cambiar el horario sin escribirle a Ceci. */
 function bloqueCambio(d: DatosMensaje): string[] {
-  return d.linkCambio ? [`Si necesitás cambiar el horario, podés hacerlo desde acá hasta 24 h antes: ${d.linkCambio}`] : [];
+  return d.linkCambio ? [`Si necesitás cambiar el horario, podés hacerlo desde acá hasta ${anticipacionH(d.sede)} h antes: ${d.linkCambio}`] : [];
 }
 
 /** Junta líneas dejando una en blanco donde haya un null (separador de párrafo). */
