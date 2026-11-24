@@ -1,0 +1,63 @@
+---
+import CuentaShell from '../../components/cuenta/CuentaShell.astro';
+import { getSql, ensurePerfil } from '../../lib/db';
+import { nombreConsulta, pacienteActual, perfilActivo, recomendacionesDe } from '../../lib/cuenta';
+import { ESTADOS_PLAN } from '../../data/ficha';
+
+// "Mis recomendaciones": las indicaciones para casa que Ceci deja en cada
+// consulta (el panel avisa que las ve la paciente) y su plan con el avance.
+// Nada de lo clínico interno (ver src/lib/cuenta.ts).
+export const prerender = false;
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
+Astro.response.headers.set('cache-control', 'no-store');
+
+const sql = getSql();
+await ensurePerfil(sql);
+const p = await pacienteActual(sql, Astro.cookies);
+if (!p) return Astro.redirect('/mi-cuenta');
+const { indicaciones, planes } = await recomendacionesDe(sql, p.id);
+
+const fecha = (f: string) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+---
+
+<CuentaShell title="Mis recomendaciones" nombre={p.nombre} activa="recomendaciones">
+  {planes.length > 0 && (
+    <>
+      <h2 class="mc__t">Tu tratamiento</h2>
+      {planes.map((pl) => (
+        <div class="mc__card">
+          <div class="mc__fila">
+            <h3>{pl.tratamiento}</h3>
+            <span class={`mc__chip ${pl.estado === 'en_curso' ? 'mc__chip--ok' : ''}`}>{ESTADOS_PLAN[pl.estado as keyof typeof ESTADOS_PLAN] ?? pl.estado}</span>
+          </div>
+          <p class="mc__meta">
+            {pl.hechas ? `Sesión ${pl.hechas}${pl.sesiones ? ` de ${pl.sesiones}` : ''}` : `Todavía sin sesiones${pl.sesiones ? ` (${pl.sesiones} previstas)` : ''}`}
+            {pl.frecuencia ? ` · ${pl.frecuencia}` : ''}
+          </p>
+          {pl.proxima_fecha && <p class="mc__meta">Próxima sesión sugerida: <strong>{fecha(pl.proxima_fecha)}</strong></p>}
+          {pl.estado === 'en_curso' && (
+            <div class="mc__acciones"><a class="btn btn--ghost" href="/reservar?modalidad=sesion">Agendar la próxima sesión</a></div>
+          )}
+        </div>
+      ))}
+    </>
+  )}
+
+  <h2 class="mc__t">Indicaciones para casa</h2>
+  <p class="mc__sub">Lo que Ceci te recomendó en cada consulta. La más reciente, arriba.</p>
+  {indicaciones.length ? indicaciones.map((r, i) => (
+    <article class={`mc__card ${i === 0 ? '' : 'mc__card--suave'}`}>
+      <div class="mc__fila">
+        <h3>{nombreConsulta(r)}</h3>
+        <span class="mc__meta">{r.fecha ? fecha(r.fecha) : ''}</span>
+      </div>
+      <p class="mc__pre">{r.indicaciones}</p>
+      {r.proxima_fecha && i === 0 && <p class="mc__meta" style="margin-top:0.6rem">Próxima consulta sugerida: <strong>{fecha(r.proxima_fecha)}</strong></p>}
+    </article>
+  )) : (
+    <p class="mc__vacio">Todavía no hay indicaciones cargadas. Después de tu próxima consulta, Ceci te deja acá lo que tenés que hacer en casa.</p>
+  )}
+  <p class="mc__sub" style="text-align:center;margin-top:1.4rem">¿Dudas con alguna indicación? Consultalo con Ceci antes de cambiar tu rutina.</p>
+</CuentaShell>

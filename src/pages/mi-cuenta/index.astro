@@ -1,0 +1,148 @@
+---
+import CuentaShell from '../../components/cuenta/CuentaShell.astro';
+import { getSql, ensurePerfil } from '../../lib/db';
+import { nombreConsulta, pacienteActual, perfilActivo, turnosDe } from '../../lib/cuenta';
+import { hoyUY, vincularPendientes } from '../../lib/pacientes';
+import { site, whatsappLink } from '../../data/site';
+
+// "Mi cuenta": sin sesión, pide el email para mandar el link mágico; con
+// sesión, muestra sus turnos. Apagado hasta PERFIL_PACIENTES_ACTIVO=true.
+export const prerender = false;
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
+Astro.response.headers.set('cache-control', 'no-store');
+
+const sql = getSql();
+await ensurePerfil(sql);
+const p = await pacienteActual(sql, Astro.cookies);
+
+let proximos: any[] = [];
+let anteriores: any[] = [];
+let tieneRegistro = false;
+if (p) {
+  await vincularPendientes(sql); // reservas recientes que todavía no tienen ficha
+  const hoy = hoyUY();
+  const turnos = await turnosDe(sql, p.id);
+  proximos = turnos.filter((t) => t.fecha >= hoy).reverse();
+  anteriores = turnos.filter((t) => t.fecha < hoy && t.estado === 'confirmada');
+  const r = (await sql`select 1 from registros_piel where paciente_id = ${p.id} limit 1`) as any[];
+  tieneRegistro = r.length > 0;
+}
+
+const fecha = (f: string) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+const fechaCorta = (f: string) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const ESTADO: Record<string, [string, string]> = {
+  confirmada: ['Confirmado', 'mc__chip--ok'],
+  a_confirmar: ['A confirmar por Ceci', ''],
+  pendiente_pago: ['Esperando la seña', ''],
+};
+const waTurno = whatsappLink('Hola Ceci! Te escribo por mi turno.');
+---
+
+<CuentaShell title="Mi cuenta" nombre={p?.nombre} activa="turnos">
+  {!p ? (
+    <div class="mc__card">
+      <div id="cl-alert" class="mc__alert" role="alert" hidden></div>
+      <div id="cl-ok" class="mc__ok" role="status" hidden></div>
+      <form id="cl-form" class="mc-form" novalidate>
+        <p class="mc__sub" style="margin:0">Escribí el email con el que reservás con Ceci y te mandamos un link para entrar. No hace falta contraseña.</p>
+        <label class="mc-campo">Email
+          <input type="email" name="email" required maxlength="160" autocomplete="email" placeholder="tu@email.com" />
+        </label>
+        <button type="submit" class="btn btn--primary">Mandarme el link</button>
+        <p class="mc-ayuda">Desde tu cuenta ves tus turnos, las indicaciones de cada consulta y tu registro de piel. ¿Todavía no te atendiste con Ceci? <a href="/reservar">Reservá tu primera consulta</a>.</p>
+      </form>
+    </div>
+  ) : (
+    <>
+      {!tieneRegistro && (
+        <div class="mc__card mc__card--suave">
+          <h3>Completá tu registro de piel</h3>
+          <p class="mc__meta">Cómo sentís la piel y qué productos usás hoy. Es el punto de partida para seguir tu evolución con Ceci.</p>
+          <div class="mc__acciones"><a class="btn btn--primary" href="/mi-cuenta/registro">Completar mi registro</a></div>
+        </div>
+      )}
+
+      <h2 class="mc__t">Próximos turnos</h2>
+      {proximos.length ? proximos.map((t) => (
+        <div class="mc__card">
+          <div class="mc__fila">
+            <h3>{nombreConsulta(t)}</h3>
+            <span class={`mc__chip ${ESTADO[t.estado]?.[1] ?? ''}`}>{ESTADO[t.estado]?.[0] ?? t.estado}</span>
+          </div>
+          <p class="mc__meta" style="text-transform:none">
+            <span style="text-transform:capitalize">{fecha(t.fecha)}</span>{t.hora ? ` · ${t.hora} h` : ''}{t.sede ? ` · ${t.sede}` : ' · Online'}
+          </p>
+          <div class="mc__acciones">
+            {t.estado === 'confirmada' && t.token_gestion && t.hora && (
+              <a class="btn btn--ghost" href={`/mi-turno?c=${t.token_gestion}`}>Cambiar el horario</a>
+            )}
+            <a class="mc__link" href={waTurno} target="_blank" rel="noopener">Escribirle a Ceci</a>
+          </div>
+        </div>
+      )) : (
+        <p class="mc__vacio">No tenés turnos agendados.</p>
+      )}
+      <div class="mc__acciones" style="justify-content:center">
+        <a class="btn btn--primary" href="/reservar?modalidad=sesion">Agendar mi próxima sesión</a>
+        <a class="btn btn--ghost" href="/reservar">Otra consulta</a>
+      </div>
+
+      <h2 class="mc__t">Consultas anteriores</h2>
+      {anteriores.length ? (
+        <div class="mc__card">
+          {anteriores.map((t, i) => (
+            <div class="mc__fila" style={i ? 'border-top:1px solid var(--sand);padding-top:0.7rem;margin-top:0.7rem' : ''}>
+              <span>{nombreConsulta(t)}</span>
+              <span class="mc__meta">{fechaCorta(t.fecha)}{t.sede ? ` · ${t.sede}` : ''}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p class="mc__vacio">Todavía no hay consultas anteriores registradas.</p>
+      )}
+      <p class="mc__sub" style="text-align:center;margin-top:1.4rem">¿Algún dato está mal? Escribile a Ceci al {site.contacto.whatsappDisplay}.</p>
+    </>
+  )}
+</CuentaShell>
+
+<script>
+  const form = document.getElementById('cl-form') as HTMLFormElement | null;
+  if (form) {
+    const alerta = document.getElementById('cl-alert')!;
+    const ok = document.getElementById('cl-ok')!;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      alerta.hidden = true; ok.hidden = true;
+      const email = (form.elements.namedItem('email') as HTMLInputElement).value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+        alerta.textContent = 'Revisá el email: no parece válido.'; alerta.hidden = false; return;
+      }
+      const btn = form.querySelector('button') as HTMLButtonElement;
+      btn.disabled = true; btn.textContent = 'Mandando…';
+      try {
+        const res = await fetch('/api/cuenta/link', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok && d.ok) {
+          ok.innerHTML = '';
+          ok.append(`Si ${email} está en la ficha de Ceci, en un minuto te llega un mail con el botón para entrar. Vence en 20 minutos. Revisá también el correo no deseado.`);
+          if (d.prueba) {
+            // Solo en previews con direcciones de prueba (@resend.dev): ver src/lib/cuenta.ts.
+            const a = document.createElement('a'); a.href = d.prueba; a.textContent = ' Abrir el link de prueba';
+            ok.append(a);
+          }
+          ok.hidden = false; form.reset();
+        } else {
+          alerta.textContent = d.error || 'No pudimos mandar el link.'; alerta.hidden = false;
+        }
+      } catch {
+        alerta.textContent = 'Sin conexión. Probá de nuevo en un momento.'; alerta.hidden = false;
+      }
+      btn.disabled = false; btn.textContent = 'Mandarme el link';
+    });
+  }
+</script>

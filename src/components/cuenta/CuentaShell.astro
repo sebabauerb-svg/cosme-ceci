@@ -1,0 +1,126 @@
+---
+/**
+ * Marco de "Mi cuenta" (perfil de paciente): saludo, pestañas y salir.
+ * Sin `nombre`, es la pantalla de entrada (sin pestañas).
+ */
+import Base from '../../layouts/Base.astro';
+import Nav from '../Nav.astro';
+import Footer from '../Footer.astro';
+
+interface Props {
+  title: string;
+  nombre?: string | null;
+  activa?: 'turnos' | 'registro' | 'recomendaciones';
+}
+const { title, nombre, activa } = Astro.props;
+const primerNombre = nombre ? nombre.trim().split(/\s+/)[0] : null;
+const tabs = [
+  { id: 'turnos', label: 'Mis turnos', href: '/mi-cuenta' },
+  { id: 'registro', label: 'Mi registro', href: '/mi-cuenta/registro' },
+  { id: 'recomendaciones', label: 'Recomendaciones', href: '/mi-cuenta/recomendaciones' },
+];
+---
+
+<Base title={title} description="Tu cuenta con Cecilia Gutiérrez · Cosmetología Médica." path="/mi-cuenta" noindex>
+  <Nav />
+  <main id="contenido" class="section mc">
+    <div class="container mc__wrap">
+      <header class="mc__head">
+        <span class="eyebrow">Mi cuenta</span>
+        <h1>{primerNombre ? `Hola, ${primerNombre}` : 'Entrá a tu cuenta'}</h1>
+      </header>
+      {primerNombre && (
+        <nav class="mc__tabs" aria-label="Secciones de tu cuenta">
+          {tabs.map((t) => (
+            <a href={t.href} aria-current={t.id === activa ? 'page' : undefined}>{t.label}</a>
+          ))}
+        </nav>
+      )}
+      <slot />
+      {primerNombre && (
+        <form method="post" action="/api/cuenta/salir" class="mc__salir">
+          <button type="submit" class="mc__link">Salir de mi cuenta</button>
+        </form>
+      )}
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style is:global>
+  .mc__wrap { max-width: 660px; margin-inline: auto; }
+  .mc__head { text-align: center; margin-bottom: 1.6rem; }
+  .mc__head h1 { margin: 0.3rem 0 0; font-size: clamp(1.9rem, 4.2vw, 2.6rem); }
+  .mc__tabs {
+    display: flex; gap: 0.3rem; justify-content: center; flex-wrap: wrap;
+    border-bottom: 1px solid var(--sand); margin-bottom: 1.8rem;
+  }
+  .mc__tabs a {
+    padding: 0.7rem 0.9rem; color: var(--ink-soft); text-decoration: none; font-weight: 600; font-size: 0.92rem;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; min-height: 44px; display: inline-flex; align-items: center;
+  }
+  .mc__tabs a[aria-current='page'] { color: var(--ink); border-bottom-color: var(--sage); }
+  .mc__tabs a:hover { color: var(--ink); }
+  .mc__card {
+    background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius);
+    padding: 1.2rem 1.3rem; margin-bottom: 1rem; overflow-wrap: anywhere;
+  }
+  .mc__card--suave { background: var(--cream-deep); }
+  .mc__card h3 { font-size: 1.1rem; margin: 0 0 0.4rem; }
+  .mc__t { font-size: 1.3rem; margin: 1.8rem 0 0.8rem; }
+  .mc__t:first-child { margin-top: 0; }
+  .mc__sub { color: var(--ink-soft); font-size: 0.92rem; line-height: 1.6; margin: 0 0 1rem; }
+  .mc__meta { color: var(--ink-soft); font-size: 0.88rem; margin: 0; line-height: 1.6; }
+  .mc__fila { display: flex; justify-content: space-between; gap: 0.8rem; align-items: flex-start; flex-wrap: wrap; }
+  .mc__chip {
+    display: inline-block; font-size: 0.78rem; font-weight: 600; padding: 0.2rem 0.65rem; border-radius: 999px;
+    background: var(--cream-deep); color: var(--ink-soft); white-space: nowrap;
+  }
+  .mc__chip--ok { background: color-mix(in srgb, var(--sage) 18%, var(--white)); color: var(--sage-deep); }
+  .mc__acciones { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.9rem; }
+  .mc__pre { white-space: pre-line; line-height: 1.65; margin: 0.5rem 0 0; }
+  .mc__vacio { color: var(--ink-soft); text-align: center; padding: 1rem 0; line-height: 1.6; }
+  .mc__alert {
+    background: color-mix(in srgb, var(--clay) 12%, var(--cream));
+    border: 1px solid color-mix(in srgb, var(--clay) 40%, var(--cream));
+    color: var(--clay-deep); border-radius: var(--radius-sm);
+    padding: 0.85rem 1.1rem; margin-bottom: 1.2rem; font-size: 0.92rem;
+  }
+  .mc__ok {
+    background: color-mix(in srgb, var(--sage) 14%, var(--cream));
+    border: 1px solid color-mix(in srgb, var(--sage) 35%, var(--cream));
+    color: var(--sage-deep); border-radius: var(--radius-sm);
+    padding: 0.85rem 1.1rem; margin-bottom: 1.2rem; font-size: 0.92rem;
+  }
+  .mc__salir { text-align: center; margin-top: 2.4rem; }
+  .mc__link {
+    background: none; border: 0; padding: 0.5rem; font: inherit; font-size: 0.9rem; color: var(--ink-soft);
+    text-decoration: underline; cursor: pointer; min-height: 44px;
+  }
+  .mc .btn { max-width: 100%; }
+  /* Formularios (mismo look que /reservar). */
+  .mc-form { display: grid; gap: 1.1rem; }
+  .mc-form label.mc-campo, .mc-form .mc-campo { display: grid; gap: 0.4rem; font-size: 0.92rem; font-weight: 600; color: var(--ink); }
+  .mc-form input[type='email'], .mc-form input[type='text'], .mc-form textarea, .mc-form select {
+    /* 16px mínimo: con menos, Safari de iPhone hace zoom al enfocar el campo. */
+    font: inherit; font-size: max(1rem, 16px); font-weight: 400; padding: 0.7rem 0.9rem; border: 1px solid var(--sand);
+    border-radius: var(--radius-sm); background: var(--white); color: var(--ink); width: 100%; min-width: 0; box-sizing: border-box;
+  }
+  .mc-form textarea { resize: vertical; line-height: 1.55; }
+  .mc-form :is(input, textarea, select):focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; border-color: var(--sage); }
+  .mc-ayuda { font-size: 0.84rem; font-weight: 400; color: var(--ink-soft); line-height: 1.5; }
+  .mc-check { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; line-height: 1.55; color: var(--ink-soft); cursor: pointer; }
+  .mc-check input { flex-shrink: 0; width: 1.15rem; height: 1.15rem; margin-top: 0.2rem; accent-color: var(--sage-deep); }
+  .mc-check a { color: var(--sage-deep); }
+  .mc-ops { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+  .mc-ops label {
+    display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--sand); background: var(--white);
+    border-radius: 999px; padding: 0.5rem 0.9rem; font-size: 0.88rem; font-weight: 500; cursor: pointer; min-height: 44px;
+  }
+  .mc-ops input { position: absolute; opacity: 0; pointer-events: none; }
+  .mc-ops label:has(input:checked) { background: var(--sage); border-color: var(--sage); color: var(--cream); }
+  .mc-ops label:has(input:focus-visible) { outline: 2px solid var(--sage-deep); outline-offset: 2px; }
+  .mc-sec { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 0.6rem; }
+  .mc-sec legend { font-family: var(--font-serif); font-size: 1.15rem; color: var(--ink); padding: 0; margin-bottom: 0.2rem; }
+  .mc [hidden] { display: none !important; }
+</style>

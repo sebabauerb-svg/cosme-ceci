@@ -72,6 +72,7 @@ const config = {
       <button type="button" role="tab" aria-selected="false" data-t="plan">Plan</button>
       <button type="button" role="tab" aria-selected="false" data-t="sesiones">Sesiones</button>
       <button type="button" role="tab" aria-selected="false" data-t="fotos">Fotos</button>
+      <button type="button" role="tab" aria-selected="false" data-t="registro">Su registro</button>
       <button type="button" role="tab" aria-selected="true" data-t="datos">Datos</button>
     </div>
 
@@ -81,6 +82,7 @@ const config = {
     <div class="pc-panel" data-p="plan" hidden><div id="pc-plan" class="pc-col"></div></div>
     <div class="pc-panel" data-p="sesiones" hidden><div id="pc-sesiones" class="pc-col"></div></div>
     <div class="pc-panel" data-p="fotos" hidden><div id="pc-fotos" class="pc-col"></div></div>
+    <div class="pc-panel" data-p="registro" hidden><div id="pc-registro" class="pc-col"></div></div>
 
     <div class="pc-panel" data-p="datos">
       <form id="pc-form" class="pc-col" novalidate>
@@ -145,7 +147,7 @@ const config = {
       <div class="nv-campo"><span>Tolerancia</span>
         <div class="pc-ops" id="ps-tol" data-uno></div>
       </div>
-      <label class="nv-campo">Indicaciones para casa
+      <label class="nv-campo">Indicaciones para casa <span class="nv-ayuda">(la paciente las ve en su cuenta, con la fecha de esta sesión)</span>
         <textarea id="ps-casa" rows="2" maxlength="2000"></textarea>
       </label>
       <label class="nv-campo">Cómo encontraste la piel <span class="nv-ayuda">(evolución desde la sesión anterior)</span>
@@ -187,6 +189,7 @@ const config = {
     let fichaId: string | null = null;
     let ficha: any = null;      // /api/admin/pacientes?id=
     let seg: any = null;        // /api/admin/seguimiento?id=
+    let reg: any = null;        // /api/admin/registros?id= ("Mi registro" de la paciente)
     let tab = 'datos';
     let bajaDesde: string | null = null;
     let reactivar = false;
@@ -400,7 +403,9 @@ const config = {
     function mostrarTab(t: string) {
       tab = t;
       document.querySelectorAll<HTMLElement>('#pc-tabs [role="tab"]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.t === t)));
-      const clinica = t !== 'datos';
+      // "Su registro" lo completó ella con su propio consentimiento: no depende
+      // del consentimiento_fecha de la ficha.
+      const clinica = t !== 'datos' && t !== 'registro';
       $('pc-gate').hidden = !(clinica && !conConsent());
       document.querySelectorAll<HTMLElement>('.pc-panel').forEach((p) => {
         p.hidden = p.dataset.p !== t || (clinica && !conConsent());
@@ -669,6 +674,47 @@ const config = {
         }));
     }
 
+    // ---------- "Su registro": lo que completa la paciente en Mi cuenta ----------
+    const NOTA_LBL: Record<number, string> = { 1: 'Muy mal', 2: 'Mal', 3: 'Más o menos', 4: 'Bien', 5: 'Muy bien' };
+    function pintarRegistro() {
+      const cont = $('pc-registro');
+      if (!reg) { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar su registro.</p>'; return; }
+      const regs = reg.registros as any[];
+      const lista = (a?: string[] | null) => (a && a.length ? a.map(esc).join(' · ') : '');
+      const prods = (p: any[]) => p.map((x) => `<li>${esc([x.momento, x.paso].filter(Boolean).join(' · '))}${x.momento || x.paso ? ': ' : ''}${esc(x.producto)}</li>`).join('');
+      const invitar = reg.activo
+        ? (reg.tiene_email
+          ? '<div class="pc-acciones-linea"><button type="button" class="btn btn--ghost btn--sm" id="rg-invitar">Mandarle el link para completarlo</button></div><span class="guardar__msg" id="rg-msg" role="status"></span>'
+          : '<p class="nv-ayuda">Para mandarle el link, cargá su email en Datos.</p>')
+        : '<p class="nv-ayuda">El perfil de pacientes todavía está apagado: ella no puede completarlo hasta que se prenda.</p>';
+      cont.innerHTML = `
+        <p class="nv-ayuda">Lo completa ella desde su cuenta, con sus palabras: cómo siente la piel, qué quiere lograr y qué productos usa. Cada registro queda con su fecha para ver la evolución. Ella no ve tus notas clínicas.${reg.consentimiento ? ` Aceptó guardar su registro el ${esc(fmt(reg.consentimiento))}.` : ''}${reg.ultima_entrada ? ` Entró a su cuenta por última vez el ${esc(fmt(reg.ultima_entrada))}.` : ''}</p>
+        ${invitar}
+        ${regs.length ? regs.map((r, i) => `
+          <article class="pc-sesion">
+            <div class="pc-fila-top"><strong class="pc-sesion__tit">${esc(fmt(r.fecha))}${i === regs.length - 1 ? ' · registro inicial' : ''}</strong>${r.nota ? `<span class="pc-chip ${r.nota >= 4 ? 'is-ok' : r.nota <= 2 ? 'is-warn' : ''}">${r.nota} · ${esc(NOTA_LBL[r.nota])}</span>` : ''}</div>
+            <dl class="pc-sesion__dl">
+              ${lista(r.sensaciones) || r.sensaciones_texto ? `<div><dt>Cómo siente la piel</dt><dd>${lista(r.sensaciones)}${r.sensaciones_texto ? `<div class="pc-pre">${esc(r.sensaciones_texto)}</div>` : ''}</dd></div>` : ''}
+              ${lista(r.objetivos) || r.objetivos_texto ? `<div><dt>Qué quiere lograr</dt><dd>${lista(r.objetivos)}${r.objetivos_texto ? `<div class="pc-pre">${esc(r.objetivos_texto)}</div>` : ''}</dd></div>` : ''}
+              ${(r.productos ?? []).length ? `<div><dt>Productos que usa</dt><dd><ul class="pc-prods">${prods(r.productos)}</ul></dd></div>` : ''}
+              ${r.cambios ? `<div><dt>Cambios y reacciones</dt><dd class="pc-pre">${esc(r.cambios)}</dd></div>` : ''}
+              ${lista(r.habitos) ? `<div><dt>Hábitos</dt><dd>${lista(r.habitos)}</dd></div>` : ''}
+            </dl>
+          </article>`).join('') : '<p class="ag-vacia">Todavía no completó su registro.</p>'}`;
+      const b = document.getElementById('rg-invitar') as HTMLButtonElement | null;
+      b?.addEventListener('click', async () => {
+        const m = $('rg-msg'); b.disabled = true; m.className = 'guardar__msg'; m.textContent = 'Mandando…';
+        try {
+          const d = await llamar('/api/admin/registros', { accion: 'invitar', id: fichaId });
+          m.className = 'guardar__msg guardar__msg--ok';
+          m.innerHTML = d.prueba
+            ? `Modo prueba: no se mandó el mail. <a href="${esc(d.prueba)}" target="_blank" rel="noopener">Link de prueba</a>`
+            : 'Listo: le mandamos un mail con el link (vale 3 días).';
+        } catch (err) { m.className = 'guardar__msg guardar__msg--dirty'; m.textContent = (err as Error).message; }
+        b.disabled = false;
+      });
+    }
+
     // ---------- Datos y recordatorio ----------
     function pintarVuelta(e: Estado | null) {
       $('pc-vuelta-bloque').hidden = !fichaId;
@@ -725,7 +771,7 @@ const config = {
     }
 
     async function abrir(id: string | null, tabInicial?: string) {
-      fichaId = id; ficha = null; seg = null; reactivar = false;
+      fichaId = id; ficha = null; seg = null; reg = null; reactivar = false;
       msg.textContent = ''; msg.className = 'guardar__msg';
       ver('ficha');
       if (!id) {
@@ -738,11 +784,14 @@ const config = {
       $('pc-tabs').hidden = false;
       $('pc-cabecera').innerHTML = '<p class="ag-vacia">Cargando…</p>';
       try {
-        const [d, s] = await Promise.all([api(undefined, '?id=' + encodeURIComponent(id)), apiSeg(undefined, '?id=' + encodeURIComponent(id))]);
-        ficha = d; seg = s;
+        const [d, s, r] = await Promise.all([
+          api(undefined, '?id=' + encodeURIComponent(id)), apiSeg(undefined, '?id=' + encodeURIComponent(id)),
+          llamar('/api/admin/registros?id=' + encodeURIComponent(id)).catch(() => null),
+        ]);
+        ficha = d; seg = s; reg = r;
         ficha.waTel = (() => { const t = String(d.ficha.telefono ?? '').replace(/\D/g, ''); return t.length === 8 && t.startsWith('0') ? '598' + t.slice(1) : t.length === 9 && t.startsWith('09') ? '598' + t.slice(1) : t.startsWith('598') ? t : ''; })();
         llenarDatos(); pintarCabecera(); pintarVuelta(d.estado);
-        pintarAnamnesis(); pintarPlan(); pintarSesiones(); pintarFotos();
+        pintarAnamnesis(); pintarPlan(); pintarSesiones(); pintarFotos(); pintarRegistro();
         mostrarTab(tabInicial ?? (conConsent() ? (seg.sesiones.length ? 'sesiones' : 'anamnesis') : 'datos'));
       } catch (err) {
         $('pc-cabecera').innerHTML = `<p class="ag-vacia">${esc((err as Error).message)}</p>`;
@@ -983,6 +1032,7 @@ const config = {
   .pc-hist__f { font-weight: 600; }
   .pc-hist__d, .pc-hist__e { color: var(--ink-soft); }
   .pc-anterior { margin-top: 0.8rem; display: grid; gap: 0.4rem; }
+  .pc-prods { margin: 0; padding-left: 1.1rem; line-height: 1.6; overflow-wrap: anywhere; }
 
   /* Hoja de sesión */
   .pc-hoja { border: 1px solid var(--clay); border-radius: var(--radius); padding: 1rem; }

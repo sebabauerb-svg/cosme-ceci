@@ -371,3 +371,63 @@ export async function ensureSeguimiento(sql: any) {
   await sql`create index if not exists fotos_paciente on fotos (paciente_id)`;
   await sql`alter table fotos enable row level security`;
 }
+
+/**
+ * Perfil de paciente (idempotente, solo agrega). Ver
+ * supabase/migrations/0010_perfil_paciente.sql y src/lib/cuenta.ts.
+ *  - pacientes_accesos: links mágicos de un solo uso (se guarda el hash, no el
+ *    token) que vencen a los 20 minutos.
+ *  - pacientes_sesiones: sesión de la paciente en la web (cookie con un token
+ *    al azar; acá queda solo el hash), 30 días.
+ *  - pacientes.registro_consentimiento_at: cuándo aceptó ella que se guarde su
+ *    registro de piel (dato de salud, Ley 18.331). Es aparte del
+ *    consentimiento_fecha que firma en consulta.
+ *  - registros_piel: cada vez que la paciente completa "Mi registro" queda una
+ *    entrada con fecha; Ceci las ve en la ficha para seguir la evolución.
+ */
+export async function ensurePerfil(sql: any) {
+  await ensureSeguimiento(sql);
+  await sql`alter table pacientes add column if not exists registro_consentimiento_at timestamptz`;
+  await sql`
+    create table if not exists pacientes_accesos (
+      id uuid primary key default gen_random_uuid(),
+      paciente_id uuid not null references pacientes(id) on delete cascade,
+      token_hash text not null unique,
+      destino text,
+      expira_at timestamptz not null,
+      usado_at timestamptz,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`create index if not exists pacientes_accesos_paciente on pacientes_accesos (paciente_id)`;
+  await sql`alter table pacientes_accesos enable row level security`;
+  await sql`
+    create table if not exists pacientes_sesiones (
+      id uuid primary key default gen_random_uuid(),
+      paciente_id uuid not null references pacientes(id) on delete cascade,
+      token_hash text not null unique,
+      expira_at timestamptz not null,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`create index if not exists pacientes_sesiones_paciente on pacientes_sesiones (paciente_id)`;
+  await sql`alter table pacientes_sesiones enable row level security`;
+  await sql`
+    create table if not exists registros_piel (
+      id uuid primary key default gen_random_uuid(),
+      paciente_id uuid not null references pacientes(id) on delete cascade,
+      fecha date not null,
+      nota integer check (nota is null or nota between 1 and 5),
+      sensaciones text[],
+      sensaciones_texto text,
+      objetivos text[],
+      objetivos_texto text,
+      productos jsonb,
+      cambios text,
+      habitos text[],
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`create index if not exists registros_piel_paciente on registros_piel (paciente_id, fecha desc)`;
+  await sql`alter table registros_piel enable row level security`;
+}
