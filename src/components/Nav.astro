@@ -1,10 +1,12 @@
 ---
 import { site } from '../data/site';
 
+// Ordenados como la oferta (pedido nov-2026): Consultas, Tratamientos y Club
+// primero. "Modalidades" se dice "Consultas", que es como lo nombra la visitante.
 const links = [
-  { href: '/#filosofia', label: 'Filosofía' },
-  { href: '/#modalidades', label: 'Modalidades' },
+  { href: '/#modalidades', label: 'Consultas' },
   { href: '/#tratamientos', label: 'Tratamientos' },
+  { href: '/#club', label: 'Club' },
   { href: '/#sobre-ceci', label: 'Sobre mí' },
   { href: '/blog', label: 'Novedades' },
 ];
@@ -15,7 +17,7 @@ const enHome = Astro.url.pathname === '/';
 const secciones = [
   { id: 'top', label: 'Inicio' },
   { id: 'filosofia', label: 'Filosofía' },
-  { id: 'modalidades', label: 'Modalidades' },
+  { id: 'modalidades', label: 'Consultas' },
   { id: 'tratamientos', label: 'Tratamientos' },
   { id: 'club', label: 'Club' },
   { id: 'sobre-ceci', label: 'Sobre mí' },
