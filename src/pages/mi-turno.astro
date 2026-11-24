@@ -99,14 +99,15 @@ import { POLITICA_CANCELACION } from '../data/pago';
   }
 
   const MOTIVOS = {
-    menos_24h: 'Faltan menos de 24 horas para tu turno, así que ya no se puede cambiar desde acá. Si te surgió algo, escribile a Ceci por WhatsApp.',
+    menos_24h: () => `Faltan menos de ${turno?.anticipacion ?? 24} horas para tu turno, así que ya no se puede cambiar desde acá. Si te surgió algo, escribile a Ceci por WhatsApp.`,
     tope_cambios: 'Ya cambiaste este turno las veces permitidas desde acá. Si necesitás moverlo otra vez, escribile a Ceci por WhatsApp y lo coordinan.',
     cancelado: 'Este turno fue cancelado. Si querés agendar uno nuevo, podés hacerlo desde la web o escribiéndole a Ceci.',
     no_confirmado: 'Este turno todavía no está confirmado. Cuando se confirme vas a poder cambiar el horario desde acá.',
   };
   function mostrarNo(motivo) {
     $('mt-elegir').hidden = true;
-    $('mt-no-txt').textContent = MOTIVOS[motivo] || 'Este turno no se puede cambiar desde acá. Escribile a Ceci por WhatsApp.';
+    const m = MOTIVOS[motivo];
+    $('mt-no-txt').textContent = (typeof m === 'function' ? m() : m) || 'Este turno no se puede cambiar desde acá. Escribile a Ceci por WhatsApp.';
     $('mt-no').hidden = false;
   }
 
@@ -167,7 +168,7 @@ import { POLITICA_CANCELACION } from '../data/pago';
       pintarTurno(d.turno);
       if (!d.puedeCambiar) { mostrarNo(d.motivo); return; }
       const n = d.turno.cambiosRestantes;
-      $('mt-restantes').textContent = `Podés cambiarlo hasta 24 h antes del turno (${n === 1 ? 'te queda 1 cambio' : `te quedan ${n} cambios`}). Solo se muestran los horarios libres de tu misma sede.`;
+      $('mt-restantes').textContent = `Podés cambiarlo hasta ${d.turno.anticipacion ?? 24} h antes del turno (${n === 1 ? 'te queda 1 cambio' : `te quedan ${n} cambios`}). Solo se muestran los horarios libres de tu misma sede.`;
       pintarDias(d.slots || []);
       $('mt-elegir').hidden = false;
     } catch {

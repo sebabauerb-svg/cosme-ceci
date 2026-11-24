@@ -6,7 +6,8 @@
  *    siguiente): puede mover a cualquier sede y, si hace falta, a un horario que
  *    no tenía abierto.
  *  - La paciente desde el link de su mail (/mi-turno): solo a un turno abierto
- *    y libre de su misma sede, hasta 24 h antes, con un tope de cambios.
+ *    y libre de su misma sede, hasta 24 h antes (48 h en San José; ver
+ *    anticipacionH en src/data/pago.ts), con un tope de cambios.
  *
  * El turno sigue siendo la MISMA reserva (misma seña, mismo cobro, mismo
  * código): solo cambian fecha, hora y lugar. El cupo nuevo lo protege el índice
@@ -30,8 +31,8 @@ export const NOMBRE_MODALIDAD: Record<string, string> = {
 
 /** Cuántas veces puede reprogramar sola una paciente el mismo turno. */
 export const MAX_CAMBIOS_PACIENTE = 2;
-/** Igual que la política de cancelación: los cambios, con 24 h de anticipación. */
-export const ANTICIPACION_MIN_H = 24;
+/** Igual que la política de cancelación: 24 h, salvo San José (48 h). */
+export { anticipacionH } from '../data/pago';
 
 /** Dominio público del sitio, para armar links que salen por mail o WhatsApp. */
 export function urlSitio(): string {

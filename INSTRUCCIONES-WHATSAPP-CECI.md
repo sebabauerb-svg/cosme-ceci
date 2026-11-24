@@ -179,7 +179,7 @@ día, la hora, etc.
 ⏰ Hora: {{4}} h
 📍 Lugar: {{5}}
 
-Los cambios o cancelaciones deben realizarse con al menos 24 horas de anticipación. De lo contrario, o en caso de inasistencia, el turno no será reembolsable.
+Los cambios o cancelaciones deben realizarse con al menos 24 horas de anticipación en Montevideo y en las consultas online, y con 48 horas en San José. De lo contrario, o en caso de inasistencia, el turno no será reembolsable.
 
 ¡Nos vemos pronto!
 ```

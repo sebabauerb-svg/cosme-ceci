@@ -7,6 +7,7 @@
 import {
   CONCEPTO_PREFIJO,
   POLITICA_CANCELACION,
+  anticipacionH,
   filasTransferencia,
   hayDatosTransferencia,
 } from '../data/pago';
@@ -88,12 +89,13 @@ function bloqueCobro(d: Datos) {
 
 /**
  * Link para que la paciente cambie el horario sola. Va con la condición de las
- * 24 h a la vista: es la misma política de cancelación, no una regla nueva.
+ * anticipación de su sede a la vista (24 h; 48 h en San José): es la misma
+ * política de cancelación, no una regla nueva.
  */
 function bloqueCambio(d: Datos) {
   if (!d.linkCambio) return '';
   return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:16px 0 0">
-    ¿Necesitás cambiar el horario? Podés elegir otro vos misma hasta 24 h antes del turno:
+    ¿Necesitás cambiar el horario? Podés elegir otro vos misma hasta ${anticipacionH(d.sede)} h antes del turno:
     <a href="${esc(d.linkCambio)}" style="color:#5d7a63;font-weight:600">cambiar mi horario</a>.
   </p>`;
 }
@@ -276,6 +278,9 @@ export async function notificarReprogramacion(
     const cuando = d.fechaLabel ? `${d.fechaLabel}${d.hora ? ' · ' + d.hora + ' h' : ''}` : null;
     const tareas: Promise<unknown>[] = [];
     const ceci = process.env.CECI_NOTIF_EMAIL;
+    // Cada cambio que hace la paciente le avisa SIEMPRE a Ceci, aunque falle el
+    // mail a la paciente (van por separado, con allSettled).
+    if (opts.porPaciente && !ceci) console.error('Reprogramación sin aviso a Ceci: falta CECI_NOTIF_EMAIL');
     if (opts.porPaciente && ceci) {
       tareas.push(
         enviar(
@@ -285,7 +290,9 @@ export async function notificarReprogramacion(
            ${d.antesLabel ? `<p style="font-family:system-ui;color:#55605a">Antes: ${esc(d.antesLabel)}</p>` : ''}
            ${bloqueDetalle(d)}
            <p style="color:#55605a">El horario anterior quedó libre. La seña y el cobro siguen igual.</p>`
-        )
+        ).then((ok) => {
+          if (!ok) console.error('No salió el aviso a Ceci de la reprogramación de', d.nombre);
+        })
       );
     }
     if (d.email && opts.avisarPaciente !== false) {
