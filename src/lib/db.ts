@@ -196,6 +196,20 @@ export async function ensureNewsletter(sql: any) {
     )
   `;
   await sql`create index if not exists newsletter_entregas_fecha on newsletter_entregas (enviado_at)`;
+  // Supresión (Ley 18.331, derecho de supresión): el email se reemplaza por uno
+  // anónimo y queda la fecha como constancia. La fila no se borra para que las
+  // entregas pasadas sigan cuadrando y quede registro de que se hizo.
+  await sql`alter table newsletter_suscriptores add column if not exists suprimido_at timestamptz`;
+  // Fotos elegidas para el mail ({ cabecera, porEntrada: { slug: foto } }), para
+  // que "Continuar envío" arme exactamente el mismo mail días después.
+  await sql`alter table newsletter_envios add column if not exists fotos jsonb`;
+  // Desde oct-2026 el alta es directa (sin doble opt-in): quienes quedaron
+  // "pendiente" con el sistema anterior marcaron la casilla de consentimiento,
+  // así que pasan a suscriptas. Las altas nuevas ya no quedan pendientes.
+  await sql`
+    update newsletter_suscriptores set estado = 'confirmado', confirmado_at = coalesce(confirmado_at, now())
+     where estado = 'pendiente'
+  `;
 }
 
 /**

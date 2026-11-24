@@ -1,10 +1,13 @@
 ---
 import { whatsappLink } from '../data/site';
+
+// En /reservar, quien toca el botón está a mitad de una reserva: el mensaje lo dice.
+const { mensaje } = Astro.props as { mensaje?: string };
 ---
 
 <a
   class="wa-float"
-  href={whatsappLink()}
+  href={whatsappLink(mensaje)}
   target="_blank"
   rel="noopener"
   aria-label="Escribir por WhatsApp"

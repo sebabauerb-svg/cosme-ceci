@@ -15,6 +15,9 @@ const blog = defineCollection({
     tipo: z.enum(['nota', 'novedad', 'tip']).default('nota'),
     // false = borrador: no se publica (solo se ve con `npm run dev`).
     publicado: z.boolean().default(true),
+    // Foto de portada: un id de la galería (src/data/galeria-newsletter.ts). Si
+    // falta, la página elige una de la galería según la entrada.
+    imagen: z.string().optional(),
   }),
 });
 

@@ -1,7 +1,7 @@
 ---
 /**
- * Formulario corto para recibir las novedades por email (doble opt-in: el alta
- * queda pendiente hasta que la persona confirma desde el mail que le llega).
+ * Formulario corto para recibir las novedades por email. El alta es directa: la
+ * casilla es el consentimiento, y llega un mail de bienvenida con el link de baja.
  * `origen` queda registrado junto al consentimiento; `tono` adapta los colores
  * al fondo (claro en /blog, oscuro en el pie de la home).
  */
@@ -74,7 +74,7 @@ const uid = `nl-${origen}`;
         const d = await res.json().catch(() => ({}));
         if (!res.ok || !d.ok) throw new Error(d.error || 'No pudimos registrar tu email. Probá de nuevo.');
         form.reset();
-        decir('¡Casi listo! Te mandamos un mail para confirmar. Si no lo ves, revisá la carpeta de spam.');
+        decir('¡Listo, ya estás en la lista! Te mandamos un mail de bienvenida.');
       } catch (err) {
         decir((err as Error).message, true);
       }

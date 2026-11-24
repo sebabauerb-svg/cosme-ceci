@@ -46,9 +46,10 @@ export const site = {
     agenda: '', // agenda online (Calendly, etc.), opcional → si vacío, se coordina por WhatsApp
   },
 
-  // Mensaje que se pre-carga al abrir WhatsApp desde el sitio
-  whatsappMensaje:
-    'Hola Ceci! Me gustaría coordinar una consulta de valoración. ¿Cómo seguimos?',
+  // Mensaje que se pre-carga al abrir WhatsApp desde el sitio. Antes terminaba en
+  // "¿Cómo seguimos?" y Ceci recibía muchos "¿cómo agendo?": ahora invita a
+  // contar la duda puntual (reservar se hace desde /reservar).
+  whatsappMensaje: 'Hola Ceci! Te escribo desde la web. Quería consultarte: ',
 };
 
 /** Construye un enlace de WhatsApp con mensaje pre-cargado. */

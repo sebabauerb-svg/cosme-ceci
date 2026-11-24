@@ -21,11 +21,28 @@ import crypto from 'node:crypto';
 import { getCollection } from 'astro:content';
 import { esc, remitente } from './email';
 import { site } from '../data/site';
+import { renderBienvenida, renderNewsletter } from './plantillas-newsletter';
+import {
+  CABECERA_POR_DEFECTO,
+  RUTA_FIRMA,
+  RUTA_LOGO,
+  fotoValida,
+  rutaCabecera,
+  rutaFoto,
+  type FotoId,
+} from '../data/galeria-newsletter';
+
+/**
+ * Base de las imágenes del mail. Siempre el dominio público: los previews de
+ * Vercel piden login y Gmail no podría bajarlas. En un preview, las fotos
+ * nuevas recién se ven después del merge.
+ */
+const baseImagenes = () => (process.env.PUBLIC_SITE_URL || 'https://cgcosmetologiamedica.com').replace(/\/+$/, '');
 
 export const MAX_ENTRADAS = 3;
 /** Resend acepta hasta 100 mails por llamada a /emails/batch. */
 const LOTE_MAX = 100;
-/** No reenviar el mail de confirmación más seguido que esto (evita spam a terceros). */
+/** No mandar la bienvenida al mismo email más seguido que esto (evita spam a terceros). */
 const REENVIO_MIN_MS = 10 * 60 * 1000;
 
 export const topeDiario = () => {
@@ -80,27 +97,18 @@ const enviarLote = (ms: Mail[], idempotencia: string) =>
 // ---------- Plantillas ----------
 
 const MARCA = `${site.marca.nombre} · ${site.marca.subtitulo}`;
-const P = 'font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b';
 
-function marco(contenido: string, pie: string) {
-  return `<div style="background:#f6f4ef;padding:24px 12px">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:18px;padding:28px 24px">
-    <p style="font-family:Georgia,serif;font-size:18px;color:#2a302b;margin:0">${esc(site.marca.nombre)}</p>
-    <p style="font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#a76a4b;margin:2px 0 22px">${esc(site.marca.subtitulo)}</p>
-    ${contenido}
-  </div>
-  <div style="max-width:560px;margin:14px auto 0;font-family:system-ui,sans-serif;font-size:12px;line-height:1.6;color:#55605a;text-align:center">${pie}</div>
-</div>`;
-}
-
-export function htmlConfirmacion(link: string) {
-  return marco(
-    `<h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">Confirmá tu suscripción</h2>
-     <p style="${P}">Pediste recibir por email las novedades, tips y notas de ${esc(MARCA)}. Para empezar a recibirlas, confirmá que este correo es tuyo:</p>
-     <p style="margin:22px 0"><a href="${esc(link)}" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">Sí, quiero recibirlas</a></p>
-     <p style="${P};color:#55605a;font-size:14px">Si no lo pediste vos, ignorá este mensaje: sin confirmar no te vamos a escribir.</p>`,
-    `${esc(MARCA)} · Montevideo y San José, Uruguay`
-  );
+/** Bienvenida al suscribirse, con la estética del newsletter (foto, logo y firma). */
+export function htmlBienvenida(base: string, linkBaja: string) {
+  const img = baseImagenes();
+  return renderBienvenida({
+    preheader: 'Gracias por sumarte a las novedades de Ceci',
+    cabecera: img + rutaCabecera(CABECERA_POR_DEFECTO),
+    base,
+    linkBaja,
+    logo: img + RUTA_LOGO,
+    fotoCeci: img + RUTA_FIRMA,
+  });
 }
 
 export type EntradaNl = { slug: string; titulo: string; descripcion: string; tipo: string; fecha: string; borrador?: boolean };
@@ -111,8 +119,6 @@ export type EntradaNl = { slug: string; titulo: string; descripcion: string; tip
  * los borradores en `npm run dev`). En producción, solo lo publicado.
  */
 const verBorradores = () => import.meta.env.DEV || process.env.VERCEL_ENV === 'preview';
-
-const TIPO_LBL: Record<string, string> = { novedad: 'Novedad', tip: 'Tip', nota: 'Nota' };
 
 /** Entradas publicadas del blog (las que ya están en la web), de la más nueva a la más vieja. */
 export async function entradasPublicadas(): Promise<EntradaNl[]> {
@@ -129,33 +135,40 @@ export async function entradasPublicadas(): Promise<EntradaNl[]> {
     }));
 }
 
-/** Párrafos de texto plano (la intro que escribe Ceci), escapados. */
-const parrafos = (t: string) =>
-  t
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => `<p style="${P}">${esc(p).replace(/\n/g, '<br>')}</p>`)
-    .join('');
+/** Fotos elegidas para un envío: la de cabecera y, opcional, una por novedad (slug → foto). */
+export type FotosEnvio = { cabecera: FotoId; porEntrada: Record<string, FotoId> };
 
-export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]; base: string; linkBaja: string }) {
-  const tarjetas = o.entradas
-    .map((e) => {
-      const url = `${o.base}/blog/${encodeURIComponent(e.slug)}`;
-      return `<div style="border-top:1px solid #e4e0d8;padding:18px 0">
-        <p style="font-family:system-ui,sans-serif;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5d7a63;margin:0 0 6px">${esc(TIPO_LBL[e.tipo] || e.tipo)}</p>
-        <h3 style="font-family:Georgia,serif;font-size:20px;line-height:1.3;color:#2a302b;margin:0 0 8px"><a href="${esc(url)}" style="color:#2a302b;text-decoration:none">${esc(e.titulo)}</a></h3>
-        <p style="${P};margin:0 0 10px">${esc(e.descripcion)}</p>
-        <a href="${esc(url)}" style="font-family:system-ui,sans-serif;font-weight:600;color:#a76a4b">${e.tipo === 'nota' ? 'Leer la nota' : 'Leer'} →</a>
-      </div>`;
-    })
-    .join('');
-  return marco(
-    `${o.intro ? parrafos(o.intro) : ''}${tarjetas}
-     <p style="${P};font-size:14px;color:#55605a;border-top:1px solid #e4e0d8;padding-top:16px;margin:4px 0 0">Este contenido es informativo y no reemplaza una consulta. Si querés ver qué le sirve a tu piel, <a href="${esc(o.base)}/reservar" style="color:#5d7a63;font-weight:600">reservá tu consulta</a>.</p>`,
-    `Recibís este mail porque te suscribiste a las novedades de ${esc(MARCA)}.<br>
-     <a href="${esc(o.linkBaja)}" style="color:#55605a">Darme de baja</a> · <a href="${esc(o.base)}/aviso-legal#emails" style="color:#55605a">Cómo usamos tu email</a>`
-  );
+
+/** `baseImg`: solo para la vista previa del panel, que puede cargar las fotos del mismo sitio. */
+export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]; base: string; linkBaja: string; fotos: FotosEnvio; baseImg?: string }) {
+  const img = o.baseImg || baseImagenes();
+  return renderNewsletter({
+    preheader: o.entradas.map((e) => e.titulo).join(' · '),
+    intro: o.intro,
+    entradas: o.entradas.map((e) => {
+      const foto = o.fotos.porEntrada[e.slug];
+      return {
+        titulo: e.titulo,
+        descripcion: e.descripcion,
+        tipo: e.tipo,
+        url: `${o.base}/blog/${encodeURIComponent(e.slug)}`,
+        imagen: foto ? img + rutaFoto(foto) : null,
+      };
+    }),
+    cabecera: img + rutaCabecera(o.fotos.cabecera),
+    base: o.base,
+    linkBaja: o.linkBaja,
+    logo: img + RUTA_LOGO,
+    fotoCeci: img + RUTA_FIRMA,
+  });
+}
+
+/** Lee y valida las fotos que manda el panel (o las guardadas en un envío). */
+export function leerFotos(v: any, slugs: string[]): FotosEnvio {
+  const cabecera = fotoValida(v?.cabecera) ? v.cabecera : CABECERA_POR_DEFECTO;
+  const porEntrada: Record<string, FotoId> = {};
+  for (const s of slugs) if (fotoValida(v?.porEntrada?.[s])) porEntrada[s] = v.porEntrada[s];
+  return { cabecera, porEntrada };
 }
 
 // ---------- Suscripción ----------
@@ -163,46 +176,45 @@ export function htmlNewsletter(o: { intro?: string | null; entradas: EntradaNl[]
 const nuevoToken = () => crypto.randomBytes(16).toString('hex');
 
 /**
- * Pide la suscripción de un email: lo guarda como 'pendiente' y le manda el mail
- * para confirmar. Siempre responde lo mismo hacia afuera (no revela si el email
- * ya estaba en la lista). Si ya estaba confirmado, no hace nada.
+ * Suscribe un email (alta directa, sin mail de confirmación: lo decidió Sebas
+ * en oct-2026). El consentimiento es la casilla que la persona marca; queda
+ * registrado con fecha y origen. Le llega un mail de bienvenida con el link de
+ * baja, así que si alguien anota un email ajeno, la persona se entera y se baja
+ * con un clic. Siempre responde igual hacia afuera (no revela si ya estaba).
+ * Si ya estaba suscripta, no hace nada.
  */
 export async function pedirSuscripcion(sql: any, email: string, origen: string, base: string) {
   const filas = (await sql`
-    select id, estado, token, confirmacion_enviada_at from newsletter_suscriptores where email = ${email}
+    select id, estado, confirmacion_enviada_at from newsletter_suscriptores where email = ${email}
   `) as any[];
   const actual = filas[0];
   if (actual?.estado === 'confirmado') return;
-  if (
-    actual?.estado === 'pendiente' &&
-    actual.confirmacion_enviada_at &&
-    Date.now() - new Date(actual.confirmacion_enviada_at).getTime() < REENVIO_MIN_MS
-  )
-    return;
 
-  let token: string;
+  // Vuelve a anotarse (o se había dado de baja): nuevo consentimiento, nuevo token.
+  const token = nuevoToken();
   if (!actual) {
-    token = nuevoToken();
     await sql`
-      insert into newsletter_suscriptores (email, estado, token, origen, consentimiento_at, confirmacion_enviada_at)
-      values (${email}, 'pendiente', ${token}, ${origen}, now(), now())
+      insert into newsletter_suscriptores (email, estado, token, origen, consentimiento_at, confirmado_at, confirmacion_enviada_at)
+      values (${email}, 'confirmado', ${token}, ${origen}, now(), now(), now())
       on conflict (email) do nothing
     `;
   } else {
-    // Vuelve a pedirla (o se había dado de baja): nuevo consentimiento, nuevo token.
-    token = nuevoToken();
     await sql`
       update newsletter_suscriptores
-         set estado = 'pendiente', token = ${token}, origen = ${origen}, consentimiento_at = now(),
-             confirmacion_enviada_at = now(), baja_at = null
+         set estado = 'confirmado', token = ${token}, origen = ${origen}, consentimiento_at = now(),
+             confirmado_at = now(), confirmacion_enviada_at = now(), baja_at = null
        where id = ${actual.id}
     `;
   }
-  if (!resendConfigurado()) return;
+  // Freno para no mandar bienvenidas seguidas al mismo email (alta, baja, alta…).
+  const reciente =
+    actual?.confirmacion_enviada_at && Date.now() - new Date(actual.confirmacion_enviada_at).getTime() < REENVIO_MIN_MS;
+  if (reciente || !resendConfigurado()) return;
   await enviarUno({
     to: email,
-    subject: `Confirmá tu suscripción — ${MARCA}`,
-    html: htmlConfirmacion(`${base}/newsletter/confirmar?t=${token}`),
+    subject: `Ya estás en la lista de novedades — ${MARCA}`,
+    html: htmlBienvenida(base, `${base}/newsletter/baja?t=${token}`),
+    headers: { 'List-Unsubscribe': `<${base}/newsletter/baja?t=${token}>` },
   });
 }
 
@@ -256,7 +268,7 @@ export async function cupoHoy(sql: any): Promise<number> {
 const headersBaja = (urlBaja: string) => ({ 'List-Unsubscribe': `<${urlBaja}>` });
 
 /** Prueba a un solo email. El link de baja es de mentira (no da de baja a nadie). */
-export async function enviarPrueba(o: { to: string; asunto: string; intro?: string | null; entradas: EntradaNl[]; base: string }) {
+export async function enviarPrueba(o: { to: string; asunto: string; intro?: string | null; entradas: EntradaNl[]; base: string; fotos: FotosEnvio }) {
   await enviarUno({
     to: o.to,
     subject: `[Prueba] ${o.asunto}`,
@@ -277,6 +289,7 @@ export async function enviarTanda(sql: any, envioId: string, base: string) {
     .map((s) => todas.find((e) => e.slug === s))
     .filter((e): e is EntradaNl => !!e);
   if (!entradas.length) throw new Error('Las novedades de este envío ya no están publicadas');
+  const fotos = leerFotos(env.fotos, entradas.map((e) => e.slug));
 
   let cupo = await cupoHoy(sql);
   let enviados = 0;
@@ -295,7 +308,7 @@ export async function enviarTanda(sql: any, envioId: string, base: string) {
       return {
         to: d.email,
         subject: env.asunto,
-        html: htmlNewsletter({ intro: env.intro, entradas, base, linkBaja: urlBaja }),
+        html: htmlNewsletter({ intro: env.intro, entradas, base, linkBaja: urlBaja, fotos }),
         headers: headersBaja(urlBaja),
       };
     });

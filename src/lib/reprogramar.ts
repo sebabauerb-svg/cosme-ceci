@@ -22,6 +22,7 @@ export const NOMBRE_MODALIDAD: Record<string, string> = {
   presencial: 'Consulta Presencial',
   virtual: 'Consulta Virtual',
   'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
+  sesion: 'Sesión de tratamiento',
   club: 'Club de las Estaciones',
   manual: 'Reserva manual',
 };
@@ -115,7 +116,8 @@ export async function moverReserva(
 
   // Una consulta presencial necesita sede física y una online no puede caer en
   // una sede: si no, ocuparía el cupo equivocado. Las manuales van a cualquiera.
-  if (r.modalidad === 'presencial' && sedeKey === 'online') return falla(400, 'Una consulta presencial necesita sede.');
+  if ((r.modalidad === 'presencial' || r.modalidad === 'sesion') && sedeKey === 'online')
+    return falla(400, 'Una atención presencial necesita sede.');
   if ((r.modalidad === 'virtual' || r.modalidad === 'skincare-inteligente') && sedeKey !== 'online')
     return falla(400, 'Una consulta online no va en una sede.');
 
