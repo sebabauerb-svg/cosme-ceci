@@ -179,7 +179,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     if (!compra) return json({ ok: false, error: 'Esta sesión no se puede pagar completa online. Elegí la seña.' }, 400);
     if (body?.via === 'coordinar')
       return json({ ok: false, error: 'La sesión completa se paga con Mercado Pago.' }, 400);
-    precioNum = compra.monto;
+    // Con Mercado Pago: precio publicado + 10% (src/lib/compras.ts).
+    precioNum = montoPorVia(compra, 'mercadopago');
   }
 
   // Camino de reserva: 'pagar' (MercadoPago, hold 30 min) o 'coordinar' (sin pago,
@@ -321,7 +322,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
             ? await crearPreferencia({
                 // Sesión completa: turno con cupo (vence con la reserva), hasta 3 cuotas.
                 titulo: tituloItem.replace(/^Seña — /, 'Sesión completa — '),
-                precio: compra.monto,
+                precio: precioNum as number,
                 maxCuotas: MAX_CUOTAS,
                 reservaId,
                 origin,

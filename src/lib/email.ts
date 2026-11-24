@@ -465,7 +465,7 @@ type DatosCompra = {
 function bloqueCompra(d: DatosCompra) {
   const filas = [
     `<strong>Compra:</strong> ${esc(d.producto)}`,
-    `<strong>Monto:</strong> ${esc(d.monto)}${d.via === 'transferencia' ? ' (con 10% de descuento por transferencia)' : ''}${d.cuotas && d.cuotas > 1 ? ` · en ${esc(d.cuotas)} cuotas` : ''}`,
+    `<strong>Monto:</strong> ${esc(d.monto)}${d.via === 'mercadopago' ? ' (precio publicado + 10% por Mercado Pago)' : ''}${d.cuotas && d.cuotas > 1 ? ` · en ${esc(d.cuotas)} cuotas` : ''}`,
     `<strong>A nombre de:</strong> ${esc(d.nombre)}`,
     `<strong>WhatsApp:</strong> ${esc(d.telefono)}`,
   ];
@@ -490,7 +490,7 @@ const queSigue = (d: DatosCompra) =>
 
 /**
  * Compra registrada (todavía sin pagar): aviso a Ceci y a la clienta. Si eligió
- * transferencia, el mail lleva los datos bancarios y el monto con descuento.
+ * transferencia, el mail lleva los datos bancarios y el precio publicado.
  * Nunca lanza error.
  */
 export async function notificarCompra(d: DatosCompra, opts: { checkout?: boolean } = {}) {

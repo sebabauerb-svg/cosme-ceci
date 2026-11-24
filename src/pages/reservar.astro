@@ -67,8 +67,10 @@ const itemsModalidades = modalidades.map((m) => ({
 const pagoActivo = pagoMembresiasActivo();
 const datosCompra = (p: Producto) => ({
   productoId: p.id,
+  // Precio publicado (= transferencia) y con Mercado Pago (+10%).
   lista: formatMonto(p.monto, p.moneda),
   transf: formatMonto(montoPorVia(p, 'transferencia'), p.moneda),
+  mp: formatMonto(montoPorVia(p, 'mercadopago'), p.moneda),
   nota: p.nota ?? '',
   esPaquete: p.modalidad === 'paquete',
 });
@@ -102,7 +104,8 @@ const tratamientos = categoriasTratamientos.flatMap((cat) =>
       precio: v?.precio != null ? `${formatUYU(v.precio)} ${t.unidad ?? 'por sesión'}` : 'Valor en consulta',
       sena,
       senaLabel: sena != null ? fmt(sena) : null,
-      total: total ? { label: formatMonto(total.monto, total.moneda) } : null,
+      // Sesión completa con Mercado Pago: precio publicado + 10%.
+      total: total ? { label: formatMonto(montoPorVia(total, 'mercadopago'), total.moneda) } : null,
     };
   })
 );
@@ -261,7 +264,7 @@ const senaLabel = fmt(SENA_UYU);
             tratamientos con valor por sesión (el JS la muestra si aplica). */}
         <div class="pay-sep" id="pay-sep-total" hidden><span>o</span></div>
         <button class="btn btn--ghost pay" id="pagar-total" hidden>Pagar la sesión completa con Mercado Pago</button>
-        <p class="step__hint center tic" id="hint-total" hidden>Hasta 3 cuotas (el interés de las cuotas lo define Mercado Pago). No te queda saldo para ese día</p>
+        <p class="step__hint center tic" id="hint-total" hidden>Precio de la sesión + 10%, hasta 3 cuotas (el interés de las cuotas lo define Mercado Pago). No te queda saldo para ese día</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -650,8 +653,9 @@ const senaLabel = fmt(SENA_UYU);
     if (m.compra) {
       // Compra (Club o paquete): se paga el total, no una seña.
       if (m.compra.nota) filas.push(`<p class="resumen__nota">${m.compra.nota}</p>`);
-      filas.push(`<div class="resumen__row"><span>Con Mercado Pago, hasta 3 cuotas</span><strong>${m.compra.lista}</strong></div>`);
-      filas.push(`<div class="resumen__row resumen__row--total"><span>Por transferencia, 10% menos</span><strong>${m.compra.transf}</strong></div>`);
+      filas.push(`<div class="resumen__row resumen__row--total"><span>Por transferencia</span><strong>${m.compra.transf}</strong></div>`);
+      filas.push(`<div class="resumen__row"><span>Con Mercado Pago (+10%), hasta 3 cuotas</span><strong>${m.compra.mp}</strong></div>`);
+      filas.push(`<p class="resumen__nota">Con Mercado Pago se suma un 10% al precio publicado. Si elegís cuotas, el interés de las cuotas lo define Mercado Pago.</p>`);
     } else if (m.sena != null) {
       const esSesion = m.id === 'sesion';
       filas.push(`<div class="resumen__row"><span>${esSesion ? 'Valor de la sesión' : 'Valor de la consulta'}</span><strong>${esSesion && !m.tratamientoId ? 'Según tu tratamiento' : m.precio}</strong></div>`);
@@ -674,7 +678,7 @@ const senaLabel = fmt(SENA_UYU);
     const mpBtn = $('#confirmar'), mpHint = $('#hint-mp'), sep = $('#pay-sep');
     if (mpBtn) {
       mpBtn.hidden = esMemb;
-      mpBtn.textContent = m.compra ? 'Pagar con Mercado Pago (hasta 3 cuotas)' : 'Pagar la seña con Mercado Pago';
+      mpBtn.textContent = m.compra ? `Pagar ${m.compra.mp} con Mercado Pago (hasta 3 cuotas)` : 'Pagar la seña con Mercado Pago';
     }
     if (mpHint) {
       mpHint.hidden = esMemb;
@@ -691,7 +695,7 @@ const senaLabel = fmt(SENA_UYU);
     if (politica) politica.hidden = !!m.esMembresia;
     const coordBtn = $('#coordinar');
     if (coordBtn) coordBtn.textContent = m.compra
-      ? `Transferir ${m.compra.transf} (10% de descuento)`
+      ? `Transferir ${m.compra.transf} y confirmar con Ceci`
       : esMemb ? 'Coordinar con Ceci' : 'Transferir la seña y confirmar con Ceci';
     const coordHint = $('#hint-coord');
     if (coordHint) coordHint.textContent = m.compra
@@ -712,7 +716,7 @@ const senaLabel = fmt(SENA_UYU);
         `Hola Ceci! Compré por la web: ${m.servicio}`,
         `• A nombre de: ${state.nombre}`,
         state.email ? `• Email: ${state.email}` : null,
-        `Voy a transferir ${m.compra.transf} (con el 10% de descuento).`,
+        `Voy a transferir ${m.compra.transf}.`,
         hayBanco ? 'Te paso el comprobante. ¡Gracias!' : '¿Me pasás los datos de la cuenta? ¡Gracias!',
       ].filter(Boolean).join('\n');
     }
@@ -922,7 +926,7 @@ const senaLabel = fmt(SENA_UYU);
       const btn = $('#confirmar');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = state.modalidad?.compra ? 'Pagar con Mercado Pago (hasta 3 cuotas)' : 'Pagar la seña con Mercado Pago';
+        btn.textContent = state.modalidad?.compra ? `Pagar ${state.modalidad.compra.mp} con Mercado Pago (hasta 3 cuotas)` : 'Pagar la seña con Mercado Pago';
       }
       const tot = $('#pagar-total');
       if (tot && state.modalidad?.total) {

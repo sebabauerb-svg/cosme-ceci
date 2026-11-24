@@ -2,8 +2,14 @@
  * COMPRAS ONLINE — Club (Regular y Premium) y paquetes de tratamientos
  * ====================================================================
  * Pedido de Sebas (nov-2026): que la web cobre sola el Club y los paquetes, en un
- * pago o en hasta 3 cuotas con Mercado Pago, o por transferencia con 10% de
- * descuento (Ceci la confirma a mano desde /admin, como la seña).
+ * pago o en hasta 3 cuotas con Mercado Pago, o por transferencia (Ceci la
+ * confirma a mano desde /admin, como la seña).
+ *
+ * REGLA DE PRECIO (Sebas, nov-2026: "precio de lista y +10 MP"):
+ *  - Transferencia: el precio publicado (de lista).
+ *  - Mercado Pago: precio publicado + 10% (cubre la comisión). Encima va el
+ *    interés de las cuotas, que define Mercado Pago y paga la paciente.
+ *  - La seña de los turnos NO lleva recargo (a confirmar con Sebas).
  *
  * Todo esto arranca APAGADO: sin PAGO_MEMBRESIAS_ACTIVO la web se comporta como
  * antes (el Club se coordina por WhatsApp y los paquetes no se compran online).
@@ -47,8 +53,8 @@ export const PAQUETE_ID = 'paquete';
 /** Máximo de cuotas que ofrece el checkout. El interés de las cuotas lo paga la paciente (lo fija Mercado Pago). */
 export const MAX_CUOTAS = 3;
 
-/** Descuento por pagar con transferencia (src/data/pago.ts → formasDePago). */
-export const DESCUENTO_TRANSFERENCIA = 0.1;
+/** Recargo por pagar con Mercado Pago sobre el precio publicado (src/data/pago.ts → formasDePago). */
+export const RECARGO_MERCADOPAGO = 0.1;
 
 /** ¿Está prendido el cobro online del Club y los paquetes? */
 export function pagoMembresiasActivo(): boolean {
@@ -136,12 +142,16 @@ export function productoPorId(id: unknown, precios: Precios): Producto | null {
   return [...productosClub(), ...productosPaquete(precios)].find((p) => p.id === id) ?? null;
 }
 
-/** Lo que se cobra según el medio: Mercado Pago = lista; transferencia = lista − 10%. */
+/**
+ * Lo que se cobra según el medio: transferencia = precio publicado; Mercado
+ * Pago = precio publicado + 10%. Ej.: U$S 200 → U$S 220; $4.800 → $5.280;
+ * $24.000 → $26.400. Lo calcula siempre el servidor y el webhook lo valida.
+ */
 export function montoPorVia(p: Producto, via: ViaPago): number {
-  if (via === 'mercadopago') return p.monto;
-  const conDescuento = p.monto * (1 - DESCUENTO_TRANSFERENCIA);
+  if (via === 'transferencia') return p.monto;
+  const conRecargo = p.monto * (1 + RECARGO_MERCADOPAGO);
   // Pesos sin centavos; dólares con hasta 2 decimales.
-  return p.moneda === 'UYU' ? Math.round(conDescuento) : Math.round(conDescuento * 100) / 100;
+  return p.moneda === 'UYU' ? Math.round(conRecargo) : Math.round(conRecargo * 100) / 100;
 }
 
 /** "$4.800" / "U$S 200" — como se muestra en la web y en el panel. */
