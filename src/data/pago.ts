@@ -46,8 +46,20 @@ export const CONCEPTO_PREFIJO = 'Seña';
  */
 export const POLITICA_CANCELACION =
   'Para garantizar una atención organizada y puntual, te recordamos que los cambios o ' +
-  'cancelaciones deben realizarse con al menos 24 horas de anticipación. De lo contrario, ' +
+  'cancelaciones deben realizarse con al menos 24 horas de anticipación en Montevideo y en las ' +
+  'consultas online, y con 48 horas en San José. De lo contrario, ' +
   'o en caso de inasistencia, el turno no será reembolsable.';
+
+/**
+ * Horas de anticipación para cambiar o cancelar un turno, por sede (pedido de
+ * Sebas, nov-2026: San José necesita más aviso). La clave es el nombre de la
+ * sede como está en la base. Online y cualquier otra sede: 24 h. Si cambia,
+ * actualizar también POLITICA_CANCELACION.
+ */
+export const ANTICIPACION_POR_SEDE: Record<string, number> = { 'San José': 48 };
+export const ANTICIPACION_DEFAULT_H = 24;
+export const anticipacionH = (sede?: string | null): number =>
+  (sede && ANTICIPACION_POR_SEDE[sede]) || ANTICIPACION_DEFAULT_H;
 
 /**
  * Formas de pago de tratamientos, paquetes y Club (pedido de Ceci, nov-2026). Se
