@@ -62,14 +62,18 @@ export const anticipacionH = (sede?: string | null): number =>
   (sede && ANTICIPACION_POR_SEDE[sede]) || ANTICIPACION_DEFAULT_H;
 
 /**
- * Formas de pago de tratamientos, paquetes y Club (pedido de Ceci, nov-2026). Se
- * muestran debajo de cada precio. NO aplican a la seña online de las consultas,
- * que es un monto fijo (SENA_UYU).
+ * Formas de pago de tratamientos, paquetes y Club. Se muestran debajo de cada
+ * precio. NO aplican a la seña online de las consultas, que es un monto fijo
+ * (SENA_UYU).
+ *
+ * Regla de Sebas (nov-2026): el precio publicado es el de transferencia; con
+ * Mercado Pago se suma un 10% (cubre la comisión) y, si elige cuotas, el interés
+ * que define Mercado Pago, que paga la paciente. Nunca decir "sin interés".
+ * (Reemplaza al "10% de descuento por transferencia".)
  */
 export const formasDePago = {
-  transferencia: '10% de descuento por transferencia bancaria',
-  // El interés de las cuotas lo paga la paciente (decisión de Sebas, nov-2026): nunca decir "sin interés".
-  cuotas: 'Hasta 3 cuotas con Mercado Pago (el interés de las cuotas lo define Mercado Pago)',
+  transferencia: 'Transferencia bancaria: el precio publicado',
+  cuotas: 'Mercado Pago: precio publicado + 10%, hasta en 3 cuotas (el interés de las cuotas lo define Mercado Pago)',
 };
 
 /** ¿Hay datos bancarios cargados como para mostrarlos en la web? */

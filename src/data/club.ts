@@ -8,8 +8,8 @@
  * - **Premium:** las 4 consultas son PRESENCIALES, más el registro de seguimiento (cómo
  *   siente la piel, productos actuales, nuevas recomendaciones) que Ceci recuerda
  *   completar y revisa en una consulta online. En DÓLARES a propósito: U$S 200/año.
- * - Pago de ambos: único, con 10% de descuento por transferencia, o hasta 3 cuotas por
- *   Mercado Pago (src/data/pago.ts → formasDePago).
+ * - Pago de ambos: por transferencia, el precio publicado; con Mercado Pago, +10% y
+ *   hasta 3 cuotas (src/data/pago.ts → formasDePago).
  * - `modalidadId` es la modalidad de /reservar (src/data/modalidades.ts): no cambiarla,
  *   se guarda en la base.
  */
