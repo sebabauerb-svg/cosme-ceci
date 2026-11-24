@@ -388,3 +388,44 @@ export async function notificarVolverConsulta(d: {
     return false;
   }
 }
+
+/**
+ * Link mágico para entrar a "Mi cuenta" (perfil de paciente). Lo pide ella
+ * misma desde /mi-cuenta, o se lo manda Ceci desde la ficha para que complete
+ * su registro (`invitacion`). Solo sale con PERFIL_PACIENTES_ACTIVO=true (lo
+ * controlan las APIs). Devuelve true si Resend lo aceptó. Nunca lanza error.
+ */
+export async function enviarAccesoCuenta(d: {
+  nombre: string;
+  email: string;
+  link: string;
+  /** ej. "20 minutos", "3 días" */
+  vence: string;
+  invitacion?: boolean;
+}): Promise<boolean> {
+  try {
+    const nombre = d.nombre.trim().split(/\s+/)[0] || d.nombre;
+    const P = 'font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b';
+    const asunto = d.invitacion ? `${nombre}, ¿cómo sentís tu piel hoy?` : 'Tu link para entrar a tu cuenta';
+    const intro = d.invitacion
+      ? `<p style="${P}">Para seguir tu evolución, te pido que completes tu registro: cómo sentís la piel y qué productos estás usando. Son unos minutos y lo revisamos juntas en la próxima consulta.</p>`
+      : `<p style="${P}">Pediste entrar a tu cuenta. Desde ahí ves tus turnos, las indicaciones de cada consulta y tu registro de piel.</p>`;
+    return await enviar(
+      d.email,
+      asunto,
+      `<div style="max-width:560px">
+       <h2 style="font-family:Georgia,serif;color:#2a302b;margin:0 0 12px">${d.invitacion ? 'Tu registro de piel' : 'Entrá a tu cuenta'}</h2>
+       <p style="${P}">Hola, ${esc(nombre)}:</p>
+       ${intro}
+       <p style="margin:22px 0"><a href="${esc(d.link)}" style="display:inline-block;background:#5d7a63;color:#ffffff;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600;padding:12px 22px;border-radius:999px">${d.invitacion ? 'Completar mi registro' : 'Entrar a mi cuenta'}</a></p>
+       <p style="${P}">El botón sirve una sola vez y vence en ${esc(d.vence)}. Si venció, pedí otro en la web. No hace falta contraseña.</p>
+       ${d.invitacion ? `<p style="${P}">Un abrazo,<br />Ceci</p>` : ''}
+       <p style="font-family:system-ui,sans-serif;font-size:12px;line-height:1.6;color:#55605a;margin:22px 0 0;padding-top:14px;border-top:1px solid #e4e0d8">
+         Si no pediste este mail, ignoralo: nadie puede entrar sin este botón.
+       </p>
+       </div>`
+    );
+  } catch {
+    return false;
+  }
+}

@@ -1,0 +1,49 @@
+---
+import CuentaShell from '../../components/cuenta/CuentaShell.astro';
+import { perfilActivo } from '../../lib/cuenta';
+
+// Landing del link mágico. El token se canjea con un botón (POST), no al
+// abrir la página: los antivirus de los correos abren los links solos y
+// gastarían el link de un solo uso.
+export const prerender = false;
+if (!perfilActivo()) return Astro.rewrite('/404');
+Astro.response.headers.set('cache-control', 'no-store');
+Astro.response.headers.set('referrer-policy', 'no-referrer');
+---
+
+<CuentaShell title="Entrar a mi cuenta">
+  <div class="mc__card" style="text-align:center">
+    <div id="ce-alert" class="mc__alert" role="alert" hidden></div>
+    <p class="mc__sub" id="ce-txt">Tocá el botón para entrar. No hace falta contraseña.</p>
+    <button type="button" class="btn btn--primary" id="ce-entrar">Entrar a mi cuenta</button>
+    <p class="mc__sub" id="ce-otro" hidden style="margin-top:1rem"><a href="/mi-cuenta">Pedir un link nuevo</a></p>
+  </div>
+</CuentaShell>
+
+<script>
+  const t = new URLSearchParams(location.search).get('t') || '';
+  // Sacamos el token de la barra (y del historial) apenas carga.
+  history.replaceState(null, '', '/mi-cuenta/entrar');
+  const btn = document.getElementById('ce-entrar') as HTMLButtonElement;
+  const alerta = document.getElementById('ce-alert')!;
+  const otro = document.getElementById('ce-otro')!;
+  if (!t) {
+    alerta.textContent = 'Este link está incompleto. Pedí uno nuevo.';
+    alerta.hidden = false; btn.hidden = true; otro.hidden = false;
+  }
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Entrando…';
+    try {
+      const res = await fetch('/api/cuenta/entrar', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.ok) { location.replace(d.ir || '/mi-cuenta'); return; }
+      alerta.textContent = d.error || 'No pudimos abrir tu cuenta.';
+    } catch {
+      alerta.textContent = 'Sin conexión. Probá de nuevo en un momento.';
+    }
+    alerta.hidden = false; otro.hidden = false;
+    btn.disabled = false; btn.textContent = 'Entrar a mi cuenta';
+  });
+</script>

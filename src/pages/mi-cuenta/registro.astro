@@ -1,0 +1,231 @@
+---
+import CuentaShell from '../../components/cuenta/CuentaShell.astro';
+import { getSql, ensurePerfil } from '../../lib/db';
+import { pacienteActual, perfilActivo, registrosDe } from '../../lib/cuenta';
+import { HABITOS, MAX_PRODUCTOS, MOMENTOS, NOTAS, OBJETIVOS, PASOS, SENSACIONES } from '../../data/registro';
+
+// "Mi registro": la paciente cuenta cómo siente la piel y qué productos usa.
+// Cada envío es una entrada nueva con fecha (la evolución); Ceci la ve en la
+// ficha del panel. Dato de salud: primero acepta el uso (Ley 18.331).
+export const prerender = false;
+if (!perfilActivo()) return Astro.rewrite('/404');
+Astro.response.headers.set('cache-control', 'no-store');
+
+const sql = getSql();
+await ensurePerfil(sql);
+const p = await pacienteActual(sql, Astro.cookies);
+if (!p) return Astro.redirect('/mi-cuenta');
+const consintio = !!p.registro_consentimiento_at;
+const registros = consintio ? await registrosDe(sql, p.id) : [];
+const ultimo = registros[0] ?? null;
+// La rutina cambia poco: precargamos los productos del último registro.
+const productosPrevios = (ultimo?.productos as any[]) ?? [];
+
+const fecha = (f: string) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+const lista = (a?: string[] | null) => (a && a.length ? a.join(' · ') : '');
+---
+
+<CuentaShell title="Mi registro" nombre={p.nombre} activa="registro">
+  {!consintio ? (
+    <div class="mc__card">
+      <h2 class="mc__t">Antes de empezar</h2>
+      <p class="mc__sub">En tu registro contás cómo sentís la piel, qué productos usás y cómo te fue con los cambios. Ceci lo lee para acompañar tu evolución y lo revisan juntas en consulta.</p>
+      <p class="mc__sub">Es información sobre tu salud, así que la cuidamos especialmente: solo la ven vos y Ceci, no se comparte con nadie y podés pedir verla, corregirla o borrarla cuando quieras escribiéndole a Ceci. <a href="/aviso-legal#mi-cuenta">Cómo se usan tus datos</a>.</p>
+      <div id="rc-alert" class="mc__alert" role="alert" hidden></div>
+      <form id="rc-form" class="mc-form">
+        <label class="mc-check"><input type="checkbox" name="acepto" required /> <span>Acepto que se guarde mi registro de piel para mi seguimiento con Ceci.</span></label>
+        <button type="submit" class="btn btn--primary">Empezar mi registro</button>
+      </form>
+    </div>
+  ) : (
+    <>
+      <div id="rg-ok" class="mc__ok" role="status" hidden>¡Listo! Guardamos tu registro de hoy. Ceci lo va a ver antes de tu próxima consulta.</div>
+      <div class="mc__card">
+        <h2 class="mc__t">{ultimo ? '¿Cómo viene tu piel hoy?' : 'Tu registro inicial'}</h2>
+        <p class="mc__sub">{ultimo
+          ? `Tu último registro es del ${fecha(ultimo.fecha)}. Completá lo que cambió: cada registro queda guardado con su fecha para ver tu evolución.`
+          : 'Contanos cómo está tu piel hoy y qué usás. Es el punto de partida para ver tu evolución. Completá lo que quieras: nada es obligatorio.'}</p>
+        <div id="rg-alert" class="mc__alert" role="alert" hidden></div>
+        <form id="rg-form" class="mc-form" novalidate>
+          <fieldset class="mc-sec">
+            <legend>Cómo siento mi piel hoy</legend>
+            <span class="mc-ayuda">En general, del 1 al 5</span>
+            <div class="mc-ops" role="radiogroup" aria-label="Cómo siento mi piel, del 1 al 5">
+              {Object.entries(NOTAS).map(([n, txt]) => (
+                <label><input type="radio" name="nota" value={n} /> {n} · {txt}</label>
+              ))}
+            </div>
+            <span class="mc-ayuda">La siento… (marcá todas las que van)</span>
+            <div class="mc-ops">
+              {SENSACIONES.map((s) => <label><input type="checkbox" name="sensaciones" value={s} /> {s}</label>)}
+            </div>
+            <label class="mc-campo">Contalo con tus palabras <span class="mc-ayuda">(opcional)</span>
+              <textarea name="sensaciones_texto" rows="3" maxlength="2000" placeholder="Ej.: a la tarde me brilla la frente y siento tirantes las mejillas"></textarea>
+            </label>
+          </fieldset>
+
+          <fieldset class="mc-sec">
+            <legend>Qué me gustaría lograr</legend>
+            <div class="mc-ops">
+              {OBJETIVOS.map((o) => <label><input type="checkbox" name="objetivos" value={o} checked={(ultimo?.objetivos ?? []).includes(o)} /> {o}</label>)}
+            </div>
+            <label class="mc-campo">Lo que más me preocupa <span class="mc-ayuda">(opcional)</span>
+              <textarea name="objetivos_texto" rows="2" maxlength="2000"></textarea>
+            </label>
+          </fieldset>
+
+          <fieldset class="mc-sec">
+            <legend>Los productos que uso hoy</legend>
+            <span class="mc-ayuda">{productosPrevios.length ? 'Te dejamos los de tu último registro: corregí lo que cambió.' : 'Uno por fila, con la marca si la sabés.'}</span>
+            <div id="rg-prods" class="rg-prods"></div>
+            <button type="button" class="btn btn--ghost" id="rg-mas">+ Agregar un producto</button>
+          </fieldset>
+
+          <fieldset class="mc-sec">
+            <legend>Cambios desde la última vez</legend>
+            <label class="mc-campo"><span class="mc-ayuda">¿Empezaste o dejaste algún producto? ¿Tuviste alguna reacción, brote o irritación?</span>
+              <textarea name="cambios" rows="3" maxlength="2000"></textarea>
+            </label>
+          </fieldset>
+
+          <fieldset class="mc-sec">
+            <legend>Hábitos</legend>
+            <div class="mc-ops">
+              {HABITOS.map((h) => <label><input type="checkbox" name="habitos" value={h} checked={(ultimo?.habitos ?? []).includes(h)} /> {h}</label>)}
+            </div>
+          </fieldset>
+
+          <button type="submit" class="btn btn--primary">Guardar mi registro de hoy</button>
+        </form>
+      </div>
+
+      {registros.length > 0 && (
+        <>
+          <h2 class="mc__t">Mis registros anteriores</h2>
+          {registros.map((r) => (
+            <details class="mc__card mc__card--suave rg-hist">
+              <summary><strong>{fecha(r.fecha)}</strong>{r.nota ? <span class="mc__chip">{r.nota} · {NOTAS[r.nota as keyof typeof NOTAS]}</span> : null}</summary>
+              {lista(r.sensaciones) && <p class="mc__meta"><strong>La sentía:</strong> {lista(r.sensaciones)}</p>}
+              {r.sensaciones_texto && <p class="mc__pre">{r.sensaciones_texto}</p>}
+              {lista(r.objetivos) && <p class="mc__meta"><strong>Quería lograr:</strong> {lista(r.objetivos)}</p>}
+              {r.objetivos_texto && <p class="mc__pre">{r.objetivos_texto}</p>}
+              {(r.productos ?? []).length > 0 && (
+                <ul class="rg-lista">{(r.productos as any[]).map((x) => <li>{[x.momento, x.paso].filter(Boolean).join(' · ')}{x.momento || x.paso ? ': ' : ''}{x.producto}</li>)}</ul>
+              )}
+              {r.cambios && <p class="mc__meta"><strong>Cambios:</strong> {r.cambios}</p>}
+              {lista(r.habitos) && <p class="mc__meta"><strong>Hábitos:</strong> {lista(r.habitos)}</p>}
+            </details>
+          ))}
+        </>
+      )}
+    </>
+  )}
+</CuentaShell>
+
+<script type="application/json" id="rg-config" set:html={JSON.stringify({ momentos: MOMENTOS, pasos: PASOS, max: MAX_PRODUCTOS, previos: productosPrevios })} />
+
+<script>
+  async function post(body: unknown) {
+    const res = await fetch('/api/cuenta/registro', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) throw new Error(d.error || 'No pudimos guardar. Probá de nuevo.');
+  }
+
+  // Paso 1: consentimiento
+  const rc = document.getElementById('rc-form') as HTMLFormElement | null;
+  rc?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const a = document.getElementById('rc-alert')!;
+    const acepto = (rc.elements.namedItem('acepto') as HTMLInputElement).checked;
+    if (!acepto) { a.textContent = 'Marcá la casilla para continuar.'; a.hidden = false; return; }
+    try { await post({ accion: 'consentir', acepto: true }); location.reload(); }
+    catch (e) { a.textContent = (e as Error).message; a.hidden = false; }
+  });
+
+  // Paso 2: el registro
+  const form = document.getElementById('rg-form') as HTMLFormElement | null;
+  if (form) {
+    const cfg = JSON.parse(document.getElementById('rg-config')!.textContent || '{}');
+    const cont = document.getElementById('rg-prods')!;
+    const opts = (arr: string[], ph: string, sel?: string | null) =>
+      `<option value="">${ph}</option>` + arr.map((x) => `<option${x === sel ? ' selected' : ''}>${x}</option>`).join('');
+    const escAttr = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+    function fila(p?: { momento?: string | null; paso?: string | null; producto?: string }) {
+      if (cont.children.length >= cfg.max) return;
+      const d = document.createElement('div');
+      d.className = 'rg-prod';
+      d.innerHTML = `
+        <input type="text" class="rg-nombre" maxlength="160" placeholder="Producto y marca" aria-label="Producto y marca" value="${escAttr(p?.producto ?? '')}" />
+        <select class="rg-paso" aria-label="Paso de la rutina">${opts(cfg.pasos, 'Paso', p?.paso)}</select>
+        <select class="rg-momento" aria-label="Cuándo lo usás">${opts(cfg.momentos, 'Cuándo', p?.momento)}</select>
+        <button type="button" class="rg-quitar" aria-label="Quitar este producto">✕</button>`;
+      d.querySelector('.rg-quitar')!.addEventListener('click', () => { d.remove(); if (!cont.children.length) fila(); });
+      cont.append(d);
+    }
+    (cfg.previos?.length ? cfg.previos : [null, null]).forEach((p: any) => fila(p ?? undefined));
+    document.getElementById('rg-mas')!.addEventListener('click', () => { fila(); (cont.lastElementChild?.querySelector('input') as HTMLInputElement)?.focus(); });
+
+    const marcados = (n: string) => [...form.querySelectorAll<HTMLInputElement>(`input[name="${n}"]:checked`)].map((i) => i.value);
+    const texto = (n: string) => (form.elements.namedItem(n) as HTMLTextAreaElement).value;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const alerta = document.getElementById('rg-alert')!;
+      alerta.hidden = true;
+      const btn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+      btn.disabled = true; btn.textContent = 'Guardando…';
+      try {
+        await post({
+          accion: 'guardar',
+          nota: marcados('nota')[0] ?? null,
+          sensaciones: marcados('sensaciones'), sensaciones_texto: texto('sensaciones_texto'),
+          objetivos: marcados('objetivos'), objetivos_texto: texto('objetivos_texto'),
+          productos: [...cont.querySelectorAll('.rg-prod')].map((d) => ({
+            producto: (d.querySelector('.rg-nombre') as HTMLInputElement).value,
+            paso: (d.querySelector('.rg-paso') as HTMLSelectElement).value || null,
+            momento: (d.querySelector('.rg-momento') as HTMLSelectElement).value || null,
+          })),
+          cambios: texto('cambios'), habitos: marcados('habitos'),
+        });
+        sessionStorage.setItem('rg-ok', '1');
+        location.reload();
+      } catch (e) {
+        alerta.textContent = (e as Error).message; alerta.hidden = false;
+        alerta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        btn.disabled = false; btn.textContent = 'Guardar mi registro de hoy';
+      }
+    });
+    try {
+      if (sessionStorage.getItem('rg-ok')) {
+        sessionStorage.removeItem('rg-ok');
+        const ok = document.getElementById('rg-ok')!; ok.hidden = false;
+      }
+    } catch { /* sin storage */ }
+  }
+</script>
+
+<style is:global>
+  .rg-prods { display: grid; gap: 0.6rem; }
+  .rg-prod {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.45rem;
+    padding: 0.7rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--cream);
+  }
+  .rg-prod .rg-nombre { grid-column: 1; }
+  .rg-prod .rg-quitar { grid-column: 2; grid-row: 1; }
+  .rg-prod select { grid-column: 1 / -1; }
+  @media (min-width: 560px) {
+    .rg-prod { grid-template-columns: minmax(0, 1fr) 9.5rem 9.5rem auto; align-items: center; }
+    .rg-prod select { grid-column: auto; }
+    .rg-prod .rg-quitar { grid-column: 4; }
+  }
+  .rg-quitar {
+    border: 0; background: none; color: var(--ink-soft); font-size: 1rem; cursor: pointer;
+    min-width: 44px; min-height: 44px; border-radius: var(--radius-sm);
+  }
+  .rg-quitar:hover { background: var(--cream-deep); color: var(--clay-deep); }
+  .rg-hist summary { cursor: pointer; display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; min-height: 44px; }
+  .rg-hist[open] summary { margin-bottom: 0.5rem; }
+  .rg-lista { margin: 0.5rem 0; padding-left: 1.1rem; line-height: 1.6; font-size: 0.92rem; }
+</style>

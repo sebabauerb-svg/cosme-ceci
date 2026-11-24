@@ -868,6 +868,22 @@ const senaLabel = fmt(SENA_UYU);
       }
     }
   }
+
+  // Paciente con sesión en "Mi cuenta": precargamos sus datos (la página está
+  // cacheada en la CDN, así que se piden aparte, sin caché). Si el perfil está
+  // apagado o no hay sesión, /api/cuenta/yo da 404/401 y no se toca nada.
+  fetch('/api/cuenta/yo', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (!d?.ok) return;
+      const f = $('#form');
+      const poner = (n, v) => {
+        const el = f?.elements.namedItem(n);
+        if (el && !el.value && v) el.value = v;
+      };
+      poner('nombre', d.nombre); poner('tel', d.telefono); poner('email', d.email);
+    })
+    .catch(() => {});
 </script>
 
 <style>
