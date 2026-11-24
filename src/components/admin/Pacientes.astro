@@ -707,7 +707,9 @@ const config = {
         try {
           const d = await llamar('/api/admin/registros', { accion: 'invitar', id: fichaId });
           m.className = 'guardar__msg guardar__msg--ok';
-          m.innerHTML = 'Listo: le mandamos un mail con el link (vale 3 días).' + (d.prueba ? ` <a href="${esc(d.prueba)}" target="_blank" rel="noopener">Link de prueba</a>` : '');
+          m.innerHTML = d.prueba
+            ? `Modo prueba: no se mandó el mail. <a href="${esc(d.prueba)}" target="_blank" rel="noopener">Link de prueba</a>`
+            : 'Listo: le mandamos un mail con el link (vale 3 días).';
         } catch (err) { m.className = 'guardar__msg guardar__msg--dirty'; m.textContent = (err as Error).message; }
         b.disabled = false;
       });
