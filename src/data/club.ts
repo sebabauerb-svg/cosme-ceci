@@ -1,27 +1,39 @@
 /**
- * CLUB DE LAS ESTACIONES PREMIUM — plan detallado
- * ===============================================
- * Definido por Ceci (nov-2026). Reemplaza al Club viejo ($4.800 en 4 cuotas), que
- * se sacó porque no quedaba claro si incluía la consulta (no la incluía).
- *
- * - Valor en DÓLARES, a propósito (decisión de Ceci): U$S 200 por año.
- * - 4 consultas presenciales al año, una por estación.
- * - Registro de seguimiento: la paciente anota cómo siente su piel, sus productos
- *   actuales y las nuevas recomendaciones; Ceci le recuerda completarlo, la ayuda
- *   si lo necesita y lo revisa con ella en una consulta online.
- * - Pago: único, con 10% de descuento por transferencia, o hasta 3 cuotas por
- *   Mercado Pago (ver src/data/pago.ts → formasDePago).
- * - El `id` de la modalidad sigue siendo 'club' (lo usan /reservar y la base).
+ * CLUB DE LAS ESTACIONES — dos planes
+ * ===================================
+ * Definido por Ceci (nov-2026):
+ * - **Regular:** las 4 consultas son VIRTUALES. Mantiene el valor de siempre ($4.800/año).
+ *   Se le sacó la línea "consulta presencial con beneficio de socia": confundía, porque
+ *   la presencial NO está incluida.
+ * - **Premium:** las 4 consultas son PRESENCIALES, más el registro de seguimiento (cómo
+ *   siente la piel, productos actuales, nuevas recomendaciones) que Ceci recuerda
+ *   completar y revisa en una consulta online. En DÓLARES a propósito: U$S 200/año.
+ * - Pago de ambos: único, con 10% de descuento por transferencia, o hasta 3 cuotas por
+ *   Mercado Pago (src/data/pago.ts → formasDePago).
+ * - `modalidadId` es la modalidad de /reservar (src/data/modalidades.ts): no cambiarla,
+ *   se guarda en la base.
  */
+
+export type PlanClub = {
+  modalidadId: 'club' | 'club-premium';
+  nombre: string;
+  /** Lo que distingue a un plan del otro, en una línea. */
+  formato: string;
+  precio: string;
+  incluye: string[];
+  destacado?: boolean;
+};
+
+/** Modalidades que son membresía anual (sin fecha, sin seña). */
+export const MEMBRESIAS: readonly string[] = ['club', 'club-premium'];
+export const esMembresia = (modalidad: string) => MEMBRESIAS.includes(modalidad);
+
 export const club = {
-  nombre: 'Club de las Estaciones Premium',
+  nombre: 'El Club de las Estaciones',
   subtitulo: 'Membresía anual de cuidado evolutivo',
   intro:
     'La piel es un órgano vivo que cambia con el clima, las estaciones y el tiempo. Una rutina ' +
     'fija todo el año es una rutina obsoleta. El Club es el acompañamiento continuo de tu piel.',
-
-  precio: 'U$S 200',
-  precioPeriodo: 'por año',
 
   estaciones: [
     { nombre: 'Otoño', texto: 'Recuperar la piel después del verano y reparar la barrera.' },
@@ -30,16 +42,33 @@ export const club = {
     { nombre: 'Verano', texto: 'Proteger, aligerar texturas y reforzar el cuidado solar.' },
   ],
 
-  incluye: [
-    '4 consultas presenciales al año, una en cada cambio de estación',
-    'Tu registro de seguimiento: cómo sentís tu piel, tus productos actuales y las nuevas recomendaciones',
-    'Una consulta online para revisar juntas tu registro, y ayuda para completarlo cuando lo necesites',
-    'Adaptación de tu recetario domiciliario en cada estación',
-  ],
+  planes: [
+    {
+      modalidadId: 'club',
+      nombre: 'Club Regular',
+      formato: 'Consultas virtuales',
+      precio: '$4.800',
+      incluye: [
+        '4 consultas virtuales al año, una en cada cambio de estación',
+        'Adaptación de tu recetario domiciliario en cada estación',
+        'Prioridad de agenda y acompañamiento entre consultas',
+      ],
+    },
+    {
+      modalidadId: 'club-premium',
+      nombre: 'Club Premium',
+      formato: 'Consultas presenciales',
+      precio: 'U$S 200',
+      destacado: true,
+      incluye: [
+        '4 consultas presenciales al año, una en cada cambio de estación',
+        'Tu registro de seguimiento: cómo sentís tu piel, tus productos actuales y las nuevas recomendaciones',
+        'Una consulta online para revisar juntas tu registro, y ayuda para completarlo cuando lo necesites',
+        'Adaptación de tu recetario domiciliario en cada estación',
+      ],
+    },
+  ] satisfies PlanClub[],
 
-  nota:
-    'Vos vas completando tu registro y yo te recuerdo hacerlo: así vemos, estación a estación, ' +
-    'cómo evoluciona tu piel.',
-
-  cta: 'Sumarme al Club',
+  precioPeriodo: 'por año',
+  cta: 'Sumarme',
 };

@@ -12,7 +12,7 @@ import { formasDePago } from '../data/pago';
       <p class="lead mx-auto text-center">{club.intro}</p>
       <a
         class="club__more"
-        href={whatsappLink('Hola Ceci! Me gustaría saber más sobre el Club de las Estaciones Premium.')}
+        href={whatsappLink('Hola Ceci! Me gustaría saber más sobre el Club de las Estaciones.')}
         target="_blank"
         rel="noopener"
       >
@@ -29,36 +29,31 @@ import { formasDePago } from '../data/pago';
       ))}
     </div>
 
-    <div class="club__plan reveal">
-      <details class="club__incluye" data-colapsa-movil open>
-        <summary class="club__incluyeHead">
-          <h3>Qué incluye tu membresía</h3>
-          <span class="club__chev" aria-hidden="true">+</span>
-        </summary>
-        <ul>
-          {club.incluye.map((i) => (
-            <li><span aria-hidden="true">✓</span> {i}</li>
-          ))}
-        </ul>
-        <p class="club__nota">{club.nota}</p>
-      </details>
-
-      <aside class="club__precio">
-        <span class="club__monto">{club.precio}</span>
-        <span class="club__periodo">{club.precioPeriodo}</span>
-        <ul class="club__pago">
-          <li>{formasDePago.transferencia}</li>
-          <li>{formasDePago.cuotas}</li>
-        </ul>
-        <a
-          href={whatsappLink('Hola Ceci! Me interesa sumarme al Club de las Estaciones Premium. ¿Cómo hago?')}
-          class="btn btn--primary"
-          target="_blank"
-          rel="noopener"
-        >
-          {club.cta}
-        </a>
-      </aside>
+    <div class="club__planes">
+      {club.planes.map((p) => (
+        <article class={`club__plan reveal ${p.destacado ? 'club__plan--feat' : ''}`}>
+          <header class="club__planHead">
+            <h3>{p.nombre}</h3>
+            <span class="club__formato">{p.formato}</span>
+          </header>
+          <ul class="club__incluye">
+            {p.incluye.map((i) => (
+              <li><span aria-hidden="true">✓</span> {i}</li>
+            ))}
+          </ul>
+          <div class="club__precio">
+            <span class="club__monto">{p.precio}</span>
+            <span class="club__periodo">{club.precioPeriodo}</span>
+            <ul class="club__pago">
+              <li>{formasDePago.transferencia}</li>
+              <li>{formasDePago.cuotas}</li>
+            </ul>
+            <a href={`/reservar?modalidad=${p.modalidadId}`} class="btn btn--primary">
+              {club.cta}<span class="sr-only"> al {p.nombre}</span>
+            </a>
+          </div>
+        </article>
+      ))}
     </div>
   </div>
 </section>
@@ -113,49 +108,52 @@ import { formasDePago } from '../data/pago';
   }
   .club__est p { color: var(--sand); font-size: 0.92rem; }
 
+  .club__planes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.2rem;
+    margin-top: 2rem;
+  }
   .club__plan {
     display: grid;
-    grid-template-columns: 1.4fr 0.6fr;
-    gap: 2rem;
-    margin-top: 2rem;
-    align-items: center;
+    grid-template-rows: auto 1fr auto;
+    gap: 1.2rem;
     background: rgba(250, 246, 240, 0.05);
     border: 1px solid rgba(250, 246, 240, 0.14);
     border-radius: var(--radius);
-    padding: clamp(1.5rem, 4vw, 2.5rem);
+    padding: clamp(1.4rem, 3vw, 2rem);
   }
-  .club__incluye h3 { color: var(--cream); margin-bottom: 1.1rem; }
-  .club__incluyeHead { list-style: none; }
-  .club__incluyeHead::-webkit-details-marker { display: none; }
-  .club__chev { display: none; }
-  @media (min-width: 761px) {
-    .club__incluyeHead { pointer-events: none; }
+  .club__plan--feat { border-color: var(--clay); }
+  .club__planHead h3 { color: var(--cream); margin: 0 0 0.2rem; }
+  .club__formato {
+    font-family: var(--font-serif);
+    font-size: 1.05rem;
+    color: var(--clay);
   }
-  .club__incluye ul { list-style: none; display: grid; gap: 0.8rem; margin-bottom: 1.4rem; }
+  .club__incluye { list-style: none; display: grid; gap: 0.75rem; align-content: start; }
   .club__incluye li { display: flex; gap: 0.7rem; color: var(--cream); }
   .club__incluye span { color: var(--sage); font-weight: 700; flex: none; }
-  .club__nota { color: var(--sand); font-size: 0.9rem; opacity: 0.85; }
 
   .club__precio {
     text-align: center;
     background: var(--cream);
     border-radius: var(--radius);
-    padding: 1.8rem 1.4rem;
+    padding: 1.5rem 1.2rem;
     display: grid;
     gap: 0.25rem;
     justify-items: center;
   }
-  .club__monto { font-family: var(--font-serif); font-size: 2.6rem; color: var(--ink); line-height: 1; }
+  .club__monto { font-family: var(--font-serif); font-size: 2.4rem; color: var(--ink); line-height: 1; }
   .club__periodo { color: var(--ink-soft); font-size: 0.95rem; }
   .club__pago {
     list-style: none; display: grid; gap: 0.3rem;
-    color: var(--ink-soft); font-size: 0.85rem; margin: 0.6rem 0 1rem; max-width: 26ch;
+    color: var(--ink-soft); font-size: 0.85rem; margin: 0.6rem 0 1rem; max-width: 30ch;
   }
   .club__precio .btn { width: 100%; justify-content: center; }
 
   @media (max-width: 860px) {
     .club__estaciones { grid-template-columns: repeat(2, 1fr); }
-    .club__plan { grid-template-columns: 1fr; }
+    .club__planes { grid-template-columns: 1fr; }
   }
 
   /* Mobile: las estaciones quedan en 2×2 compacto y el plan pierde aire sobrante. */
@@ -174,25 +172,12 @@ import { formasDePago } from '../data/pago';
     }
     .club__estaciones::-webkit-scrollbar { display: none; }
     .club__est { padding: 0.95rem; flex: 0 0 72%; scroll-snap-align: start; }
-    /* "Qué incluye" como acordeón */
-    .club__incluyeHead {
-      position: relative; cursor: pointer; padding-right: 2.2rem;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .club__incluye:not([open]) .club__incluyeHead h3 { margin-bottom: 0; }
-    .club__chev {
-      display: block; position: absolute; right: 0; top: 50%; translate: 0 -50%;
-      font-size: 1.6rem; line-height: 1; color: var(--sage);
-      transition: rotate 0.2s ease;
-    }
-    .club__incluye[open] .club__chev { rotate: 45deg; }
     .club__estName { font-size: 1.1rem; margin-bottom: 0.35rem; }
     .club__est p { font-size: 0.85rem; }
-    .club__plan { gap: 1.4rem; margin-top: 1.4rem; padding: 1.25rem; }
-    .club__incluye h3 { margin-bottom: 0.8rem; }
-    .club__incluye ul { gap: 0.6rem; margin-bottom: 1.1rem; }
+    .club__planes { margin-top: 1.4rem; }
+    .club__plan { gap: 1rem; padding: 1.25rem; }
+    .club__incluye { gap: 0.6rem; }
     .club__incluye li { font-size: 0.95rem; }
-    .club__nota { font-size: 0.85rem; }
     .club__precio { padding: 1.4rem 1.2rem; }
     .club__monto { font-size: 2.2rem; }
   }

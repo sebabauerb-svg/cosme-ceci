@@ -7,6 +7,7 @@ import { notificarReserva } from '../../lib/email';
 import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
 import { senaOnline, requiereSede, SESION_ID } from '../../lib/precios';
 import { categoriasTratamientos } from '../../data/tratamientos';
+import { esMembresia as esMembresiaClub } from '../../data/club';
 
 export const prerender = false;
 
@@ -16,6 +17,7 @@ const NOMBRE_MODALIDAD: Record<string, string> = {
   'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
   sesion: 'Sesión de tratamiento',
   club: 'Club de las Estaciones',
+  'club-premium': 'Club de las Estaciones Premium',
 };
 
 // Tope de reservas "a confirmar" (sin pago) SIMULTÁNEAS por sede: evita que las
@@ -101,7 +103,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     return json({ ok: false, error: 'Faltan datos obligatorios' }, 400);
   }
 
-  const esMembresia = modalidad === 'club';
+  const esMembresia = esMembresiaClub(modalidad);
   if (!esMembresia && (!fecha || !hora)) {
     return json({ ok: false, error: 'Falta fecha u hora' }, 400);
   }

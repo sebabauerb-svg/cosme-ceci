@@ -4,7 +4,20 @@ import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
 
 // Precio vigente (lo que Ceci carga en /admin → Precios).
 const precios = await leerPrecios();
-const modalidades = base.map((m) => ({ ...m, precio: precioModalidadTexto(precios, m) }));
+// El Club Premium no lleva tarjeta propia: la del Club lleva a #club, donde están los dos planes.
+const modalidades = base
+  .filter((m) => m.id !== 'club-premium')
+  .map((m) => ({ ...m, precio: precioModalidadTexto(precios, m) }))
+  .map((m) =>
+    m.id === 'club'
+      ? {
+          ...m,
+          subtitulo: 'Membresía anual de cuidado evolutivo',
+          precio: 'Desde $4.800 / año',
+          precioNota: 'Regular (virtual) o Premium (presencial, U$S 200)',
+        }
+      : m
+  );
 ---
 
 <section class="section section--alt" id="modalidades">
