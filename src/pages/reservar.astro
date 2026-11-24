@@ -4,6 +4,7 @@ import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
 import { modalidades } from '../data/modalidades';
+import { esMembresia } from '../data/club';
 import { site, whatsappLink } from '../data/site';
 import { SENA_UYU, SESION_ID, senaOnline } from '../lib/precios';
 import { leerPrecios, precioModalidadTexto, claveTratamiento } from '../lib/precios-vigentes';
@@ -52,7 +53,7 @@ const itemsModalidades = modalidades.map((m) => ({
   subtitulo: m.subtitulo,
   precio: precioModalidadTexto(precios, m) ?? 'A coordinar',
   precioNota: m.precioNota ?? '',
-  esMembresia: m.id === 'club', // el Club es membresía anual, no turno suelto
+  esMembresia: esMembresia(m.id), // el Club (regular o Premium) es membresía anual, no turno suelto
   // La web cobra una seña, no el total: el saldo se abona en la consulta. No se
   // muestra la cifra del saldo porque el valor final puede cambiar (ej. la
   // consulta se bonifica al contratar un protocolo el mismo día).

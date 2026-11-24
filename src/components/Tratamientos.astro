@@ -2,6 +2,7 @@
 import { categoriasTratamientos, formatUYU } from '../data/tratamientos';
 import { modalidades } from '../data/modalidades';
 import { whatsappLink } from '../data/site';
+import { formasDePago } from '../data/pago';
 import {
   claveTratamiento,
   leerPrecios,
@@ -66,11 +67,17 @@ const dev = import.meta.env.DEV;
                       )}
                     </div>
                     <p>{t.descripcion}</p>
-                    {(t.duracion || (v.precio != null && v.paquete6 != null)) && (
+                    {(t.duracion || (v.precio != null && (v.paquete6 != null || t.paquete12))) && (
                       <p class="trat__meta">
                         {t.duracion && <span>{t.duracion}</span>}
                         {v.precio != null && v.paquete6 != null && (
                           <span>Paquete de 6 sesiones: <strong>{formatUYU(v.paquete6)}</strong></span>
+                        )}
+                        {v.precio != null && t.paquete12 && (
+                          <span>Paquete de 12 sesiones: <strong>{formatUYU(t.paquete12)}</strong></span>
+                        )}
+                        {v.precio != null && (v.paquete6 != null || t.paquete12) && t.paqueteNota && (
+                          <span class="trat__paqNota">Sesiones {t.paqueteNota}</span>
                         )}
                       </p>
                     )}
@@ -88,6 +95,11 @@ const dev = import.meta.env.DEV;
         );
       })}
     </div>
+
+    <ul class="trat__pago reveal">
+      <li>{formasDePago.transferencia}</li>
+      <li>{formasDePago.cuotas}</li>
+    </ul>
 
     <p class="trat__fine">
       Valores de referencia en pesos uruguayos. El plan final, con la cantidad de sesiones y la
@@ -270,9 +282,27 @@ const dev = import.meta.env.DEV;
     font-weight: 700;
     letter-spacing: 0.04em;
   }
+  .trat__paqNota { flex-basis: 100%; font-style: italic; }
+  /* Formas de pago: van antes de la letra chica porque cambian el precio final. */
+  .trat__pago {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem;
+    margin: 2.5rem auto 0;
+  }
+  .trat__pago li {
+    padding: 0.45rem 0.95rem;
+    border: 1px solid var(--sand);
+    border-radius: 999px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
   .trat__fine {
     max-width: 640px;
-    margin: 2.5rem auto 0;
+    margin: 1.2rem auto 0;
     text-align: center;
     font-size: 0.85rem;
   }

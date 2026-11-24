@@ -24,6 +24,7 @@ export const NOMBRE_MODALIDAD: Record<string, string> = {
   'skincare-inteligente': 'Asesoramiento Skincare Inteligente',
   sesion: 'Sesión de tratamiento',
   club: 'Club de las Estaciones',
+  'club-premium': 'Club de las Estaciones Premium',
   manual: 'Reserva manual',
 };
 

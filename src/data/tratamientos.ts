@@ -31,6 +31,13 @@ export type Tratamiento = {
   unidad?: string;
   /** Valor del paquete de 6 sesiones, si existe. */
   paquete6?: Precio;
+  /**
+   * Paquete de 12 sesiones (nov-2026, solo corporal). Vive en el código: todavía
+   * no se edita desde /admin → Precios.
+   */
+  paquete12?: number;
+  /** Cómo se arman las sesiones del paquete (ej. "alternando ambos tratamientos"). */
+  paqueteNota?: string;
   /** Duración aproximada de la sesión (ej. "60 min"). Opcional: se muestra si está. */
   duracion?: string;
 };
@@ -208,6 +215,9 @@ export const categoriasTratamientos: CategoriaTratamiento[] = [
         precio: 2600,
         unidad: 'por zona',
         paquete6: 13200,
+        // Definido por Ceci (nov-2026).
+        paquete12: 24000,
+        paqueteNota: 'alternando ultracavitación y mesoterapia',
       },
       {
         id: 'ipl-corporal',

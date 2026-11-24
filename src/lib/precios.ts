@@ -24,10 +24,11 @@ export const PRECIOS_UYU: Record<string, number | null> = {
   presencial: 1800,
   virtual: 1500,
   'skincare-inteligente': 1600,
-  // El Club es una membresía anual en cuotas estacionales (4 × $1.200): no se
-  // cobra como pago único por Checkout Pro. Se coordina y cobra aparte → sin
-  // pago online automático (cae al flujo de coordinación manual).
+  // El Club (Regular $4.800, Premium U$S 200, src/data/club.ts) es membresía anual:
+  // no se cobra por Checkout Pro. Se coordina y cobra aparte → sin pago online
+  // automático (cae al flujo de coordinación manual).
   club: null,
+  'club-premium': null,
 };
 
 /**
