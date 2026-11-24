@@ -8,7 +8,8 @@ import { site, whatsappLink } from '../../data/site';
 // "Mi cuenta": sin sesión, pide el email para mandar el link mágico; con
 // sesión, muestra sus turnos. Apagado hasta PERFIL_PACIENTES_ACTIVO=true.
 export const prerender = false;
-if (!perfilActivo()) return Astro.rewrite('/404');
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
 Astro.response.headers.set('cache-control', 'no-store');
 
 const sql = getSql();

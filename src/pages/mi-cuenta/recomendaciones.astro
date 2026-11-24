@@ -8,7 +8,8 @@ import { ESTADOS_PLAN } from '../../data/ficha';
 // consulta (el panel avisa que las ve la paciente) y su plan con el avance.
 // Nada de lo clínico interno (ver src/lib/cuenta.ts).
 export const prerender = false;
-if (!perfilActivo()) return Astro.rewrite('/404');
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
 Astro.response.headers.set('cache-control', 'no-store');
 
 const sql = getSql();

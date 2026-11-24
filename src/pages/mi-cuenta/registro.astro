@@ -8,7 +8,8 @@ import { HABITOS, MAX_PRODUCTOS, MOMENTOS, NOTAS, OBJETIVOS, PASOS, SENSACIONES 
 // Cada envío es una entrada nueva con fecha (la evolución); Ceci la ve en la
 // ficha del panel. Dato de salud: primero acepta el uso (Ley 18.331).
 export const prerender = false;
-if (!perfilActivo()) return Astro.rewrite('/404');
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
 Astro.response.headers.set('cache-control', 'no-store');
 
 const sql = getSql();

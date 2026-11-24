@@ -6,7 +6,8 @@ import { perfilActivo } from '../../lib/cuenta';
 // abrir la página: los antivirus de los correos abren los links solos y
 // gastarían el link de un solo uso.
 export const prerender = false;
-if (!perfilActivo()) return Astro.rewrite('/404');
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
 Astro.response.headers.set('cache-control', 'no-store');
 Astro.response.headers.set('referrer-policy', 'no-referrer');
 ---
