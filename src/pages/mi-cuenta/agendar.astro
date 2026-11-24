@@ -1,0 +1,176 @@
+---
+import CuentaShell from '../../components/cuenta/CuentaShell.astro';
+import { getSql, ensurePlanesAgenda } from '../../lib/db';
+import { pacienteActual, perfilActivo } from '../../lib/cuenta';
+import { motivoNoAgenda, planesDePaciente, SEDES_SESION } from '../../lib/planes-agenda';
+import { POLITICA_CANCELACION } from '../../data/pago';
+
+// Agendar la próxima sesión de un plan pago (src/lib/planes-agenda.ts): sede,
+// día y horario. Queda confirmada, sin seña.
+export const prerender = false;
+// Apagado: a la home. (Astro.rewrite('/404') da 500: la 404 es estática y esta ruta no.)
+if (!perfilActivo()) return Astro.redirect('/');
+Astro.response.headers.set('cache-control', 'no-store');
+
+const sql = getSql();
+await ensurePlanesAgenda(sql);
+const p = await pacienteActual(sql, Astro.cookies);
+if (!p) return Astro.redirect('/mi-cuenta');
+const planId = Astro.url.searchParams.get('plan') ?? '';
+const plan = (await planesDePaciente(sql, p.id)).find((x) => x.id === planId) ?? null;
+const motivo = plan ? motivoNoAgenda(plan) : 'No encontramos ese tratamiento.';
+---
+
+<CuentaShell title="Agendar mi sesión" nombre={p.nombre} activa="turnos">
+  {!plan || motivo ? (
+    <div class="mc__card mc__card--suave">
+      <p class="mc__meta" style="margin:0">{motivo}</p>
+      <div class="mc__acciones"><a class="btn btn--ghost" href="/mi-cuenta">Volver a mi cuenta</a></div>
+    </div>
+  ) : (
+    <div class="ag" data-plan={plan.id}>
+      <div class="mc__card mc__card--suave">
+        <h2 class="mc__t" style="margin:0 0 0.3rem">{plan.tratamiento}</h2>
+        <p class="mc__meta">Sesión {plan.hechas + plan.agendadas + 1}{plan.sesiones ? ` de ${plan.sesiones}` : ''} · Ya está paga: no se cobra seña.</p>
+      </div>
+
+      <div id="ag-alert" class="mc__alert" role="alert" hidden></div>
+
+      <section id="ag-elegir">
+        <p class="ag__label">¿Dónde?</p>
+        <div class="ag__sedes">
+          {SEDES_SESION.map((s) => <button type="button" class="ag__sede" data-sede={s.slug}>{s.nombre}</button>)}
+        </div>
+        <p class="ag__label" id="ag-dias-label" hidden>Días disponibles</p>
+        <p class="mc__vacio" id="ag-cargando" hidden>Buscando horarios…</p>
+        <div class="ag__dias" id="ag-dias"></div>
+        <p class="ag__label" id="ag-horas-label" hidden>Horarios</p>
+        <div class="ag__horas" id="ag-horas"></div>
+        <div class="ag__confirmar" id="ag-confirmar" hidden>
+          <p id="ag-resumen"></p>
+          <button type="button" class="btn btn--primary" id="ag-ok">Confirmar mi sesión</button>
+        </div>
+      </section>
+
+      <section id="ag-listo" class="ag__listo" hidden>
+        <span class="ag__check" aria-hidden="true">✓</span>
+        <h2>¡Listo, tu sesión quedó agendada!</h2>
+        <p id="ag-listo-txt"></p>
+        <p class="mc__sub" id="ag-listo-sub">Te mandamos un mail con el día, la hora y el link para cambiarla si lo necesitás.</p>
+        <a class="btn btn--ghost" href="/mi-cuenta">Volver a mi cuenta</a>
+      </section>
+      <p class="ag__politica">{POLITICA_CANCELACION}</p>
+    </div>
+  )}
+</CuentaShell>
+
+<script>
+  const raiz = document.querySelector<HTMLElement>('.ag');
+  if (raiz) {
+    const plan = raiz.dataset.plan!;
+    const $ = (id: string) => document.getElementById(id)!;
+    let sede: string | null = null;
+    let sedeNombre = '';
+    let elegido: { fecha: string; label: string; hora: string } | null = null;
+    const alerta = (t: string) => { $('ag-alert').textContent = t; $('ag-alert').hidden = !t; };
+    const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+    function limpiar() {
+      elegido = null;
+      $('ag-horas').innerHTML = ''; $('ag-horas-label').hidden = true; $('ag-confirmar').hidden = true;
+    }
+
+    async function cargar() {
+      limpiar(); alerta('');
+      $('ag-dias').innerHTML = ''; $('ag-dias-label').hidden = true; $('ag-cargando').hidden = false;
+      try {
+        const res = await fetch(`/api/cuenta/agendar?plan=${plan}&sede=${sede}`, { cache: 'no-store' });
+        const d = await res.json().catch(() => ({}));
+        $('ag-cargando').hidden = true;
+        if (!res.ok || !d.ok) { alerta(d.error || 'No pudimos cargar los horarios.'); return; }
+        const dias = d.slots as { fecha: string; label: string; horas: string[] }[];
+        if (!dias.length) { alerta(`No hay horarios libres en ${sedeNombre} por ahora. Probá la otra sede o escribile a Ceci.`); return; }
+        $('ag-dias-label').hidden = false;
+        for (const dia of dias) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'ag__dia'; b.textContent = dia.label;
+          b.addEventListener('click', () => {
+            document.querySelectorAll('.ag__dia').forEach((x) => x.classList.toggle('is-sel', x === b));
+            limpiar();
+            $('ag-horas-label').hidden = false;
+            for (const h of dia.horas) {
+              const hb = document.createElement('button');
+              hb.type = 'button'; hb.className = 'ag__hora'; hb.textContent = h;
+              hb.addEventListener('click', () => {
+                document.querySelectorAll('.ag__hora').forEach((x) => x.classList.toggle('is-sel', x === hb));
+                elegido = { fecha: dia.fecha, label: dia.label, hora: h };
+                $('ag-resumen').textContent = `${capital(dia.label)} a las ${h} h en ${sedeNombre}`;
+                $('ag-confirmar').hidden = false;
+                $('ag-confirmar').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              });
+              $('ag-horas').append(hb);
+            }
+            $('ag-horas-label').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
+          $('ag-dias').append(b);
+        }
+      } catch {
+        $('ag-cargando').hidden = true; alerta('Sin conexión. Probá de nuevo en un momento.');
+      }
+    }
+
+    document.querySelectorAll<HTMLButtonElement>('.ag__sede').forEach((b) => b.addEventListener('click', () => {
+      document.querySelectorAll('.ag__sede').forEach((x) => x.classList.toggle('is-sel', x === b));
+      sede = b.dataset.sede!; sedeNombre = b.textContent || '';
+      cargar();
+    }));
+
+    const ok = $('ag-ok') as HTMLButtonElement;
+    ok.addEventListener('click', async () => {
+      if (!elegido || !sede) return;
+      ok.disabled = true; ok.textContent = 'Agendando…'; alerta('');
+      try {
+        const res = await fetch('/api/cuenta/agendar', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ plan, sede, fecha: elegido.fecha, hora: elegido.hora }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok && d.ok) {
+          $('ag-elegir').hidden = true;
+          $('ag-listo-txt').textContent = `${capital(elegido.label)} a las ${elegido.hora} h en ${sedeNombre}.`;
+          if (d.prueba) $('ag-listo-sub').textContent = 'Modo prueba (preview): no se mandó el mail ni se creó el evento en el calendario.';
+          $('ag-listo').hidden = false;
+          $('ag-listo').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        alerta(d.error || 'No pudimos agendar. Probá de nuevo.');
+        if (res.status === 409) cargar();
+      } catch {
+        alerta('Sin conexión. Probá de nuevo en un momento.');
+      }
+      ok.disabled = false; ok.textContent = 'Confirmar mi sesión';
+    });
+  }
+</script>
+
+<style is:global>
+  .ag__label { font-weight: 600; font-size: 0.92rem; margin: 1.3rem 0 0.7rem; color: var(--ink); }
+  .ag__sedes, .ag__dias, .ag__horas { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .ag__sede, .ag__dia, .ag__hora {
+    background: var(--white); border: 1px solid var(--sand); border-radius: 999px; padding: 0.65rem 1.05rem;
+    font: inherit; font-size: 0.9rem; color: var(--ink); cursor: pointer; min-height: 44px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .ag__dia::first-letter { text-transform: uppercase; }
+  .ag__hora { border-radius: var(--radius-sm); font-weight: 600; background: var(--cream-deep); }
+  .ag__sede:hover, .ag__dia:hover, .ag__hora:hover { border-color: var(--sage); }
+  .ag__sede.is-sel, .ag__dia.is-sel, .ag__hora.is-sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }
+  .ag__confirmar { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--sand); text-align: center; }
+  .ag__confirmar p { font-weight: 600; margin: 0 0 0.9rem; }
+  .ag__listo { text-align: center; padding: 1rem 0; }
+  .ag__check {
+    width: 64px; height: 64px; border-radius: 50%; background: var(--sage); color: var(--cream);
+    display: grid; place-items: center; font-size: 2rem; margin: 0 auto 1rem;
+  }
+  .ag__politica { font-size: 0.8rem; line-height: 1.6; color: var(--ink-soft); text-align: center; max-width: 460px; margin: 2rem auto 0; }
+</style>

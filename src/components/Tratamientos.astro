@@ -117,7 +117,7 @@ const comprarPaquetes = pagoMembresiasActivo();
     </p>
 
     <div class="trat__cta reveal">
-      <p>¿No sabés cuál es para vos? Lo definimos juntas en tu consulta de valoración.</p>
+      <p>¿No sabés cuál es para vos? Lo definimos en conjunto en tu consulta de valoración.</p>
       <div class="trat__ctaBtns">
         <a href="/reservar?modalidad=presencial" class="btn btn--primary">Reservar consulta</a>
         <a
@@ -133,43 +133,19 @@ const comprarPaquetes = pagoMembresiasActivo();
   </div>
 </section>
 
-<!-- En mobile el catálogo arranca plegado; sin JS queda todo abierto (open en el server). -->
+<!-- El catálogo arranca plegado en todos los anchos (revisión UX nov-2026: en desktop
+     ocupaba ~3.600 px abierto). Sin JS queda todo abierto (open en el server). -->
 <script is:inline>
-  (() => {
-    const mq = window.matchMedia('(max-width: 760px)');
-    const cats = document.querySelectorAll('#tratamientos .trat__cat');
-    const apply = (mobile) => {
-      cats.forEach((d) => {
-        if (mobile) d.removeAttribute('open');
-        else d.setAttribute('open', '');
-      });
-    };
-    let last = mq.matches;
-    apply(last);
-    const onChange = () => {
-      if (mq.matches === last) return;
-      last = mq.matches;
-      apply(last);
-    };
-    mq.addEventListener('change', onChange);
-    // Fallback: algunos navegadores no disparan 'change' de matchMedia al redimensionar.
-    window.addEventListener('resize', onChange, { passive: true });
-  })();
+  document.querySelectorAll('#tratamientos .trat__cat').forEach((d) => d.removeAttribute('open'));
 </script>
 
 <style>
   .trat__head { text-align: center; max-width: 760px; margin-inline: auto; }
   .trat__head h2 { margin: 0.4rem 0 1rem; }
-  .trat__cats { display: grid; gap: 2.5rem; margin-top: 3rem; }
-  .trat__cat {
-    display: grid;
-    grid-template-columns: 0.8fr 1.2fr;
-    gap: 2rem;
-    align-items: start;
-    padding-top: 2rem;
-    border-top: 1px solid var(--sand);
-  }
-  .trat__cat:first-child { border-top: 0; padding-top: 0; }
+  /* Cada categoría es una fila plegable (como el índice de la portada): nombre,
+     resumen y "Desde $X"; al tocarla se abren sus tratamientos. */
+  .trat__cats { display: grid; margin-top: 3rem; border-bottom: 1px solid var(--sand); }
+  .trat__cat { border-top: 1px solid var(--sand); }
   .trat__grupo {
     font-size: 0.78rem;
     letter-spacing: 0.16em;
@@ -177,16 +153,41 @@ const comprarPaquetes = pagoMembresiasActivo();
     color: var(--clay);
     font-weight: 600;
   }
-  .trat__catHead { list-style: none; }
+  .trat__catHead {
+    list-style: none;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) 8.5rem; /* columna fija: el resumen queda alineado haya o no "Desde" */
+    column-gap: 2.5rem;
+    align-items: center;
+    padding: 1.5rem 3.5rem 1.5rem 0.75rem;
+    cursor: pointer;
+    transition: background-color 0.25s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .trat__catHead:hover { background-color: var(--cream-deep); }
   .trat__catHead::-webkit-details-marker { display: none; }
-  .trat__catHead h3 { margin: 0.4rem 0 0.6rem; }
-  .trat__catHead p { font-size: 0.95rem; }
-  .trat__chev { display: none; }
+  .trat__grupo { grid-column: 1; }
+  .trat__catHead h3 { grid-column: 1; margin: 0.3rem 0 0; }
+  .trat__catHead p { grid-column: 2; grid-row: 1 / span 2; font-size: 0.95rem; }
+  .trat__catHead .trat__desde { grid-column: 3; grid-row: 1 / span 2; justify-self: end; margin: 0; white-space: nowrap; }
+  .trat__chev {
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    transform: translateY(-50%);
+    font-size: 1.6rem;
+    line-height: 1;
+    color: var(--sage-deep);
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  .trat__cat[open] .trat__chev { transform: translateY(-50%) rotate(45deg); }
   .trat__list {
     list-style: none;
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.1rem;
+    padding: 0.4rem 0.75rem 2rem;
   }
   .trat__list li {
     background: var(--white);
@@ -325,18 +326,16 @@ const comprarPaquetes = pagoMembresiasActivo();
     font-size: 0.85rem;
   }
 
-  /* Desktop y tablet: el details se comporta como el bloque estático de siempre. */
-  @media (min-width: 761px) {
-    .trat__catHead { pointer-events: none; position: sticky; top: 100px; }
-  }
-  @media (min-width: 761px) and (max-width: 860px) {
-    .trat__cat { grid-template-columns: 1fr; gap: 1.2rem; }
-    .trat__catHead { position: static; }
+  /* Tablet: el resumen pasa debajo del nombre. */
+  @media (max-width: 980px) {
+    .trat__catHead { grid-template-columns: minmax(0, 1fr) auto; column-gap: 1.5rem; }
+    .trat__catHead .trat__desde { grid-column: 2; }
+    .trat__catHead p { grid-column: 1 / -1; grid-row: 3; margin-top: 0.5rem; }
   }
 
   /* Mobile: cada categoría es un acordeón; el catálogo entero cabe en una pantalla. */
   @media (max-width: 760px) {
-    .trat__cats { gap: 0.8rem; margin-top: 2rem; }
+    .trat__cats { gap: 0.8rem; margin-top: 2rem; border-bottom: 0; }
     .trat__cat {
       display: block;
       background: var(--white);
@@ -347,11 +346,11 @@ const comprarPaquetes = pagoMembresiasActivo();
     /* El :first-child del layout desktop anula el border-top; acá lo recupera. */
     .trat__cat:first-child { padding-top: 0; border-top: 1px solid var(--sand); }
     .trat__catHead {
-      position: relative;
-      cursor: pointer;
+      display: block;
       padding: 1.05rem 3rem 1.05rem 1.2rem;
-      -webkit-tap-highlight-color: transparent;
     }
+    .trat__catHead:hover { background-color: transparent; }
+    .trat__catHead .trat__desde { display: block; margin: 0.35rem 0 0; }
     .trat__catHead h3 { margin: 0.25rem 0 0; font-size: 1.2rem; }
     .trat__catHead p { display: none; margin-top: 0.5rem; }
     .trat__cat[open] .trat__catHead p { display: block; }
@@ -360,6 +359,7 @@ const comprarPaquetes = pagoMembresiasActivo();
       position: absolute;
       top: 1.05rem;
       right: 1.2rem;
+      transform: none;
       font-size: 1.5rem;
       line-height: 1.4;
       color: var(--sage);
@@ -373,8 +373,8 @@ const comprarPaquetes = pagoMembresiasActivo();
     }
     .trat__list li { background: var(--cream); border-color: color-mix(in srgb, var(--sand) 60%, transparent); }
     .trat__cta { margin-top: 2rem; }
-    @media (prefers-reduced-motion: reduce) {
-      .trat__chev { transition: none; }
-    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .trat__chev, .trat__catHead { transition: none; }
   }
 </style>

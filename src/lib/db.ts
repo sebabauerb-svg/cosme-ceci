@@ -451,3 +451,19 @@ export async function ensurePerfil(sql: any) {
   await sql`create index if not exists registros_piel_paciente on registros_piel (paciente_id, fecha desc)`;
   await sql`alter table registros_piel enable row level security`;
 }
+
+/**
+ * Sesiones de un plan que agenda la paciente (idempotente, solo agrega). Ver
+ * supabase/migrations/0011_sesiones_paquete.sql y src/lib/planes-agenda.ts.
+ *  - planes.habilitado_at / habilitado_por ('ceci' | 'compra'): el plan está
+ *    contratado y pago, y la paciente puede agendar sus sesiones sola. Sin esto
+ *    no agenda nada (evita turnos sin pagar).
+ *  - planes.compra_id: la compra online (#26) de la que salió el plan.
+ */
+export async function ensurePlanesAgenda(sql: any) {
+  await ensurePerfil(sql);
+  await sql`alter table planes add column if not exists habilitado_at timestamptz`;
+  await sql`alter table planes add column if not exists habilitado_por text`;
+  await sql`alter table planes add column if not exists compra_id uuid`;
+  await sql`create unique index if not exists planes_compra on planes (compra_id) where compra_id is not null`;
+}

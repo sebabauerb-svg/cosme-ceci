@@ -1,0 +1,240 @@
+---
+/**
+ * Saltos internos de la home (revisión UX nov-2026). Sebas notó que al tocar
+ * una parte de la web la página "volaba" hasta ahí y después costaba volver.
+ *
+ * Este script se ocupa de TODOS los links a secciones de la home (índice,
+ * menú, barra de secciones, tarjetas, footer):
+ * 1. Cada salto deja su huella en el historial: el botón atrás del navegador
+ *    vuelve exactamente al punto de partida.
+ * 2. Salto calmo: si el destino está cerca, la página se desliza; si está lejos,
+ *    aparece directo con un fundido corto (sin ver pasar media página).
+ *    Con "reducir movimiento" es siempre instantáneo y sin animación.
+ * 3. Aparece una píldora "↑ Volver a …" abajo a la izquierda que lleva al punto
+ *    de partida. Se va sola si la persona vuelve o sigue leyendo un buen rato.
+ *
+ * Sin JS los links siguen siendo anclas comunes.
+ */
+// Mismos nombres que la barra de secciones (Nav.astro).
+const nombres: Record<string, string> = {
+  filosofia: 'Filosofía',
+  'forma-de-trabajar': 'Mi forma de trabajar',
+  novedades: 'Novedades',
+  modalidades: 'Consultas',
+  tratamientos: 'Tratamientos',
+  club: 'el Club',
+  'sobre-ceci': 'Sobre mí',
+  espacio: 'El espacio',
+  testimonios: 'Testimonios',
+  reservar: 'Contacto',
+  preguntas: 'Preguntas',
+};
+---
+
+<button type="button" class="volver" id="volver" hidden>
+  <span class="volver__flecha" aria-hidden="true">↑</span>
+  <span class="volver__txt">Volver</span>
+</button>
+
+<script is:inline define:vars={{ nombres }}>
+  (() => {
+    const quieto = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const pill = document.getElementById('volver');
+    const pillTxt = pill.querySelector('.volver__txt');
+    let origenLink = null; // para devolver el foco al volver
+    let llegadaY = null;
+    let origenY = null;
+
+    const alto = () => document.querySelector('.nav')?.offsetHeight || 0;
+    // offsetTop y no getBoundingClientRect: el bloque puede tener todavía el
+    // desplazamiento de la animación .reveal y el salto quedaría corto.
+    const yDe = (el) => {
+      if (!el || el.id === 'top') return 0;
+      let y = 0;
+      for (let n = el; n; n = n.offsetParent) y += n.offsetTop;
+      return Math.max(0, y - alto() - 12);
+    };
+
+    // En qué sección está la persona ahora (para el texto de la píldora).
+    const etiquetaOrigen = () => {
+      const linea = alto() + 40;
+      const secs = document.querySelectorAll('#contenido > section[id]');
+      let actual = null;
+      secs.forEach((s) => { if (s.getBoundingClientRect().top <= linea) actual = s.id; });
+      if (!actual) return 'Volver al inicio'; // todavía en la portada
+      if (actual === 'oferta') return 'Volver al índice';
+      if (actual && nombres[actual]) return `Volver a ${nombres[actual]}`;
+      return 'Volver';
+    };
+
+    const mostrar = (texto) => {
+      pillTxt.textContent = texto;
+      pill.hidden = false;
+      pill.classList.remove('volver--sale');
+    };
+    const ocultar = () => {
+      if (pill.hidden) return;
+      if (quieto()) { pill.hidden = true; return; }
+      pill.classList.add('volver--sale');
+      setTimeout(() => { if (pill.classList.contains('volver--sale')) pill.hidden = true; }, 220);
+    };
+
+    // Las categorías de tratamientos del índice abren su bloque y pliegan el resto.
+    const abrirGrupo = (grupo) => {
+      const cats = Array.from(document.querySelectorAll('#tratamientos .trat__cat'));
+      const elegidas = cats.filter((d) => d.querySelector('.trat__grupo')?.textContent.trim() === grupo);
+      if (!elegidas.length) return null;
+      cats.forEach((d) => (elegidas.includes(d) ? d.setAttribute('open', '') : d.removeAttribute('open')));
+      return elegidas[0];
+    };
+
+    const ir = (destino, { animar = true } = {}) => {
+      const y = yDe(destino);
+      const lejos = Math.abs(y - scrollY) > innerHeight * 1.2;
+      if (quieto() || lejos) {
+        window.scrollTo({ top: y, behavior: 'instant' });
+        // Fundido corto del destino para que se note dónde aterrizó, salvo que
+        // ya lo vaya a hacer la animación .reveal de su contenido.
+        if (animar && !quieto() && destino.animate && !destino.querySelector('.reveal:not(.is-visible)')) {
+          destino.animate(
+            [{ opacity: 0.2, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+            { duration: 420, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' }
+          );
+        }
+        // Si algo arriba cambió de alto (fuentes, imágenes), se corrige al toque.
+        requestAnimationFrame(() => {
+          const y2 = yDe(destino);
+          if (Math.abs(y2 - scrollY) > 4) window.scrollTo({ top: y2, behavior: 'instant' });
+          llegadaY = scrollY;
+        });
+      } else {
+        window.scrollTo({ top: y, behavior: 'smooth' });
+      }
+      llegadaY = y;
+    };
+
+    const enfocar = (el) => {
+      if (!el || el === document.body) return;
+      if (el.matches('details')) el = el.querySelector('summary') || el;
+      if (!el.hasAttribute('tabindex') && !el.matches('a, button, summary')) el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: true });
+    };
+
+    document.addEventListener('click', (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target.closest('a[href*="#"]');
+      if (!a || a.target === '_blank') return;
+      const url = new URL(a.href, location.href);
+      if (url.pathname !== location.pathname || url.search !== location.search || !url.hash) return;
+      const id = decodeURIComponent(url.hash.slice(1));
+      let destino = id === 'top' ? document.body : document.getElementById(id);
+      if (!destino) return;
+      e.preventDefault();
+      if (a.dataset.grupo) destino = abrirGrupo(a.dataset.grupo) || destino;
+
+      const texto = etiquetaOrigen();
+      origenY = scrollY;
+      origenLink = a;
+      // La entrada actual guarda dónde estaba la persona; la nueva, adónde fue.
+      history.replaceState({ ...(history.state || {}), navY: scrollY }, '');
+      const destinoUrl = id === 'top' ? location.pathname + location.search : '#' + id;
+      history.pushState({ navId: id, navGrupo: a.dataset.grupo || null, navTexto: texto, navOrigenY: origenY }, '', destinoUrl);
+
+      ir(destino, { animar: id !== 'top' });
+      enfocar(destino);
+      // "Volver al inicio" no tiene sentido si fue a Inicio.
+      if (id === 'top') ocultar();
+      else mostrar(texto);
+    });
+
+    // Atrás / adelante del navegador.
+    window.addEventListener('popstate', (e) => {
+      const s = e.state || {};
+      if (typeof s.navY === 'number') {
+        ocultar();
+        // Ya y otra vez en el próximo cuadro, por si la restauración propia del
+        // navegador llega después (con scroll-behavior: smooth podría deslizar).
+        const volverA = () => window.scrollTo({ top: s.navY, behavior: 'instant' });
+        volverA();
+        requestAnimationFrame(volverA);
+        if (origenLink && document.contains(origenLink)) origenLink.focus({ preventScroll: true });
+      } else if (s.navId) {
+        let destino = s.navId === 'top' ? document.body : document.getElementById(s.navId);
+        if (s.navGrupo) destino = abrirGrupo(s.navGrupo) || destino;
+        if (!destino) return;
+        origenY = s.navOrigenY ?? null;
+        ir(destino, { animar: false });
+        if (s.navId !== 'top' && s.navTexto) mostrar(s.navTexto);
+      }
+    });
+
+    pill.addEventListener('click', () => {
+      if (history.state && history.state.navId) history.back();
+      else if (origenY != null) {
+        window.scrollTo({ top: origenY, behavior: 'instant' });
+        ocultar();
+      }
+    });
+
+    // La píldora se va sola: si la persona volvió por su cuenta o siguió leyendo lejos.
+    let pendiente = false;
+    window.addEventListener('scroll', () => {
+      if (pill.hidden || pendiente) return;
+      pendiente = true;
+      requestAnimationFrame(() => {
+        pendiente = false;
+        if (llegadaY == null) return;
+        const cercaOrigen = origenY != null && Math.abs(scrollY - origenY) < innerHeight * 0.3;
+        const lejosLlegada = Math.abs(scrollY - llegadaY) > innerHeight * 2;
+        if (cercaOrigen || lejosLlegada) ocultar();
+      });
+    }, { passive: true });
+  })();
+</script>
+
+<style>
+  .volver {
+    position: fixed;
+    left: clamp(1rem, 3vw, 1.8rem);
+    bottom: calc(clamp(1rem, 3vw, 1.8rem) + 8px + env(safe-area-inset-bottom, 0px));
+    z-index: 60; /* mismo nivel que el botón de WhatsApp, del otro lado */
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 44px;
+    max-width: calc(100vw - 2rem - 56px - 2.5rem); /* nunca pisa el botón de WhatsApp */
+    padding: 0.55rem 1.05rem 0.55rem 0.9rem;
+    border: 0;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--cream);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 10px 24px -12px rgba(42, 48, 43, 0.55);
+    animation: volver-entra 0.32s cubic-bezier(0.25, 1, 0.5, 1);
+    transition: background-color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .volver[hidden] { display: none; }
+  .volver:hover { background: var(--sage-deep); }
+  .volver__txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .volver__flecha { font-size: 1rem; line-height: 1; }
+  .volver--sale { animation: volver-sale 0.2s ease-in forwards; }
+
+  @keyframes volver-entra {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes volver-sale {
+    to { opacity: 0; transform: translateY(8px); }
+  }
+
+  /* El foco que se mueve al destino es para lectores de pantalla y teclado: sin anillo. */
+  :global(#contenido [tabindex='-1']:focus) { outline: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .volver, .volver--sale { animation: none; }
+  }
+</style>
