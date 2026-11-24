@@ -1,6 +1,8 @@
 ---
 import CuentaShell from '../../components/cuenta/CuentaShell.astro';
-import { getSql, ensurePerfil } from '../../lib/db';
+import PlanesCuenta from '../../components/cuenta/PlanesCuenta.astro';
+import { getSql, ensurePlanesAgenda } from '../../lib/db';
+import { planesDePaciente, type PlanPaciente } from '../../lib/planes-agenda';
 import { nombreConsulta, pacienteActual, perfilActivo, turnosDe } from '../../lib/cuenta';
 import { hoyUY, vincularPendientes } from '../../lib/pacientes';
 import { site, whatsappLink } from '../../data/site';
@@ -13,12 +15,13 @@ if (!perfilActivo()) return Astro.redirect('/');
 Astro.response.headers.set('cache-control', 'no-store');
 
 const sql = getSql();
-await ensurePerfil(sql);
+await ensurePlanesAgenda(sql);
 const p = await pacienteActual(sql, Astro.cookies);
 
 let proximos: any[] = [];
 let anteriores: any[] = [];
 let tieneRegistro = false;
+let planes: PlanPaciente[] = [];
 if (p) {
   await vincularPendientes(sql); // reservas recientes que todavía no tienen ficha
   const hoy = hoyUY();
@@ -27,7 +30,11 @@ if (p) {
   anteriores = turnos.filter((t) => t.fecha < hoy && t.estado === 'confirmada');
   const r = (await sql`select 1 from registros_piel where paciente_id = ${p.id} limit 1`) as any[];
   tieneRegistro = r.length > 0;
+  planes = await planesDePaciente(sql, p.id);
 }
+// Con un plan pago para agendar, "Agendar mi próxima sesión" va ahí (sin seña),
+// no a /reservar.
+const planParaAgendar = planes.find((x) => x.puedeAgendar) ?? null;
 
 const fecha = (f: string) =>
   new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -65,6 +72,8 @@ const waTurno = whatsappLink('Hola Ceci! Te escribo por mi turno.');
         </div>
       )}
 
+      <PlanesCuenta planes={planes} />
+
       <h2 class="mc__t">Próximos turnos</h2>
       {proximos.length ? proximos.map((t) => (
         <div class="mc__card">
@@ -86,7 +95,11 @@ const waTurno = whatsappLink('Hola Ceci! Te escribo por mi turno.');
         <p class="mc__vacio">No tenés turnos agendados.</p>
       )}
       <div class="mc__acciones" style="justify-content:center">
-        <a class="btn btn--primary" href="/reservar?modalidad=sesion">Agendar mi próxima sesión</a>
+        {planParaAgendar ? (
+          <a class="btn btn--primary" href={`/mi-cuenta/agendar?plan=${planParaAgendar.id}`}>Agendar mi próxima sesión</a>
+        ) : (
+          <a class="btn btn--primary" href="/reservar?modalidad=sesion">Agendar una sesión</a>
+        )}
         <a class="btn btn--ghost" href="/reservar">Otra consulta</a>
       </div>
 

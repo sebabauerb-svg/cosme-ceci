@@ -515,12 +515,21 @@ const config = {
             <div class="pc-fila-top"><strong class="pc-plan__tit">${esc(p.tratamiento)}</strong><span class="pc-chip ${p.estado === 'en_curso' ? 'is-ok' : ''}">${esc(cfg.estadosPlan[p.estado])}</span></div>
             ${puntos(p.hechas, p.sesiones)}
             <dl class="pc-kv">
-              <dt>Sesiones</dt><dd>${p.hechas}${p.sesiones ? ' de ' + p.sesiones : ''} hechas${p.ultima ? ' · la última el ' + esc(fmt(p.ultima, false)) : ''}</dd>
+              <dt>Sesiones</dt><dd>${p.hechas}${p.sesiones ? ' de ' + p.sesiones : ''} hechas${p.ultima ? ' · la última el ' + esc(fmt(p.ultima, false)) : ''}${p.agendadas ? ` · ${p.agendadas} agendada${p.agendadas > 1 ? 's' : ''}` : ''}</dd>
               ${p.frecuencia ? `<dt>Frecuencia</dt><dd>${esc(p.frecuencia)}</dd>` : ''}
               ${p.inicio ? `<dt>Empezó</dt><dd>${esc(fmt(p.inicio))}</dd>` : ''}
               ${p.paquete ? `<dt>Paquete</dt><dd>${esc(p.paquete)}</dd>` : ''}
               ${p.protocolo ? `<dt>Protocolo</dt><dd class="pc-pre">${esc(p.protocolo)}</dd>` : ''}
             </dl>
+            ${p.estado !== 'terminado' ? `<div class="pl-hab">
+              ${p.habilitado_at
+                ? `<span class="pc-chip is-ok">Agenda sola sus sesiones</span><span class="nv-ayuda">Habilitado el ${esc(fmt(p.habilitado_at))}${p.habilitado_por === 'compra' ? ' (compra online)' : ''}.</span>
+                   <button type="button" class="pc-link pl-hab-btn" data-hab="0">Quitar</button>`
+                : `<span class="pc-chip">${p.compra_id ? 'Compra online: falta habilitar' : 'No agenda sola'}</span>
+                   <span class="nv-ayuda">Cuando esté contratado y pago, habilitalo: ella agenda las sesiones que le quedan desde su cuenta, sin seña.${p.sesiones ? '' : ' Antes cargá cuántas sesiones incluye.'}</span>
+                   <button type="button" class="btn btn--ghost btn--sm pl-hab-btn" data-hab="1"${p.sesiones ? '' : ' disabled'}>Habilitar: está pago</button>`}
+              <span class="guardar__msg pl-hab-msg" role="status"></span>
+            </div>` : ''}
             <button type="button" class="pc-link pl-editar">Editar plan</button>
           </div>`).join('') : '<p class="ag-vacia">Todavía no tiene un plan. Agregalo para llevar la cuenta de sesiones.</p>'}</div>
         <button type="button" class="btn btn--ghost" id="pl-nuevo">Agregar un plan</button>`;
@@ -533,6 +542,17 @@ const config = {
         $('pl-lista').insertAdjacentHTML('afterbegin', formPlan(null));
         engancharFormPlan(cont.querySelector('[data-form-plan=""]')!);
       });
+      cont.querySelectorAll<HTMLButtonElement>('.pl-hab-btn').forEach((b) => b.addEventListener('click', async () => {
+        const card = b.closest<HTMLElement>('[data-plan]')!;
+        const out = card.querySelector<HTMLElement>('.pl-hab-msg')!;
+        b.disabled = true; out.className = 'guardar__msg pl-hab-msg'; out.textContent = 'Guardando…';
+        try {
+          await apiSeg({ accion: 'plan-habilitar', id: fichaId, plan_id: card.dataset.plan, habilitado: b.dataset.hab === '1' });
+          await recargarSeg();
+        } catch (err) {
+          out.className = 'guardar__msg guardar__msg--dirty pl-hab-msg'; out.textContent = (err as Error).message; b.disabled = false;
+        }
+      }));
       cont.querySelectorAll<HTMLElement>('.pl-editar').forEach((b) => b.addEventListener('click', () => {
         const card = b.closest<HTMLElement>('[data-plan]')!;
         const p = planes.find((x) => x.id === card.dataset.plan);
@@ -1032,6 +1052,8 @@ const config = {
   .pc-hist__f { font-weight: 600; }
   .pc-hist__d, .pc-hist__e { color: var(--ink-soft); }
   .pc-anterior { margin-top: 0.8rem; display: grid; gap: 0.4rem; }
+  .pl-hab { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; padding-top: 0.5rem; border-top: 1px dashed var(--sand); }
+  .pl-hab .nv-ayuda { flex-basis: 100%; }
   .pc-prods { margin: 0; padding-left: 1.1rem; line-height: 1.6; overflow-wrap: anywhere; }
 
   /* Hoja de sesión */
