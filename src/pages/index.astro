@@ -16,6 +16,7 @@ import Reserva from '../components/Reserva.astro';
 import FAQ from '../components/FAQ.astro';
 import Footer from '../components/Footer.astro';
 import WhatsappFloat from '../components/WhatsappFloat.astro';
+import NavInterna from '../components/NavInterna.astro';
 import { cacheCdn } from '../lib/cache';
 
 // La home se renderiza en el servidor (no en el build) para mostrar los precios
@@ -44,4 +45,5 @@ cacheCdn(Astro.response);
   </main>
   <Footer suscripcion />
   <WhatsappFloat />
+  <NavInterna />
 </Base>

@@ -257,11 +257,6 @@ const secciones = [
     }, { passive: true });
     window.addEventListener('resize', marcar);
     marcar();
-    // "Inicio": el header es sticky, así que su ancla no lleva arriba de todo.
-    track.querySelector('a[data-sec="top"]')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      history.replaceState(null, '', location.pathname);
-    });
+    // "Inicio" y el resto de los saltos (con historial y "Volver") los maneja NavInterna.astro.
   }
 </script>

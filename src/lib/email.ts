@@ -408,7 +408,7 @@ export async function enviarAccesoCuenta(d: {
     const P = 'font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b';
     const asunto = d.invitacion ? `${nombre}, ¿cómo sentís tu piel hoy?` : 'Tu link para entrar a tu cuenta';
     const intro = d.invitacion
-      ? `<p style="${P}">Para seguir tu evolución, te pido que completes tu registro: cómo sentís la piel y qué productos estás usando. Son unos minutos y lo revisamos juntas en la próxima consulta.</p>`
+      ? `<p style="${P}">Para seguir tu evolución, te pido que completes tu registro: cómo sentís la piel y qué productos estás usando. Son unos minutos y lo revisamos en conjunto en la próxima consulta.</p>`
       : `<p style="${P}">Pediste entrar a tu cuenta. Desde ahí ves tus turnos, las indicaciones de cada consulta y tu registro de piel.</p>`;
     return await enviar(
       d.email,
