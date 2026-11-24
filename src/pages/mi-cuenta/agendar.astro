@@ -161,7 +161,7 @@ const motivo = plan ? motivoNoAgenda(plan) : 'No encontramos ese tratamiento.';
     font: inherit; font-size: 0.9rem; color: var(--ink); cursor: pointer; min-height: 44px;
     transition: border-color 0.15s ease, background 0.15s ease;
   }
-  .ag__dia { text-transform: capitalize; }
+  .ag__dia::first-letter { text-transform: uppercase; }
   .ag__hora { border-radius: var(--radius-sm); font-weight: 600; background: var(--cream-deep); }
   .ag__sede:hover, .ag__dia:hover, .ag__hora:hover { border-color: var(--sage); }
   .ag__sede.is-sel, .ag__dia.is-sel, .ag__hora.is-sel { background: var(--sage); color: var(--cream); border-color: var(--sage); }

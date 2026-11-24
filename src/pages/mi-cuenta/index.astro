@@ -95,9 +95,8 @@ const waTurno = whatsappLink('Hola Ceci! Te escribo por mi turno.');
         <p class="mc__vacio">No tenés turnos agendados.</p>
       )}
       <div class="mc__acciones" style="justify-content:center">
-        {planParaAgendar ? (
-          <a class="btn btn--primary" href={`/mi-cuenta/agendar?plan=${planParaAgendar.id}`}>Agendar mi próxima sesión</a>
-        ) : (
+        {/* Con un plan pago para agendar, el botón ya está en "Mis tratamientos" (sin seña). */}
+        {!planParaAgendar && (
           <a class="btn btn--primary" href="/reservar?modalidad=sesion">Agendar una sesión</a>
         )}
         <a class="btn btn--ghost" href="/reservar">Otra consulta</a>
