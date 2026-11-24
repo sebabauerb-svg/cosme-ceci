@@ -12,7 +12,9 @@ import { modalidades } from '../data/modalidades';
 import { categoriasTratamientos } from '../data/tratamientos';
 import { club } from '../data/club';
 
-const consultas = modalidades.filter((m) => m.id !== 'club');
+// Las membresías del Club ('club' y, con #23, 'club-premium') van en su propia
+// franja, no como consultas sueltas.
+const consultas = modalidades.filter((m) => !m.id.startsWith('club'));
 
 // Las categorías del catálogo agrupadas por `grupo` (Faciales tiene dos).
 const grupos: { grupo: string; nombre: string; detalle: string }[] = [];
