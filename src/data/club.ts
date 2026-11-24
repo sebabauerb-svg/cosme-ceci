@@ -20,6 +20,12 @@ export type PlanClub = {
   /** Lo que distingue a un plan del otro, en una línea. */
   formato: string;
   precio: string;
+  /**
+   * Monto que cobra la web (src/lib/compras.ts) y su moneda. Tiene que decir lo
+   * mismo que `precio`, que es solo el texto que se muestra.
+   */
+  monto: number;
+  moneda: 'UYU' | 'USD';
   incluye: string[];
   destacado?: boolean;
 };
@@ -48,6 +54,8 @@ export const club = {
       nombre: 'Club Regular',
       formato: 'Consultas virtuales',
       precio: '$4.800',
+      monto: 4800,
+      moneda: 'UYU',
       incluye: [
         '4 consultas virtuales al año, una en cada cambio de estación',
         'Adaptación de tu recetario domiciliario en cada estación',
@@ -59,6 +67,8 @@ export const club = {
       nombre: 'Club Premium',
       formato: 'Consultas presenciales',
       precio: 'U$S 200',
+      monto: 200,
+      moneda: 'USD',
       destacado: true,
       incluye: [
         '4 consultas presenciales al año, una en cada cambio de estación',

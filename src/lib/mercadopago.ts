@@ -67,6 +67,32 @@ export function verificarFirmaWebhook(opts: {
   return crypto.timingSafeEqual(a, b);
 }
 
+/**
+ * Origen público para back_urls y el webhook. En producción, el dominio canónico
+ * (PUBLIC_SITE_URL). En un PREVIEW de Vercel, la URL de la propia rama: si no,
+ * Mercado Pago avisaría el pago a producción, que no conoce esa reserva (los
+ * previews tienen su propia rama de base en Neon).
+ */
+export function origenPublico(requestUrl: string): string {
+  if (process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_BRANCH_URL)
+    return `https://${process.env.VERCEL_BRANCH_URL}`;
+  return process.env.PUBLIC_SITE_URL || process.env.SITE_URL || new URL(requestUrl).origin;
+}
+
+/**
+ * URL del webhook. Los previews están detrás de Vercel Authentication: si el
+ * proyecto tiene "Protection Bypass for Automation", Vercel expone el secreto y
+ * lo sumamos para que el aviso de Mercado Pago pueda entrar. En producción no
+ * se agrega nada.
+ */
+function urlWebhook(origin: string): string {
+  const url = `${origin}/api/mp/webhook`;
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (process.env.VERCEL_ENV === 'preview' && bypass)
+    return `${url}?x-vercel-protection-bypass=${encodeURIComponent(bypass)}`;
+  return url;
+}
+
 export async function crearPreferencia(opts: {
   titulo: string;
   precio: number;
@@ -75,6 +101,10 @@ export async function crearPreferencia(opts: {
   email?: string | null;
   /** ISO de cuándo vence la reserva pendiente: el checkout se cierra a la vez */
   expiraIso?: string | null;
+  /** Moneda del cobro. Por defecto pesos (la seña). El Club Premium va en 'USD'. */
+  moneda?: 'UYU' | 'USD';
+  /** Tope de cuotas que ofrece el checkout (Club y paquetes: 3). Sin esto, lo que permita la cuenta. */
+  maxCuotas?: number | null;
 }): Promise<{ id: string; initPoint: string }> {
   const body = {
     items: [
@@ -82,9 +112,12 @@ export async function crearPreferencia(opts: {
         title: opts.titulo.slice(0, 250),
         quantity: 1,
         unit_price: opts.precio,
-        currency_id: 'UYU',
+        currency_id: opts.moneda ?? 'UYU',
       },
     ],
+    // Solo limita CUÁNTAS cuotas se ofrecen; si son con o sin interés lo
+    // configura Ceci en su cuenta de Mercado Pago, no el código.
+    ...(opts.maxCuotas ? { payment_methods: { installments: opts.maxCuotas } } : {}),
     external_reference: opts.reservaId,
     ...(opts.email ? { payer: { email: opts.email } } : {}),
     back_urls: {
@@ -93,7 +126,7 @@ export async function crearPreferencia(opts: {
       failure: `${opts.origin}/reservar?pago=error&rid=${opts.reservaId}`,
     },
     auto_return: 'approved',
-    notification_url: `${opts.origin}/api/mp/webhook`,
+    notification_url: urlWebhook(opts.origin),
     metadata: { reserva_id: opts.reservaId },
     // El link de pago vence junto con la reserva (30 min): pagar más tarde
     // dejaría plata acreditada sin cupo garantizado.

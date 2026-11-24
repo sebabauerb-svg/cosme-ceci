@@ -3,6 +3,7 @@ import { categoriasTratamientos, formatUYU } from '../data/tratamientos';
 import { modalidades } from '../data/modalidades';
 import { whatsappLink } from '../data/site';
 import { formasDePago } from '../data/pago';
+import { pagoMembresiasActivo } from '../lib/compras';
 import {
   claveTratamiento,
   leerPrecios,
@@ -17,6 +18,8 @@ const valor = (id: string) => precios[claveTratamiento(id)];
 const consultaMod = modalidades.find((m) => m.id === 'presencial');
 const consulta = consultaMod && { ...consultaMod, precio: precioModalidadTexto(precios, consultaMod) };
 const dev = import.meta.env.DEV;
+// Con el cobro online prendido, cada paquete se compra directo (src/lib/compras.ts).
+const comprarPaquetes = pagoMembresiasActivo();
 ---
 
 <section class="section" id="tratamientos">
@@ -71,10 +74,16 @@ const dev = import.meta.env.DEV;
                       <p class="trat__meta">
                         {t.duracion && <span>{t.duracion}</span>}
                         {v.precio != null && v.paquete6 != null && (
-                          <span>Paquete de 6 sesiones: <strong>{formatUYU(v.paquete6)}</strong></span>
+                          <span>
+                            Paquete de 6 sesiones: <strong>{formatUYU(v.paquete6)}</strong>
+                            {comprarPaquetes && <a class="trat__comprar" href={`/reservar?paquete=paquete6:${t.id}`}>Comprar<span class="sr-only"> paquete de 6 sesiones de {t.nombre}</span></a>}
+                          </span>
                         )}
                         {v.precio != null && t.paquete12 && (
-                          <span>Paquete de 12 sesiones: <strong>{formatUYU(t.paquete12)}</strong></span>
+                          <span>
+                            Paquete de 12 sesiones: <strong>{formatUYU(t.paquete12)}</strong>
+                            {comprarPaquetes && <a class="trat__comprar" href={`/reservar?paquete=paquete12:${t.id}`}>Comprar<span class="sr-only"> paquete de 12 sesiones de {t.nombre}</span></a>}
+                          </span>
                         )}
                         {v.precio != null && (v.paquete6 != null || t.paquete12) && t.paqueteNota && (
                           <span class="trat__paqNota">Sesiones {t.paqueteNota}</span>
@@ -200,6 +209,15 @@ const dev = import.meta.env.DEV;
     color: var(--clay-deep);
   }
   .trat__reservar:hover { color: var(--ink); }
+  .trat__comprar {
+    margin-left: 0.4rem;
+    font-weight: 600;
+    color: var(--sage-deep);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    white-space: nowrap;
+  }
+  .trat__comprar:hover { color: var(--ink); }
   .trat__list h4 {
     font-family: var(--font-serif);
     font-size: 1.08rem;

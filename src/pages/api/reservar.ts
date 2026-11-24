@@ -1,13 +1,23 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion, ensureNewsletter, ensurePacientes } from '../../lib/db';
+import { getSql, ensureDuracionMin, ensureFranjas, ensureConfirmacion, ensureNewsletter, ensurePacientes, ensureCompras, ensureGestion } from '../../lib/db';
 import { baseUrl, normalizarEmail, pedirSuscripcion } from '../../lib/newsletter';
 import { vincularPendientes } from '../../lib/pacientes';
 import { duracionDeTurno } from '../../lib/agenda';
-import { notificarReserva } from '../../lib/email';
-import { crearPreferencia, mpConfigurado } from '../../lib/mercadopago';
+import { notificarReserva, notificarCompra } from '../../lib/email';
+import { crearPreferencia, mpConfigurado, origenPublico } from '../../lib/mercadopago';
 import { senaOnline, requiereSede, SESION_ID } from '../../lib/precios';
 import { categoriasTratamientos } from '../../data/tratamientos';
 import { esMembresia as esMembresiaClub } from '../../data/club';
+import {
+  pagoMembresiasActivo,
+  productoPorId,
+  montoPorVia,
+  formatMonto,
+  MAX_CUOTAS,
+  PAQUETE_ID,
+  type Producto,
+} from '../../lib/compras';
+import { leerPrecios } from '../../lib/precios-vigentes';
 
 export const prerender = false;
 
@@ -18,6 +28,8 @@ const NOMBRE_MODALIDAD: Record<string, string> = {
   sesion: 'Sesión de tratamiento',
   club: 'Club de las Estaciones',
   'club-premium': 'Club de las Estaciones Premium',
+  // Solo con PAGO_MEMBRESIAS_ACTIVO (si no, se rechaza más abajo).
+  paquete: 'Paquete de sesiones',
 };
 
 // Tope de reservas "a confirmar" (sin pago) SIMULTÁNEAS por sede: evita que las
@@ -103,7 +115,11 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     return json({ ok: false, error: 'Faltan datos obligatorios' }, 400);
   }
 
-  const esMembresia = esMembresiaClub(modalidad);
+  // Compra online (Club o paquete): solo con el cobro nuevo prendido. Apagado,
+  // el Club sigue como siempre (coordinar con Ceci) y los paquetes no existen acá.
+  const cobroCompras = pagoMembresiasActivo();
+  if (modalidad === PAQUETE_ID && !cobroCompras) return json({ ok: false, error: 'Modalidad inválida' }, 400);
+  const esMembresia = esMembresiaClub(modalidad) || modalidad === PAQUETE_ID; // sin fecha ni hora
   if (!esMembresia && (!fecha || !hora)) {
     return json({ ok: false, error: 'Falta fecha u hora' }, 400);
   }
@@ -141,11 +157,24 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   // abona en la consulta. El webhook de MP valida el pago contra este valor.
   const precioNum = senaOnline(modalidad);
 
+  // Compra del Club o de un paquete: el precio sale de los valores vigentes del
+  // servidor (src/lib/compras.ts), nunca del body. Para el Club el producto es
+  // la propia modalidad; para un paquete, el id que eligió en Tratamientos.
+  let compra: Producto | null = null;
+  if (cobroCompras && esMembresia) {
+    const precios = await leerPrecios();
+    compra = productoPorId(modalidad === PAQUETE_ID ? body?.producto : modalidad, precios);
+    if (!compra || compra.modalidad !== modalidad)
+      return json({ ok: false, error: 'Ese paquete no está disponible online. Escribile a Ceci por WhatsApp.' }, 400);
+  }
+
   // Camino de reserva: 'pagar' (MercadoPago, hold 30 min) o 'coordinar' (sin pago,
   // queda 'a_confirmar' con hold de 2 h para que Ceci la valide desde el panel).
   const via = body?.via === 'coordinar' ? 'coordinar' : 'pagar';
   const estadoInicial = via === 'coordinar' ? 'a_confirmar' : 'pendiente_pago';
-  const holdMin = via === 'coordinar' ? 120 : 30;
+  // Una compra no ocupa cupo: le damos más margen (3 días para transferir, 1 día
+  // para terminar el pago) así no desaparece del panel antes de que Ceci la vea.
+  const holdMin = compra ? (via === 'coordinar' ? 72 * 60 : 24 * 60) : via === 'coordinar' ? 120 : 30;
   const expira = new Date(Date.now() + holdMin * 60 * 1000).toISOString();
   const capSlug = requiereSede(modalidad) ? str(sede) : 'online';
 
@@ -154,6 +183,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     await ensureFranjas(sql);
     await ensureDuracionMin(sql);
     await ensureConfirmacion(sql);
+    if (compra) await ensureCompras(sql);
 
     // Liberar cupos de reservas vencidas (auto-expiración, sin cron): tanto las de
     // pago (30 min) como las 'a confirmar' sin validar (2 h).
@@ -217,6 +247,21 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       `;
       const reservaId = String(ins[0].id);
 
+      // Lo que se compró, a qué precio y en qué moneda: el webhook valida el pago
+      // contra monto_esperado + moneda (precio_uyu queda null: no es una seña).
+      const viaPago = via === 'coordinar' ? 'transferencia' : 'mercadopago';
+      const montoEsperado = compra ? montoPorVia(compra, viaPago) : null;
+      if (compra) {
+        await ensureGestion(sql);
+        await sql`
+          update reservas
+             set producto = ${compra.id}, producto_nombre = ${compra.nombre}, moneda = ${compra.moneda},
+                 precio_lista = ${compra.monto}, monto_esperado = ${montoEsperado}, via_pago = ${viaPago},
+                 total_acordado = ${montoEsperado}
+           where id = ${reservaId}
+        `;
+      }
+
       // El tratamiento elegido queda en las notas de la reserva, que Ceci ve y
       // edita en el panel (Gestión). Nunca traba la reserva.
       if (tratamientoNombre) {
@@ -238,12 +283,11 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       // Pago online con MercadoPago (solo en el camino 'pagar', si está configurado
       // y hay monto). En 'coordinar' no hay checkout: queda a confirmar por Ceci.
       let initPoint: string | null = null;
-      if (via === 'pagar' && mpConfigurado() && precioNum) {
+      if (via === 'pagar' && mpConfigurado() && (precioNum || (compra && montoEsperado))) {
         try {
           // Dominio canónico para back_urls y notification_url: el origin del request
           // puede ser un alias *.vercel.app o un preview (webhook inaccesible) o localhost.
-          const origin =
-            process.env.PUBLIC_SITE_URL || process.env.SITE_URL || new URL(request.url).origin;
+          const origin = origenPublico(request.url);
           if (!process.env.PUBLIC_SITE_URL && !process.env.SITE_URL)
             console.warn('MP: PUBLIC_SITE_URL sin configurar, usando origin del request:', origin);
           // El título es lo que la paciente ve en el checkout y en el resumen de
@@ -258,14 +302,26 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
             ]
               .filter(Boolean)
               .join(' · ');
-          const pref = await crearPreferencia({
-            titulo: tituloItem,
-            precio: precioNum,
-            reservaId,
-            origin,
-            email: emailT || null,
-            expiraIso: expira,
-          });
+          const pref = compra
+            ? await crearPreferencia({
+                // Compra: el total (no una seña), en su moneda y hasta 3 cuotas.
+                // Sin vencimiento: no hay cupo que liberar.
+                titulo: compra.nombre,
+                precio: montoEsperado as number,
+                moneda: compra.moneda,
+                maxCuotas: MAX_CUOTAS,
+                reservaId,
+                origin,
+                email: emailT || null,
+              })
+            : await crearPreferencia({
+                titulo: tituloItem,
+                precio: precioNum as number,
+                reservaId,
+                origin,
+                email: emailT || null,
+                expiraIso: expira,
+              });
           initPoint = pref.initPoint;
           await sql`update reservas set mp_preference_id = ${pref.id} where id = ${reservaId}`;
         } catch (e) {
@@ -275,7 +331,21 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
       // Aviso por email a Ceci y a la clienta. Fire-and-forget: la latencia de
       // Resend no debe demorar el redirect al checkout (notificarReserva nunca lanza).
-      void notificarReserva({
+      if (compra) {
+        void notificarCompra(
+          {
+            producto: compra.nombre,
+            nombre: nombreT,
+            telefono: telT,
+            email: emailT || null,
+            monto: formatMonto(montoEsperado as number, compra.moneda),
+            via: viaPago,
+            concepto: `${compra.modalidad === PAQUETE_ID ? 'Paquete' : 'Club'} ${nombreT}`,
+            esPaquete: compra.modalidad === PAQUETE_ID,
+          },
+          { checkout: !!initPoint }
+        );
+      } else void notificarReserva({
         modalidad: servicioNombre,
         sede: nombreS,
         fechaLabel: esMembresia ? null : labelFecha(fecha),

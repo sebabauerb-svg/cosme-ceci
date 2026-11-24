@@ -429,3 +429,130 @@ export async function enviarAccesoCuenta(d: {
     return false;
   }
 }
+
+/** Datos de una compra online (Club o paquete). */
+type DatosCompra = {
+  producto: string;
+  nombre: string;
+  telefono: string;
+  email?: string | null;
+  /** Monto ya formateado con su moneda ("$4.320", "U$S 200"). */
+  monto: string;
+  via: 'mercadopago' | 'transferencia';
+  /** Concepto de la transferencia ("Club Ana Pérez"). */
+  concepto?: string;
+  /** Cuotas del pago aprobado por Mercado Pago (si se sabe). */
+  cuotas?: number | null;
+  /** true = es un paquete de sesiones (las coordina Ceci por WhatsApp). */
+  esPaquete?: boolean;
+};
+
+function bloqueCompra(d: DatosCompra) {
+  const filas = [
+    `<strong>Compra:</strong> ${esc(d.producto)}`,
+    `<strong>Monto:</strong> ${esc(d.monto)}${d.via === 'transferencia' ? ' (con 10% de descuento por transferencia)' : ''}${d.cuotas && d.cuotas > 1 ? ` · en ${esc(d.cuotas)} cuotas` : ''}`,
+    `<strong>A nombre de:</strong> ${esc(d.nombre)}`,
+    `<strong>WhatsApp:</strong> ${esc(d.telefono)}`,
+  ];
+  return `<div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas.map((f) => `<p style="margin:4px 0">${f}</p>`).join('')}</div>`;
+}
+
+function bloqueTransferenciaCompra(d: DatosCompra) {
+  if (!hayDatosTransferencia()) return '';
+  const filas = [...filasTransferencia(), { label: 'Concepto', valor: d.concepto ?? d.nombre }]
+    .map((f) => `<p style="margin:4px 0"><strong>${esc(f.label)}:</strong> ${esc(f.valor)}</p>`)
+    .join('');
+  return `<div style="background:#f6f4ef;border-radius:10px;padding:14px 18px;margin:16px 0">
+    <p style="font-family:system-ui,sans-serif;font-weight:600;color:#2a302b;margin:0 0 8px">Datos para transferir ${esc(d.monto)}</p>
+    <div style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b">${filas}</div>
+  </div>`;
+}
+
+const queSigue = (d: DatosCompra) =>
+  d.esPaquete
+    ? 'Ceci te escribe por WhatsApp para coordinar tus sesiones.'
+    : 'Ceci te escribe por WhatsApp para coordinar tu primera consulta del Club.';
+
+/**
+ * Compra registrada (todavía sin pagar): aviso a Ceci y a la clienta. Si eligió
+ * transferencia, el mail lleva los datos bancarios y el monto con descuento.
+ * Nunca lanza error.
+ */
+export async function notificarCompra(d: DatosCompra, opts: { checkout?: boolean } = {}) {
+  try {
+    const ceci = process.env.CECI_NOTIF_EMAIL;
+    const transf = d.via === 'transferencia';
+    const tareas: Promise<unknown>[] = [];
+    if (ceci) {
+      tareas.push(
+        enviar(
+          ceci,
+          transf ? `⏳ Compra a confirmar: ${d.nombre} (${d.producto})` : `Nueva compra: ${d.nombre} (${d.producto})`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">${transf ? 'Compra a confirmar' : 'Nueva compra'}</h2>${bloqueCompra(d)}
+           <p style="color:#55605a">${
+             transf
+               ? 'Va a pagar por transferencia. Cuando veas el pago, confirmala desde el panel: /admin → Reservas → “Reservas a confirmar”.'
+               : opts.checkout
+                 ? 'Está pagando por Mercado Pago. Si el pago se acredita te llega otro aviso.'
+                 : 'Mercado Pago no respondió: coordiná el pago con la clienta.'
+           }</p>`
+        )
+      );
+    }
+    if (d.email) {
+      tareas.push(
+        enviar(
+          d.email,
+          `Registramos tu compra: ${d.producto} — Cecilia Gutiérrez · Cosmetología Médica`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Compra registrada!</h2>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, registramos tu compra:</p>
+           ${bloqueCompra(d)}
+           ${transf ? bloqueTransferenciaCompra(d) : ''}
+           <p style="font-family:system-ui;color:#55605a">${
+             transf
+               ? 'Cuando transfieras, mandale el comprobante a Ceci por WhatsApp. Al verlo, te llega la confirmación por este medio.'
+               : 'Cuando se acredite el pago te llega la confirmación por este medio.'
+           }</p>`
+        )
+      );
+    }
+    await Promise.allSettled(tareas);
+  } catch {
+    /* no bloquear la compra por un error de email */
+  }
+}
+
+/** Compra pagada (Mercado Pago aprobado o Ceci confirmó la transferencia). Nunca lanza error. */
+export async function notificarCompraConfirmada(d: DatosCompra) {
+  try {
+    const ceci = process.env.CECI_NOTIF_EMAIL;
+    const tareas: Promise<unknown>[] = [];
+    if (ceci && d.via === 'mercadopago') {
+      tareas.push(
+        enviar(
+          ceci,
+          `✅ Compra pagada: ${d.nombre} (${d.producto})`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">Compra pagada por Mercado Pago</h2>${bloqueCompra(d)}
+           <p style="color:#55605a">Escribile para coordinar ${d.esPaquete ? 'las sesiones' : 'la primera consulta'}.</p>`
+        )
+      );
+    }
+    if (d.email) {
+      tareas.push(
+        enviar(
+          d.email,
+          `✅ Compra confirmada: ${d.producto} — Cecilia Gutiérrez · Cosmetología Médica`,
+          `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Compra confirmada!</h2>
+           <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, ${
+             d.via === 'mercadopago' ? 'recibimos tu pago por Mercado Pago' : 'confirmamos tu transferencia'
+           }:</p>
+           ${bloqueCompra(d)}
+           <p style="font-family:system-ui;color:#55605a">${queSigue(d)} Por cualquier duda, escribinos por WhatsApp.</p>`
+        )
+      );
+    }
+    await Promise.allSettled(tareas);
+  } catch {
+    /* no bloquear por un error de email */
+  }
+}

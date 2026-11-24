@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureFranjas, ensureConfirmacion } from '../../../lib/db';
+import { getSql, ensureFranjas, ensureConfirmacion, ensureCompras } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 
 export const prerender = false;
@@ -17,11 +17,14 @@ export const GET: APIRoute = async ({ cookies }) => {
     const sql = getSql();
     await ensureFranjas(sql);
     await ensureConfirmacion(sql);
+    await ensureCompras(sql);
     const reservas = (await sql`
       select r.id, r.modalidad, coalesce(s.nombre, 'Online') as sede,
              r.fecha::text as fecha, to_char(r.hora, 'HH24:MI') as hora,
              r.nombre, r.telefono, r.email, r.precio_uyu,
-             r.expira_at::text as expira_at
+             r.expira_at::text as expira_at,
+             -- Compras (Club / paquete) por transferencia: qué y cuánto esperar.
+             r.producto, r.producto_nombre, r.moneda, r.monto_esperado
       from reservas r left join sedes s on s.id = r.sede_id
       where r.estado = 'a_confirmar' and (r.expira_at is null or r.expira_at > now())
       order by r.fecha nulls last, r.hora nulls last, r.created_at

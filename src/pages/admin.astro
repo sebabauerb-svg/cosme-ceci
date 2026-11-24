@@ -194,6 +194,16 @@ if (authed) {
             <div id="por-confirmar"><p class="ag-vacia">Cargando…</p></div>
           </section>
 
+          <section class="card" data-tab="reservas">
+            <div class="card__head">
+              <div>
+                <h2>Compras del Club y paquetes</h2>
+                <p class="muted">Lo que se compró por la web: cuánto se pagó, por qué medio y en cuántas cuotas. Las de transferencia aparecen arriba, en “Reservas a confirmar”, hasta que las confirmes.</p>
+              </div>
+            </div>
+            <div id="compras"><p class="ag-vacia">Cargando…</p></div>
+          </section>
+
           <section class="card pr" data-tab="precios">
             <div class="card__head">
               <div>
@@ -1063,6 +1073,43 @@ if (authed) {
     } catch { cont.innerHTML = '<p class="ag-vacia">No se pudo cargar la agenda.</p>'; }
   })();
 
+  // ---------- Compras del Club y paquetes (cobro online, src/lib/compras.ts) ----------
+  (async function cargarCompras() {
+    const cont = document.getElementById('compras');
+    if (!cont) return;
+    try {
+      const res = await fetch('/api/admin/compras');
+      if (res.status === 401) { cont.innerHTML = '<p class="ag-vacia">Ingresá de nuevo para ver esto.</p>'; return; }
+      const d = await res.json();
+      if (!d.ok) { cont.innerHTML = '<p class="ag-vacia">No se pudieron cargar las compras.</p>'; return; }
+      const cs = d.compras || [];
+      if (!cs.length) { cont.innerHTML = '<p class="ag-vacia">Todavía no hay compras por la web.</p>'; return; }
+      cont.innerHTML = '';
+      const lista = document.createElement('ul'); lista.className = 'cp-lista';
+      for (const c of cs) {
+        const li = document.createElement('li'); li.className = 'cp-item' + (c.pagada ? ' cp-item--ok' : '');
+        const top = document.createElement('div'); top.className = 'cp-top';
+        const prod = document.createElement('strong'); prod.className = 'cp-prod'; prod.textContent = c.producto;
+        const est = document.createElement('span'); est.className = 'cp-est'; est.textContent = c.estado;
+        top.append(prod, est);
+        const quien = document.createElement('div'); quien.className = 'cp-quien';
+        quien.textContent = [c.nombre, c.telefono].filter(Boolean).join(' · ');
+        const pago = document.createElement('div'); pago.className = 'cp-pago';
+        const monto = c.cobrado ?? c.esperado ?? '—';
+        const fecha = c.fecha ? new Date(c.fecha).toLocaleDateString('es-UY', { day: 'numeric', month: 'short' }) : '';
+        pago.textContent = [
+          `${c.pagada ? 'Pagó' : 'A cobrar'} ${monto}`,
+          c.medio,
+          c.cuotas ? (c.cuotas > 1 ? `${c.cuotas} cuotas` : '1 pago') : null,
+          fecha,
+        ].filter(Boolean).join(' · ');
+        li.append(top, quien, pago);
+        lista.appendChild(li);
+      }
+      cont.appendChild(lista);
+    } catch { cont.innerHTML = '<p class="ag-vacia">No se pudieron cargar las compras.</p>'; }
+  })();
+
   // ---------- Reservas a confirmar (web sin pago, esperan validación de Ceci) ----------
   (async function cargarPorConfirmar() {
     const cont = document.getElementById('por-confirmar');
@@ -1099,15 +1146,21 @@ if (authed) {
       el.classList.add('pc-item--ok');
       el.innerHTML = '';
       const t = document.createElement('div'); t.className = 'pc-ok__t';
-      t.textContent = `✓ ${r.nombre}: turno confirmado`;
+      t.textContent = r.compra ? `✓ ${r.nombre}: compra confirmada` : `✓ ${r.nombre}: turno confirmado`;
       const sub = document.createElement('div'); sub.className = 'pc-ok__sub';
-      sub.textContent = `${cuando} · le enviamos el mail${r.waEnviado ? ' y el WhatsApp' : ''} de confirmación`;
+      sub.textContent = r.compra
+        ? `${r.modalidad} · si marcaste que pagó, le enviamos el mail de confirmación`
+        : `${cuando} · le enviamos el mail${r.waEnviado ? ' y el WhatsApp' : ''} de confirmación`;
       el.appendChild(t); el.appendChild(sub);
 
       const acc = document.createElement('div'); acc.className = 'pc-ok__acc';
       // Si el WhatsApp ya salió solo, no ofrecemos mandarlo de nuevo a mano.
       if (r.telefono && r.telefono !== '—' && !r.waEnviado) {
-        const msg = [
+        const msg = r.compra ? [
+          `Hola ${r.nombre}! Recibí tu pago, gracias:`,
+          `• ${r.modalidad}`,
+          'Coordinemos por acá cuándo empezamos.',
+        ].join('\n') : [
           `Hola ${r.nombre}! Te confirmo tu turno:`,
           `• ${r.modalidad}`,
           r.sede ? `• Sede: ${r.sede}` : null,
@@ -1137,7 +1190,9 @@ if (authed) {
 
       const nom = document.createElement('div'); nom.className = 'pc-item__nom'; nom.textContent = r.nombre;
       const cuando = document.createElement('div'); cuando.className = 'pc-item__cuando';
-      cuando.textContent = `${r.modalidad === 'manual' ? 'Reserva manual' : r.modalidad} · ${fmtCuando(r.fecha, r.hora)}`;
+      cuando.textContent = r.producto
+        ? `${r.producto_nombre || r.producto} · compra por transferencia${r.monto_esperado != null ? ` (${r.moneda === 'USD' ? 'U$S ' : '$'}${Number(r.monto_esperado)})` : ''}`
+        : `${r.modalidad === 'manual' ? 'Reserva manual' : r.modalidad} · ${fmtCuando(r.fecha, r.hora)}`;
 
       const tel = document.createElement('div'); tel.className = 'pc-item__tel';
       if (r.telefono && r.telefono !== '—') {
@@ -1147,9 +1202,10 @@ if (authed) {
       }
 
       const ctr = document.createElement('div'); ctr.className = 'pc-ctrls';
-      const montoWrap = document.createElement('label'); montoWrap.className = 'pc-monto'; montoWrap.append('$ ');
-      const monto = document.createElement('input'); monto.type = 'number'; monto.min = '0'; monto.step = '1'; monto.placeholder = 'monto';
-      if (r.precio_uyu != null) monto.value = String(Math.round(Number(r.precio_uyu)));
+      const montoWrap = document.createElement('label'); montoWrap.className = 'pc-monto'; montoWrap.append(r.moneda === 'USD' ? 'U$S ' : '$ ');
+      const monto = document.createElement('input'); monto.type = 'number'; monto.min = '0'; monto.step = r.moneda === 'USD' ? '0.01' : '1'; monto.placeholder = 'monto';
+      if (r.producto && r.monto_esperado != null) monto.value = String(Number(r.monto_esperado));
+      else if (r.precio_uyu != null) monto.value = String(Math.round(Number(r.precio_uyu)));
       montoWrap.appendChild(monto);
       const pagoWrap = document.createElement('label'); pagoWrap.className = 'pc-pago';
       const pago = document.createElement('input'); pago.type = 'checkbox';
@@ -2586,6 +2642,15 @@ if (authed) {
      un <style> scoped de Astro NO alcanza a los elementos que crea el script,
      así que estas reglas van globales (solo se cargan en /admin). -->
 <style is:global>
+  /* Compras del Club y paquetes (los crea el JS → van en is:global) */
+  .cp-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+  .cp-item { background: var(--white); border: 1px solid var(--sand); border-radius: var(--radius-sm); padding: 0.75rem 0.9rem; display: grid; gap: 0.2rem; min-width: 0; }
+  .cp-item--ok { border-color: var(--sage); }
+  .cp-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.3rem 0.8rem; align-items: baseline; }
+  .cp-prod { overflow-wrap: anywhere; }
+  .cp-est { font-size: 0.82rem; color: var(--ink-soft); }
+  .cp-item--ok .cp-est { color: var(--sage-deep); font-weight: 600; }
+  .cp-quien, .cp-pago { font-size: 0.88rem; color: var(--ink-soft); overflow-wrap: anywhere; }
   .cal__cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 0.9rem; font-variant-numeric: tabular-nums; border: 0; background: none; color: var(--ink); border-radius: 10px; position: relative; font-family: inherit; }
   .cal__cell--empty { visibility: hidden; }
   .cal__cell--past { color: color-mix(in srgb, var(--ink-soft) 45%, var(--cream)); background: color-mix(in srgb, var(--sand) 28%, var(--cream)); }
