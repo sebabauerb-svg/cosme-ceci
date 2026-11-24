@@ -38,7 +38,7 @@ const fecha = (f: string) =>
           </p>
           {pl.proxima_fecha && <p class="mc__meta">Próxima sesión sugerida: <strong>{fecha(pl.proxima_fecha)}</strong></p>}
           {pl.estado === 'en_curso' && (
-            <div class="mc__acciones"><a class="btn btn--ghost" href="/reservar?modalidad=sesion">Agendar la próxima sesión</a></div>
+            <div class="mc__acciones"><a class="btn btn--ghost" href="/mi-cuenta#tratamientos">Ver mis sesiones</a></div>
           )}
         </div>
       ))}

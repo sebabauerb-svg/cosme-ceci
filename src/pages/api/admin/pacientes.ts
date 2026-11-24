@@ -70,7 +70,8 @@ export const GET: APIRoute = async ({ url, cookies }) => {
                  where r.paciente_id = p.id and r.estado = 'confirmada'
                    and r.fecha is not null and r.fecha < ${hoyUY()}::date) as consultas,
                pl.tratamiento as plan, pl.sesiones as plan_de,
-               (select count(*)::int from reservas r where r.plan_id = pl.id and r.estado = 'confirmada') as plan_hechas
+               (select count(*)::int from reservas r where r.plan_id = pl.id and r.estado = 'confirmada'
+                 and r.fecha <= ${hoyUY()}::date) as plan_hechas
           from pacientes p
           left join lateral (
             select id, tratamiento, sesiones from planes

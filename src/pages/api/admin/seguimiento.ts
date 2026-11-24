@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensureSeguimiento } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensurePlanesAgenda } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 import { hoyUY } from '../../../lib/pacientes';
 import {
@@ -21,7 +21,7 @@ const MB = 1024 * 1024;
 async function preparar() {
   const sql = getSql();
   await ensureConfirmacion(sql);
-  await ensureSeguimiento(sql);
+  await ensurePlanesAgenda(sql); // incluye ensureSeguimiento
   return sql;
 }
 
@@ -155,6 +155,24 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return json({ ok: true, plan_id: String(r[0].id) });
     }
 
+    // El plan está contratado y pago: la paciente puede agendar sus sesiones
+    // sola desde Mi cuenta (src/lib/planes-agenda.ts). Sin esto no agenda nada.
+    if (body.accion === 'plan-habilitar') {
+      const planId = uuid(body.plan_id);
+      if (!planId) return json({ ok: false, error: 'Plan inválido' }, 400);
+      const si = body.habilitado === true;
+      const r = (si
+        ? await sql`
+            update planes set habilitado_at = coalesce(habilitado_at, now()),
+                   habilitado_por = coalesce(habilitado_por, 'ceci'), updated_at = now()
+             where id = ${planId} and paciente_id = ${id} returning id`
+        : await sql`
+            update planes set habilitado_at = null, habilitado_por = null, updated_at = now()
+             where id = ${planId} and paciente_id = ${id} returning id`) as any[];
+      if (!r.length) return json({ ok: false, error: 'No existe ese plan' }, 404);
+      return json({ ok: true });
+    }
+
     if (body.accion === 'sesion') {
       const tolerancia = body.tolerancia ? toleranciaValida(body.tolerancia) : null;
       if (body.tolerancia && !tolerancia) return json({ ok: false, error: 'Tolerancia inválida' }, 400);
@@ -197,6 +215,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           const c = (await sql`
             select count(*)::int as n from reservas
              where plan_id = ${planId} and estado = 'confirmada' and id <> ${rid ?? '00000000-0000-0000-0000-000000000000'}::uuid
+               and (fecha is null or fecha <= ${fecha}::date)
           `) as any[];
           n = (c[0]?.n ?? 0) + 1;
         }

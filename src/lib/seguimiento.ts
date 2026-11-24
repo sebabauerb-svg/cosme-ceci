@@ -94,11 +94,19 @@ export { fechaOk };
 
 /** Planes de una paciente con cuántas sesiones lleva cada uno. */
 export async function planesDe(sql: any, pacienteId: string) {
+  // hechas = turnos del plan de hoy o antes; los futuros (que puede agendar la
+  // paciente desde su cuenta) van aparte, en agendadas.
+  const hoy = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   return (await sql`
     select p.id, p.tratamiento_id, p.tratamiento, p.sesiones, p.frecuencia, p.inicio::text as inicio,
            p.paquete, p.protocolo, p.estado, p.created_at,
-           (select count(*)::int from reservas r where r.plan_id = p.id and r.estado = 'confirmada') as hechas,
-           (select max(r.fecha)::text from reservas r where r.plan_id = p.id and r.estado = 'confirmada') as ultima
+           p.habilitado_at::text as habilitado_at, p.habilitado_por, p.compra_id,
+           (select count(*)::int from reservas r where r.plan_id = p.id and r.estado = 'confirmada'
+              and r.fecha <= ${hoy}::date) as hechas,
+           (select count(*)::int from reservas r where r.plan_id = p.id and r.estado = 'confirmada'
+              and r.fecha > ${hoy}::date) as agendadas,
+           (select max(r.fecha)::text from reservas r where r.plan_id = p.id and r.estado = 'confirmada'
+              and r.fecha <= ${hoy}::date) as ultima
       from planes p
      where p.paciente_id = ${pacienteId}
      order by (p.estado = 'en_curso') desc, (p.estado = 'pausado') desc, p.created_at desc

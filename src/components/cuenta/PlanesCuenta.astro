@@ -1,0 +1,64 @@
+---
+/**
+ * "Mis tratamientos" en Mi cuenta: cada plan con las sesiones hechas (con
+ * fecha), la agendada y las que quedan, y el botón para agendar la próxima
+ * (src/lib/planes-agenda.ts). Solo planes en curso o pausados.
+ */
+import { motivoNoAgenda, type PlanPaciente } from '../../lib/planes-agenda';
+
+interface Props { planes: PlanPaciente[] }
+const { planes } = Astro.props;
+const corta = (f: string) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const larga = (f: string) =>
+  new Date(f + 'T12:00:00Z').toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+---
+
+{planes.length > 0 && (
+  <section id="tratamientos">
+    <h2 class="mc__t">Mis tratamientos</h2>
+    {planes.map((pl) => (
+      <div class="mc__card">
+        <div class="mc__fila">
+          <h3>{pl.tratamiento}</h3>
+          {pl.sesiones != null && pl.habilitado && (
+            <span class="mc__chip mc__chip--ok">{pl.restantes === 1 ? 'Te queda 1' : `Te quedan ${pl.restantes}`} de {pl.sesiones}</span>
+          )}
+        </div>
+        {pl.sesiones != null && (
+          <div class="pl-puntos" aria-label={`${pl.hechas} hechas, ${pl.agendadas} agendadas, de ${pl.sesiones}`}>
+            {Array.from({ length: pl.sesiones }, (_, i) => (
+              <i class={i < pl.hechas ? 'is-hecha' : i < pl.hechas + pl.agendadas ? 'is-agendada' : ''}></i>
+            ))}
+          </div>
+        )}
+        <p class="mc__meta">
+          {pl.hechas === 0 ? 'Todavía sin sesiones hechas' : `${pl.hechas} ${pl.hechas === 1 ? 'sesión hecha' : 'sesiones hechas'}: ${pl.fechasHechas.map(corta).join(', ')}`}
+          {pl.frecuencia ? ` · ${pl.frecuencia}` : ''}
+        </p>
+        {pl.proximas.map((t) => (
+          <p class="mc__meta">
+            Próxima: <strong style="text-transform:capitalize">{larga(t.fecha)}</strong>{t.hora ? ` · ${t.hora} h` : ''}{t.sede ? ` · ${t.sede}` : ''}
+            {t.token && <> · <a href={`/mi-turno?c=${t.token}`}>cambiar</a></>}
+          </p>
+        ))}
+        {pl.proxima_fecha && pl.agendadas === 0 && pl.puedeAgendar && (
+          <p class="mc__meta">Ceci te sugirió volver cerca del <strong>{larga(pl.proxima_fecha)}</strong>.</p>
+        )}
+        {pl.puedeAgendar ? (
+          <div class="mc__acciones"><a class="btn btn--primary" href={`/mi-cuenta/agendar?plan=${pl.id}`}>Agendar mi próxima sesión</a></div>
+        ) : (
+          pl.restantes !== 0 || !pl.habilitado ? <p class="mc__meta pl-motivo">{motivoNoAgenda(pl)}</p> : null
+        )}
+      </div>
+    ))}
+  </section>
+)}
+
+<style>
+  .pl-puntos { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.5rem 0 0.6rem; }
+  .pl-puntos i { width: 0.8rem; height: 0.8rem; border-radius: 50%; border: 1.5px solid var(--sage); background: transparent; }
+  .pl-puntos i.is-hecha { background: var(--sage); }
+  .pl-puntos i.is-agendada { background: color-mix(in srgb, var(--sage) 35%, var(--white)); }
+  .pl-motivo { margin-top: 0.6rem; }
+</style>

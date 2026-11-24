@@ -131,8 +131,9 @@ export async function turnosDe(sql: any, pacienteId: string) {
   return (await sql`
     select r.id, r.estado::text as estado, r.modalidad, coalesce(s.nombre, '') as sede,
            r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora, r.token_gestion,
-           r.tratamientos, r.notas
+           r.tratamientos, r.notas, pl.tratamiento as plan_tratamiento
       from reservas r left join sedes s on s.id = r.sede_id
+      left join planes pl on pl.id = r.plan_id
      where r.paciente_id = ${pacienteId}
        and r.estado in ('confirmada', 'a_confirmar', 'pendiente_pago')
        and r.fecha is not null
@@ -158,7 +159,8 @@ export async function recomendacionesDe(sql: any, pacienteId: string) {
   `) as any[];
   const planes = (await sql`
     select pl.tratamiento, pl.sesiones, pl.frecuencia, pl.estado,
-           (select count(*)::int from reservas r where r.plan_id = pl.id and r.estado = 'confirmada') as hechas,
+           (select count(*)::int from reservas r where r.plan_id = pl.id and r.estado = 'confirmada'
+              and r.fecha <= ${hoyUY()}::date) as hechas,
            (select max(r.proxima_fecha)::text from reservas r where r.plan_id = pl.id and r.estado = 'confirmada') as proxima_fecha
       from planes pl
      where pl.paciente_id = ${pacienteId} and pl.estado in ('en_curso', 'pausado')
@@ -209,9 +211,10 @@ export function registroValido(b: any) {
 }
 
 /** Nombre de la consulta para mostrarle a la paciente. */
-export function nombreConsulta(r: { modalidad?: string | null; tratamientos?: any; notas?: string | null }) {
+export function nombreConsulta(r: { modalidad?: string | null; tratamientos?: any; notas?: string | null; plan_tratamiento?: string | null }) {
   const t = Array.isArray(r.tratamientos) && r.tratamientos[0]?.nombre;
   if (t) return String(t);
+  if (r.plan_tratamiento) return `Sesión de ${r.plan_tratamiento}`;
   if (!r.modalidad || r.modalidad === 'manual') return 'Consulta';
   return NOMBRE_MODALIDAD[r.modalidad] ?? 'Consulta';
 }
