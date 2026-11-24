@@ -180,7 +180,7 @@ export async function estadosVuelta(sql: any, soloPaciente?: string) {
       select distinct on (r.paciente_id) r.paciente_id, r.id as reserva_id, r.fecha, r.vuelta_avisada_at
         from reservas r
        where r.paciente_id is not null and r.estado = 'confirmada' and r.fecha is not null
-         and r.fecha < ${hoy}::date and r.modalidad <> 'club'
+         and r.fecha < ${hoy}::date and r.modalidad not in ('club', 'club-premium')
        order by r.paciente_id, r.fecha desc, r.hora desc nulls last
     ),
     prox as (

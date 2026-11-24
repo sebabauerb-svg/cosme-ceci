@@ -69,18 +69,31 @@ export const modalidades: Modalidad[] = [
   },
   {
     id: 'club',
-    nombre: 'El Club de las Estaciones',
-    subtitulo: 'Membresía anual de cuidado evolutivo',
+    // En /reservar esta opción es el Club REGULAR; la tarjeta de la home muestra
+    // los dos planes (override en Modalidades.astro).
+    nombre: 'Club de las Estaciones',
+    subtitulo: 'Membresía anual · 4 consultas virtuales',
     descripcion:
       'La piel es un órgano vivo que cambia con el clima, las estaciones y el tiempo. Una rutina ' +
       'fija todo el año es una rutina obsoleta. El Club es el acompañamiento continuo de tu piel.',
     alcance:
-      'Suscripción anual con una consulta diagnóstica en cada cambio de estación (otoño, invierno, ' +
-      'primavera, verano) para reevaluar tu piel y adaptar el recetario domiciliario. Cuidado ' +
-      'preventivo, cíclico y fundamentado, durante todo el año.',
+      'Una consulta en cada cambio de estación para reevaluar tu piel y adaptar tu recetario. ' +
+      'Dos planes: Regular, con las 4 consultas virtuales, y Premium, con las 4 presenciales y ' +
+      'un registro de seguimiento de tu piel.',
     precio: '$4.800 / año',
-    precioNota: '4 pagos de $1.200, uno por estación',
+    precioNota: '10% de descuento por transferencia o hasta 3 cuotas con Mercado Pago',
     destacado: true,
-    ctaTexto: 'Quiero saber más',
+    ctaTexto: 'Ver los dos planes',
+  },
+  // Solo para /reservar: en la home el Club tiene UNA tarjeta (ver Modalidades.astro).
+  {
+    id: 'club-premium',
+    nombre: 'Club de las Estaciones Premium',
+    subtitulo: 'Membresía anual · 4 consultas presenciales',
+    descripcion: '',
+    alcance: '',
+    precio: 'U$S 200 / año',
+    precioNota: '10% de descuento por transferencia o hasta 3 cuotas con Mercado Pago',
+    ctaTexto: 'Sumarme',
   },
 ];
