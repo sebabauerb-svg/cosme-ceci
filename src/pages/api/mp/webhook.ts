@@ -1,11 +1,16 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureGoogleEventId, ensureConfirmacion, ensureGestion } from '../../../lib/db';
+import { getSql, ensureGoogleEventId, ensureConfirmacion, ensureGestion, ensureCompras } from '../../../lib/db';
 import {
   obtenerPago,
   verificarFirmaWebhook,
   webhookSecretConfigurado,
 } from '../../../lib/mercadopago';
-import { notificarReservaConfirmada, alertarPagoSinTurno } from '../../../lib/email';
+import {
+  notificarReservaConfirmada,
+  alertarPagoSinTurno,
+  notificarCompraConfirmada,
+} from '../../../lib/email';
+import { formatMonto, mismoMonto, PAQUETE_ID } from '../../../lib/compras';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
@@ -94,8 +99,20 @@ export const POST: APIRoute = async ({ request }) => {
     const sql = getSql();
     await ensureConfirmacion(sql);
     await ensureGestion(sql);
+    await ensureCompras(sql);
 
     if (estado === 'approved') {
+      // ¿Es una compra (Club o paquete)? Tiene su propia validación: monto Y
+      // moneda contra lo que fijó el servidor. La seña sigue el camino de siempre.
+      const compraRow = (await sql`
+        select producto, producto_nombre, moneda, monto_esperado, nombre, telefono, email
+          from reservas where id = ${reservaId} and producto is not null
+      `) as any[];
+      if (compraRow.length) {
+        await confirmarCompra(sql, pago, String(paymentId), reservaId, compraRow[0]);
+        return new Response('ok', { status: 200 });
+      }
+
       // Integridad de monto: el pago debe coincidir con el precio que registramos
       // server-side. Defensa extra contra manipulación del monto.
       const prev = (await sql`
@@ -282,6 +299,62 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response('error', { status: 500 });
   }
 };
+
+/**
+ * Pago aprobado de una compra (Club o paquete). Valida monto y moneda contra la
+ * base; si no coinciden NO la da por pagada y avisa a Ceci. Idempotente: solo
+ * confirma (y manda el mail) la primera vez.
+ */
+async function confirmarCompra(sql: any, pago: any, paymentId: string, reservaId: string, c: any) {
+  const esperado = c.monto_esperado != null ? Number(c.monto_esperado) : null;
+  const monedaEsperada: string = c.moneda || 'UYU';
+  const pagado = typeof pago.transaction_amount === 'number' ? pago.transaction_amount : null;
+  const monedaPagada: string | null = pago.currency_id ?? null;
+  const cuotas = Number.isInteger(pago.installments) ? Number(pago.installments) : null;
+
+  if (esperado == null || pagado == null || !mismoMonto(pagado, esperado) || monedaPagada !== monedaEsperada) {
+    console.error(
+      `MP webhook: compra con monto/moneda distinto (esperado ${esperado} ${monedaEsperada}, pagado ${pagado} ${monedaPagada}) reserva ${reservaId} — no se confirma`
+    );
+    await sql`
+      update reservas set mp_payment_id = ${paymentId}, mp_estado = 'approved_monto_distinto',
+             mp_monto = ${pagado}, mp_moneda = ${monedaPagada}, mp_cuotas = ${cuotas}
+       where id = ${reservaId}
+    `;
+    await alertarPagoSinTurno({
+      motivo: `Pago de "${c.producto_nombre}" por ${pagado ?? '?'} ${monedaPagada ?? '?'}, pero el precio registrado es ${esperado ?? '?'} ${monedaEsperada}. La compra NO se dio por pagada.`,
+      paymentId,
+      reservaId,
+      nombre: c.nombre,
+      telefono: c.telefono,
+      email: c.email,
+    });
+    return;
+  }
+
+  const upd = (await sql`
+    update reservas
+       set estado = 'confirmada', expira_at = null,
+           mp_payment_id = ${paymentId}, mp_estado = 'approved',
+           mp_monto = ${pagado}, mp_moneda = ${monedaPagada}, mp_cuotas = ${cuotas},
+           pagado = true, monto_cobrado = ${pagado}, forma_pago = 'mercadopago',
+           pagado_at = now()
+     where id = ${reservaId} and estado in ('pendiente_pago', 'expirada')
+     returning id
+  `) as any[];
+  if (!upd.length) return;
+
+  await notificarCompraConfirmada({
+    producto: c.producto_nombre ?? c.producto,
+    nombre: c.nombre,
+    telefono: c.telefono,
+    email: c.email,
+    monto: formatMonto(pagado, monedaPagada),
+    via: 'mercadopago',
+    cuotas,
+    esPaquete: String(c.producto).startsWith(PAQUETE_ID),
+  });
+}
 
 // MercadoPago a veces hace un GET de verificación al registrar la URL.
 export const GET: APIRoute = async () => new Response('ok', { status: 200 });

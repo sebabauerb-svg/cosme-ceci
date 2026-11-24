@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensureGoogleEventId, ensureGestion } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensureGoogleEventId, ensureGestion, ensureCompras } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
-import { notificarReservaConfirmada } from '../../../lib/email';
+import { notificarReservaConfirmada, notificarCompraConfirmada } from '../../../lib/email';
+import { formatMonto, PAQUETE_ID } from '../../../lib/compras';
 import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
@@ -53,6 +54,48 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     await ensureConfirmacion(sql);
     await ensureGoogleEventId(sql);
     await ensureGestion(sql);
+    await ensureCompras(sql);
+
+    // Compra (Club o paquete) pagada por transferencia: lo cobrado es el total,
+    // no una seña. Va por su propio camino (sin calendario ni plantilla de turno).
+    const compra = (await sql`
+      select producto, producto_nombre, moneda, monto_esperado from reservas
+       where id = ${id} and estado = 'a_confirmar' and producto is not null
+    `) as any[];
+    if (compra.length) {
+      const c = compra[0];
+      const monto = pagado ? (montoCobrado ?? (c.monto_esperado != null ? Number(c.monto_esperado) : null)) : montoCobrado;
+      const updC = (await sql`
+        update reservas
+           set estado = 'confirmada', expira_at = null,
+               monto_cobrado = ${monto}, pagado = ${pagado},
+               forma_pago = ${pagado ? 'transferencia' : null},
+               pagado_at = ${pagado ? new Date().toISOString() : null}
+         where id = ${id} and estado = 'a_confirmar'
+         returning nombre, telefono, email
+      `) as any[];
+      if (!updC.length)
+        return json({ ok: false, error: 'Esa compra ya no está a confirmar (quizá venció o ya se resolvió).' }, 409);
+      const d = updC[0];
+      if (pagado) {
+        void notificarCompraConfirmada({
+          producto: c.producto_nombre ?? c.producto,
+          nombre: d.nombre,
+          telefono: d.telefono,
+          email: d.email,
+          monto: formatMonto(monto ?? 0, c.moneda),
+          via: 'transferencia',
+          esPaquete: String(c.producto).startsWith(PAQUETE_ID),
+        });
+      }
+      // Sin WhatsApp automático: la plantilla "confirmado" es de turnos con día y
+      // hora. El panel ofrece el botón manual.
+      return json({
+        ok: true,
+        waEnviado: false,
+        reserva: { nombre: d.nombre, telefono: d.telefono, modalidad: c.producto_nombre ?? c.producto, sede: null, fechaLabel: null, hora: null, compra: true },
+      });
+    }
 
     const upd = (await sql`
       update reservas
