@@ -11,6 +11,7 @@ import {
   notificarCompraConfirmada,
 } from '../../../lib/email';
 import { formatMonto, mismoMonto, PAQUETE_ID, esProductoSesion } from '../../../lib/compras';
+import { planDesdePaquetePagado } from '../../../lib/compras-plan';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
@@ -363,6 +364,10 @@ async function confirmarCompra(sql: any, pago: any, paymentId: string, reservaId
      returning id
   `) as any[];
   if (!upd.length) return;
+
+  // Paquete pagado → plan con sus sesiones en la ficha (lo agenda desde Mi cuenta
+  // cuando Ceci lo habilita, o solo con PLANES_AUTO_DESDE_COMPRA=true).
+  await planDesdePaquetePagado(sql, reservaId, 'mercadopago');
 
   await notificarCompraConfirmada({
     producto: c.producto_nombre ?? c.producto,

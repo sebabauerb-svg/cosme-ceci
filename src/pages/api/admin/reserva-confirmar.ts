@@ -4,6 +4,7 @@ import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { notificarReservaConfirmada, notificarCompraConfirmada } from '../../../lib/email';
 import { formatMonto, PAQUETE_ID } from '../../../lib/compras';
+import { planDesdePaquetePagado } from '../../../lib/compras-plan';
 import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
@@ -77,6 +78,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       if (!updC.length)
         return json({ ok: false, error: 'Esa compra ya no está a confirmar (quizá venció o ya se resolvió).' }, 409);
       const d = updC[0];
+      // Paquete con la transferencia vista → plan con sus sesiones en la ficha.
+      if (pagado) await planDesdePaquetePagado(sql, id, 'transferencia');
       if (pagado) {
         void notificarCompraConfirmada({
           producto: c.producto_nombre ?? c.producto,
