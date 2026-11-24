@@ -24,7 +24,8 @@ export const GET: APIRoute = async ({ cookies }) => {
 };
 
 // POST /api/admin/precios
-// body: { precios: [{ clave, precio: int|null, paquete6: int|null }] }
+// body: { precios: [{ clave, precio: int|null, paquete6: int|null, sena?: int|null }] }
+// `sena` solo viaja si el panel muestra la columna: si no viene, no se toca.
 // Guarda (upsert) los ítems enviados. precio null = "Valor en consulta".
 export const POST: APIRoute = async ({ request, cookies }) => {
   if (!isAdmin(cookies)) return json({ ok: false, error: 'No autorizado' }, 401);
@@ -39,27 +40,40 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   if (!lista.length) return json({ ok: false, error: 'No hay precios para guardar.' }, 400);
 
   const validas = clavesValidas();
-  const filas: { clave: string; precio: number | null; paquete6: number | null }[] = [];
+  const filas: { clave: string; precio: number | null; paquete6: number | null; sena?: number | null }[] = [];
   for (const it of lista) {
     const precio = monto(it?.precio);
     const paquete6 = monto(it?.paquete6);
-    if (typeof it?.clave !== 'string' || !validas.has(it.clave) || precio === undefined || paquete6 === undefined) {
+    const conSena = it && typeof it === 'object' && 'sena' in it;
+    const sena = conSena ? monto(it.sena) : null;
+    if (
+      typeof it?.clave !== 'string' || !validas.has(it.clave) || precio === undefined || paquete6 === undefined ||
+      sena === undefined || (conSena && !it.clave.startsWith('trat:'))
+    ) {
       return json({ ok: false, error: `Valor inválido en ${it?.clave ?? 'un ítem'}.` }, 400);
     }
-    filas.push({ clave: it.clave, precio, paquete6: precio == null ? null : paquete6 });
+    // Seña 0 = sin seña propia (vale la general).
+    filas.push({ clave: it.clave, precio, paquete6: precio == null ? null : paquete6, ...(conSena ? { sena: sena || null } : {}) });
   }
 
   try {
     const sql = getSql();
     await ensurePrecios(sql);
     await sql.transaction(
-      filas.map(
-        (f) => sql`
-          insert into precios (clave, precio, paquete6, updated_at)
-          values (${f.clave}, ${f.precio}, ${f.paquete6}, now())
-          on conflict (clave) do update
-            set precio = excluded.precio, paquete6 = excluded.paquete6, updated_at = now()
-        `
+      filas.map((f) =>
+        'sena' in f
+          ? sql`
+              insert into precios (clave, precio, paquete6, sena, updated_at)
+              values (${f.clave}, ${f.precio}, ${f.paquete6}, ${f.sena ?? null}, now())
+              on conflict (clave) do update
+                set precio = excluded.precio, paquete6 = excluded.paquete6, sena = excluded.sena, updated_at = now()
+            `
+          : sql`
+              insert into precios (clave, precio, paquete6, updated_at)
+              values (${f.clave}, ${f.precio}, ${f.paquete6}, now())
+              on conflict (clave) do update
+                set precio = excluded.precio, paquete6 = excluded.paquete6, updated_at = now()
+            `
       )
     );
     invalidarPrecios();

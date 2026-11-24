@@ -115,8 +115,8 @@ export async function crearPreferencia(opts: {
         currency_id: opts.moneda ?? 'UYU',
       },
     ],
-    // Solo limita CUÁNTAS cuotas se ofrecen; si son con o sin interés lo
-    // configura Ceci en su cuenta de Mercado Pago, no el código.
+    // Solo limita CUÁNTAS cuotas se ofrecen. El interés de las cuotas lo paga
+    // la paciente y lo fija Mercado Pago (decisión de Sebas, nov-2026).
     ...(opts.maxCuotas ? { payment_methods: { installments: opts.maxCuotas } } : {}),
     external_reference: opts.reservaId,
     ...(opts.email ? { payer: { email: opts.email } } : {}),

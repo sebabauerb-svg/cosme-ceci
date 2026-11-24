@@ -271,6 +271,8 @@ export async function ensurePrecios(sql: any) {
       updated_at timestamptz not null default now()
     )
   `;
+  // Seña por tratamiento (nov-2026). Vacía = la general ($700). Ver precios-vigentes.ts.
+  await sql`alter table precios add column if not exists sena integer check (sena is null or sena between 0 and 1000000)`;
 }
 
 /**

@@ -28,8 +28,11 @@ export type ViaPago = 'mercadopago' | 'transferencia';
 export type Producto = {
   /** 'club' | 'club-premium' | 'paquete6:<tratamiento>' | 'paquete12:<tratamiento>' */
   id: string;
-  /** Modalidad con la que se guarda en `reservas.modalidad`. */
-  modalidad: 'club' | 'club-premium' | 'paquete';
+  /**
+   * Modalidad con la que se guarda en `reservas.modalidad`. 'sesion' = una sesión
+   * de tratamiento con día y hora, pagada completa (no la seña).
+   */
+  modalidad: 'club' | 'club-premium' | 'paquete' | 'sesion';
   nombre: string;
   /** Precio de lista (lo que se cobra por Mercado Pago). */
   monto: number;
@@ -41,7 +44,7 @@ export type Producto = {
 /** Modalidad de los paquetes en la base (texto libre, no es un enum). */
 export const PAQUETE_ID = 'paquete';
 
-/** Máximo de cuotas que ofrece el checkout. Si son con o sin interés lo define Ceci en su cuenta. */
+/** Máximo de cuotas que ofrece el checkout. El interés de las cuotas lo paga la paciente (lo fija Mercado Pago). */
 export const MAX_CUOTAS = 3;
 
 /** Descuento por pagar con transferencia (src/data/pago.ts → formasDePago). */
@@ -103,6 +106,29 @@ export function productosPaquete(precios: Precios): Producto[] {
   }
   return out;
 }
+
+/**
+ * Sesión de un tratamiento pagada COMPLETA por Mercado Pago (hasta 3 cuotas),
+ * en vez de la seña. Solo tratamientos con valor "por sesión": los que se cobran
+ * por zona no tienen un total que la web pueda saber, así que quedan con seña.
+ */
+export function productoSesion(precios: Precios, tratamientoId: unknown): Producto | null {
+  if (typeof tratamientoId !== 'string') return null;
+  const t = categoriasTratamientos.flatMap((c) => c.tratamientos).find((x) => x.id === tratamientoId);
+  if (!t || t.unidad) return null;
+  const v = precios[claveTratamiento(t.id)];
+  if (!v || v.precio == null || v.precio <= 0) return null;
+  return {
+    id: `sesion:${t.id}`,
+    modalidad: 'sesion',
+    nombre: `Sesión de tratamiento: ${t.nombre}`,
+    monto: v.precio,
+    moneda: 'UYU',
+  };
+}
+
+/** ¿Es una sesión pagada completa (turno con fecha) y no una compra sin fecha? */
+export const esProductoSesion = (producto: unknown) => typeof producto === 'string' && producto.startsWith('sesion:');
 
 /** Busca un producto por id con los precios vigentes. null si no existe o no se vende. */
 export function productoPorId(id: unknown, precios: Precios): Producto | null {

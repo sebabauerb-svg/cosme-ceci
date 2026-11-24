@@ -7,10 +7,10 @@ import { modalidades } from '../data/modalidades';
 import { esMembresia } from '../data/club';
 import { site, whatsappLink } from '../data/site';
 import { SENA_UYU, SESION_ID, senaOnline } from '../lib/precios';
-import { leerPrecios, precioModalidadTexto, claveTratamiento } from '../lib/precios-vigentes';
+import { leerPrecios, precioModalidadTexto, claveTratamiento, senaDeReserva, senaPorTratamientoActiva } from '../lib/precios-vigentes';
 import { categoriasTratamientos, formatUYU } from '../data/tratamientos';
 import { cacheCdn } from '../lib/cache';
-import { pagoMembresiasActivo, productoPorId, productosPaquete, montoPorVia, formatMonto, type Producto } from '../lib/compras';
+import { pagoMembresiasActivo, productoPorId, productosPaquete, productoSesion, montoPorVia, formatMonto, type Producto } from '../lib/compras';
 
 // SSR con caché de CDN: el precio de cada modalidad es el que Ceci carga en
 // /admin → Precios, sin redeploy. La seña sigue fija (src/lib/precios.ts).
@@ -84,18 +84,32 @@ const paquetes = pagoActivo
   : [];
 const items = [itemSesion, ...itemsModalidades];
 
-// Tratamientos del catálogo, reservables directo desde la home
-// (?tratamiento=id). Precio vigente del panel; sin precio → "Valor en consulta".
+// Tratamientos del catálogo: se eligen en el paso 1 (desplegable "Tratamientos")
+// o directo desde la home (?tratamiento=id). Precio vigente del panel; sin precio
+// → "Valor en consulta". La seña puede ser propia del tratamiento
+// (SENA_POR_TRATAMIENTO_ACTIVA) y, con el cobro online prendido, la sesión se
+// puede pagar completa en hasta 3 cuotas (solo las que tienen valor por sesión).
+const senaPorTrat = senaPorTratamientoActiva();
 const tratamientos = categoriasTratamientos.flatMap((cat) =>
   cat.tratamientos.map((t) => {
     const v = precios[claveTratamiento(t.id)];
+    const sena = senaDeReserva(precios, SESION_ID, t.id);
+    const total = pagoActivo ? productoSesion(precios, t.id) : null;
     return {
       id: t.id,
       nombre: t.nombre,
+      grupo: `${cat.grupo} · ${cat.titulo}`,
       precio: v?.precio != null ? `${formatUYU(v.precio)} ${t.unidad ?? 'por sesión'}` : 'Valor en consulta',
+      sena,
+      senaLabel: sena != null ? fmt(sena) : null,
+      total: total ? { label: formatMonto(total.monto, total.moneda) } : null,
     };
   })
 );
+const gruposTrat = [...new Set(tratamientos.map((t) => t.grupo))].map((g) => ({
+  grupo: g,
+  items: tratamientos.filter((t) => t.grupo === g),
+}));
 
 // Datos bancarios para señar por transferencia. Si todavía no se cargaron en
 // src/data/pago.ts, la web no inventa nada: dice que Ceci los pasa por WhatsApp.
@@ -130,7 +144,7 @@ const senaLabel = fmt(SENA_UYU);
           <p class="como__t">Así funciona la reserva</p>
           <ol class="como__pasos">
             <li><strong>Elegís qué reservar, el día y el horario.</strong></li>
-            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Es para todas las reservas, seas paciente o vengas por primera vez, y se descuenta de lo que abonás ese día.</li>
+            <li><strong>Dejás una seña de {senaLabel}{senaPorTrat && ' (o la que indique tu tratamiento)'}</strong> por transferencia o Mercado Pago. Es para todas las reservas, seas paciente o vengas por primera vez, y se descuenta de lo que abonás ese día.</li>
             <li><strong>Te llega la confirmación por mail</strong> con el día y la hora.</li>
           </ol>
           <p class="como__extra">
@@ -156,6 +170,29 @@ const senaLabel = fmt(SENA_UYU);
             </button>
           ))}
         </div>
+
+        {/* Tratamientos puntuales (pedido de Sebas, nov-2026): antes solo se
+            elegían desde la home y en /reservar no se veían sus precios. */}
+        <details class="trat-sel">
+          <summary class="trat-sel__sum">
+            <span class="trat-sel__t">Tratamientos</span>
+            <span class="trat-sel__sub">Elegí el tuyo y mirá su valor y su seña</span>
+          </summary>
+          {gruposTrat.map((g) => (
+            <div class="trat-sel__grupo">
+              <p class="trat-sel__g">{g.grupo}</p>
+              {g.items.map((t) => (
+                <button type="button" class="trat-opt" data-trat={t.id}>
+                  <span class="trat-opt__nom">{t.nombre}</span>
+                  <span class="trat-opt__val">
+                    {t.precio}
+                    {t.senaLabel && <span class="trat-opt__sena"> · seña {t.senaLabel}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </details>
       </section>
 
       <!-- Paso 2: Fecha y hora -->
@@ -220,6 +257,11 @@ const senaLabel = fmt(SENA_UYU);
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
         <button class="btn btn--ghost pay" id="confirmar">Pagar la seña con Mercado Pago</button>
         <p class="step__hint center tic" id="hint-mp">Tu turno queda confirmado al instante</p>
+        {/* Sesión completa en cuotas: solo con el cobro online prendido y para
+            tratamientos con valor por sesión (el JS la muestra si aplica). */}
+        <div class="pay-sep" id="pay-sep-total" hidden><span>o</span></div>
+        <button class="btn btn--ghost pay" id="pagar-total" hidden>Pagar la sesión completa con Mercado Pago</button>
+        <p class="step__hint center tic" id="hint-total" hidden>Hasta 3 cuotas (el interés de las cuotas lo define Mercado Pago). No te queda saldo para ese día</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -347,6 +389,21 @@ const senaLabel = fmt(SENA_UYU);
   // Paso 1: opciones
   $$('.opt').forEach((b) =>
     b.addEventListener('click', () => elegir(items.find((i) => i.id === b.dataset.id)))
+  );
+  // Un tratamiento puntual es una sesión en sede, con su nombre, su valor, su
+  // seña (puede ser propia) y, si aplica, el pago completo en cuotas.
+  function itemTratamiento(trat) {
+    const base = items.find((i) => i.id === 'sesion');
+    return {
+      ...base, servicio: trat.nombre, precio: trat.precio, tratamientoId: trat.id,
+      sena: trat.sena, senaLabel: trat.senaLabel, total: trat.total,
+    };
+  }
+  $$('.trat-opt').forEach((b) =>
+    b.addEventListener('click', () => {
+      const t = tratamientos.find((x) => x.id === b.dataset.trat);
+      if (t) elegir(itemTratamiento(t));
+    })
   );
 
   function elegir(m) {
@@ -621,9 +678,14 @@ const senaLabel = fmt(SENA_UYU);
     }
     if (mpHint) {
       mpHint.hidden = esMemb;
-      mpHint.textContent = m.compra ? 'Queda confirmada al instante' : 'Tu turno queda confirmado al instante';
+      mpHint.textContent = m.compra ? 'Queda confirmada al instante. El interés de las cuotas lo define Mercado Pago' : 'Tu turno queda confirmado al instante';
     }
     if (sep) sep.hidden = esMemb;
+    // Sesión completa (hasta 3 cuotas): solo tratamientos con total conocido.
+    const conTotal = !!m.total && !m.compra;
+    ['#pay-sep-total', '#pagar-total', '#hint-total'].forEach((s) => { const el = $(s); if (el) el.hidden = !conTotal; });
+    const totBtn = $('#pagar-total');
+    if (totBtn && conTotal) totBtn.textContent = `Pagar la sesión completa (${m.total.label}) con Mercado Pago`;
     // La política es sobre la seña: no aplica al Club, que se coordina aparte.
     const politica = $('#politica');
     if (politica) politica.hidden = !!m.esMembresia;
@@ -698,7 +760,7 @@ const senaLabel = fmt(SENA_UYU);
   // Registra la reserva y BLOQUEA el cupo. via='pagar' (MercadoPago) o
   // via='coordinar' (sin pago, queda a confirmar por Ceci). Devuelve los datos
   // de la reserva, o null si hubo un problema (ya deja el botón/alertas listos).
-  async function enviarReserva(via, btn) {
+  async function enviarReserva(via, btn, cobro = null) {
     const orig = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Reservando…';
@@ -718,6 +780,7 @@ const senaLabel = fmt(SENA_UYU);
           newsletter: state.newsletter,
           tratamiento: m.tratamientoId || null,
           producto: m.compra ? m.compra.productoId : null,
+          cobro,
           via,
         }),
       });
@@ -753,9 +816,12 @@ const senaLabel = fmt(SENA_UYU);
   }
 
   // Camino PAGAR: al confirmar, vamos directo al checkout de MercadoPago.
-  $('#confirmar').addEventListener('click', async () => {
+  // cobro 'total' = la sesión completa en hasta 3 cuotas, en vez de la seña.
+  $('#confirmar').addEventListener('click', () => pagarConMp($('#confirmar'), null));
+  $('#pagar-total').addEventListener('click', () => pagarConMp($('#pagar-total'), 'total'));
+  async function pagarConMp(boton, cobro) {
     const m = state.modalidad;
-    const data = await enviarReserva('pagar', $('#confirmar'));
+    const data = await enviarReserva('pagar', boton, cobro);
     if (!data) return;
     // Guardamos el detalle para armar el mensaje "PAGO CONFIRMADO" al volver de MP.
     try {
@@ -784,7 +850,7 @@ const senaLabel = fmt(SENA_UYU);
     const pagoLink = $('#pago-link');
     if (pago && pagoLink) { pagoLink.href = pago; pagoLink.hidden = false; }
     goTo(5);
-  });
+  }
 
   // Camino COORDINAR: reserva sin pagar → queda a confirmar por Ceci (cupo 2 h).
   $('#coordinar').addEventListener('click', async () => {
@@ -832,7 +898,9 @@ const senaLabel = fmt(SENA_UYU);
     const banco = $('#datos-banco');
     if (banco) banco.hidden = !!m.esMembresia && !m.compra;
     const bancoT = $('#banco-t');
-    if (bancoT && m.compra) bancoT.textContent = `Datos para transferir ${m.compra.transf}`;
+    if (bancoT) bancoT.textContent = m.compra
+      ? `Datos para transferir ${m.compra.transf}`
+      : `Datos para transferir la seña de ${m.senaLabel}`;
     // El concepto lleva el nombre para que Ceci identifique la transferencia.
     const concepto = $('#banco-concepto');
     if (concepto) concepto.textContent = `${m.compra ? (m.compra.esPaquete ? 'Paquete' : 'Club') : conceptoPrefijo} ${state.nombre}`;
@@ -855,6 +923,11 @@ const senaLabel = fmt(SENA_UYU);
       if (btn) {
         btn.disabled = false;
         btn.textContent = state.modalidad?.compra ? 'Pagar con Mercado Pago (hasta 3 cuotas)' : 'Pagar la seña con Mercado Pago';
+      }
+      const tot = $('#pagar-total');
+      if (tot && state.modalidad?.total) {
+        tot.disabled = false;
+        tot.textContent = `Pagar la sesión completa (${state.modalidad.total.label}) con Mercado Pago`;
       }
     }
   });
@@ -939,8 +1012,7 @@ const senaLabel = fmt(SENA_UYU);
       elegir({ id: 'paquete', nombre: paq.nombre, servicio: paq.nombre, subtitulo: '', precio: paq.compra.lista, precioNota: '', esMembresia: true, sena: null, senaLabel: null, compra: paq.compra });
       history.replaceState(null, '', '/reservar');
     } else if (trat) {
-      const base = items.find((i) => i.id === 'sesion');
-      elegir({ ...base, servicio: trat.nombre, precio: trat.precio, tratamientoId: trat.id });
+      elegir(itemTratamiento(trat));
       history.replaceState(null, '', '/reservar');
     } else if (pre) {
       const btn = $$('.opt').find((b) => b.dataset.id === pre);
@@ -977,6 +1049,21 @@ const senaLabel = fmt(SENA_UYU);
     padding: 0.6rem 1rem;
   }
   .booking__wrap { max-width: 660px; margin-inline: auto; }
+  /* Desplegable de tratamientos en el paso 1 */
+  .trat-sel { margin-top: 1rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); }
+  .trat-sel__sum { list-style: none; cursor: pointer; display: grid; gap: 0.15rem; padding: 1rem 2.6rem 1rem 1.1rem; position: relative; }
+  .trat-sel__sum::-webkit-details-marker { display: none; }
+  .trat-sel__sum::after { content: '+'; position: absolute; right: 1.1rem; top: 50%; transform: translateY(-50%); font-size: 1.3rem; color: var(--sage-deep); }
+  .trat-sel[open] .trat-sel__sum::after { content: '–'; }
+  .trat-sel__t { font-weight: 600; color: var(--ink); }
+  .trat-sel__sub { font-size: 0.86rem; color: var(--ink-soft); }
+  .trat-sel__grupo { padding: 0 1.1rem 0.6rem; }
+  .trat-sel__g { margin: 0.6rem 0 0.3rem; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--clay-deep); font-weight: 600; }
+  .trat-opt { display: grid; gap: 0.1rem; width: 100%; text-align: left; font: inherit; padding: 0.65rem 0; border: 0; border-top: 1px solid var(--sand); background: none; cursor: pointer; color: var(--ink); min-width: 0; }
+  .trat-opt:hover .trat-opt__nom, .trat-opt:focus-visible .trat-opt__nom { color: var(--sage-deep); text-decoration: underline; text-underline-offset: 2px; }
+  .trat-opt__nom { font-weight: 600; overflow-wrap: anywhere; }
+  .trat-opt__val { font-size: 0.86rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
   .booking__head { text-align: center; margin-bottom: 2.5rem; }
   .booking__head h1 {
     margin: 0.3rem 0 0.6rem;

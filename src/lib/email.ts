@@ -49,6 +49,8 @@ type Datos = {
   via?: 'pagar' | 'coordinar';
   /** seña que reserva el turno (lo único que se cobra por la web) */
   sena?: number | null;
+  /** true = pagó la sesión COMPLETA por la web (no una seña): no queda saldo */
+  pagoTotal?: boolean;
   /** link /mi-turno para que la paciente cambie el horario sola */
   linkCambio?: string | null;
 };
@@ -81,6 +83,10 @@ function bloqueDetalle(d: Datos) {
  */
 function bloqueCobro(d: Datos) {
   if (d.sena == null) return '';
+  if (d.pagoTotal)
+    return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:14px 0 0">
+    <strong>Sesión abonada completa:</strong> $${esc(d.sena)} · No tenés saldo a pagar ese día.
+  </p>`;
   return `<p style="font-family:system-ui,sans-serif;line-height:1.7;color:#2a302b;margin:14px 0 0">
     <strong>Seña abonada:</strong> $${esc(d.sena)} · El saldo lo abonás en la consulta.
   </p>`;
@@ -133,7 +139,9 @@ export async function notificarReservaConfirmada(d: Datos, opts: { online?: bool
           `<h2 style="font-family:Georgia,serif;color:#2a302b">¡Turno confirmado!</h2>
            <p style="font-family:system-ui;color:#2a302b">${esc(d.nombre)}, ${
              online
-               ? 'recibimos tu seña por MercadoPago y tu turno quedó confirmado'
+               ? d.pagoTotal
+                 ? 'recibimos el pago de tu sesión por Mercado Pago y tu turno quedó confirmado'
+                 : 'recibimos tu seña por MercadoPago y tu turno quedó confirmado'
                : d.sena != null
                  ? 'confirmamos tu pago y tu turno quedó agendado'
                  : 'confirmamos tu turno'

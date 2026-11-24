@@ -5,7 +5,7 @@ import { vincularPendientes } from '../../lib/pacientes';
 import { duracionDeTurno } from '../../lib/agenda';
 import { notificarReserva, notificarCompra } from '../../lib/email';
 import { crearPreferencia, mpConfigurado, origenPublico } from '../../lib/mercadopago';
-import { senaOnline, requiereSede, SESION_ID } from '../../lib/precios';
+import { requiereSede, SESION_ID } from '../../lib/precios';
 import { categoriasTratamientos } from '../../data/tratamientos';
 import { esMembresia as esMembresiaClub } from '../../data/club';
 import {
@@ -15,9 +15,10 @@ import {
   formatMonto,
   MAX_CUOTAS,
   PAQUETE_ID,
+  productoSesion,
   type Producto,
 } from '../../lib/compras';
-import { leerPrecios } from '../../lib/precios-vigentes';
+import { leerPrecios, senaDeReserva } from '../../lib/precios-vigentes';
 
 export const prerender = false;
 
@@ -102,10 +103,11 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   const { modalidad, sede, fecha, hora, nombre, telefono, email } = body ?? {};
   // Tratamiento elegido desde la home (solo para la sesión en sede). Se valida
   // contra el catálogo: un id desconocido se ignora y queda como sesión genérica.
-  const tratamientoNombre =
+  const tratamientoElegido =
     modalidad === SESION_ID && typeof body?.tratamiento === 'string'
-      ? categoriasTratamientos.flatMap((c) => c.tratamientos).find((t) => t.id === body.tratamiento)?.nombre ?? null
+      ? categoriasTratamientos.flatMap((c) => c.tratamientos).find((t) => t.id === body.tratamiento) ?? null
       : null;
+  const tratamientoNombre = tratamientoElegido?.nombre ?? null;
   const servicioNombre = tratamientoNombre
     ? `Sesión de tratamiento: ${tratamientoNombre}`
     : NOMBRE_MODALIDAD[modalidad] ?? modalidad;
@@ -155,17 +157,29 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   // (el body podría venir manipulado con precio: 1). Ver src/lib/precios.ts.
   // Es la SEÑA que reserva el turno, no el total del servicio: el saldo se
   // abona en la consulta. El webhook de MP valida el pago contra este valor.
-  const precioNum = senaOnline(modalidad);
+  // La seña puede ser propia del tratamiento (SENA_POR_TRATAMIENTO_ACTIVA):
+  // sale de los precios vigentes de la base, igual que lo que muestra /reservar.
+  const precios = await leerPrecios();
+  let precioNum = senaDeReserva(precios, modalidad, tratamientoElegido?.id ?? null);
 
   // Compra del Club o de un paquete: el precio sale de los valores vigentes del
   // servidor (src/lib/compras.ts), nunca del body. Para el Club el producto es
   // la propia modalidad; para un paquete, el id que eligió en Tratamientos.
   let compra: Producto | null = null;
   if (cobroCompras && esMembresia) {
-    const precios = await leerPrecios();
     compra = productoPorId(modalidad === PAQUETE_ID ? body?.producto : modalidad, precios);
     if (!compra || compra.modalidad !== modalidad)
       return json({ ok: false, error: 'Ese paquete no está disponible online. Escribile a Ceci por WhatsApp.' }, 400);
+  }
+  // Sesión de un tratamiento pagada COMPLETA (hasta 3 cuotas) en vez de la seña.
+  // Es un turno normal (fecha, cupo, calendario); solo cambia cuánto se cobra.
+  // El webhook la valida como la seña, contra precio_uyu (= el total).
+  if (cobroCompras && modalidad === SESION_ID && body?.cobro === 'total') {
+    compra = productoSesion(precios, tratamientoElegido?.id);
+    if (!compra) return json({ ok: false, error: 'Esta sesión no se puede pagar completa online. Elegí la seña.' }, 400);
+    if (body?.via === 'coordinar')
+      return json({ ok: false, error: 'La sesión completa se paga con Mercado Pago.' }, 400);
+    precioNum = compra.monto;
   }
 
   // Camino de reserva: 'pagar' (MercadoPago, hold 30 min) o 'coordinar' (sin pago,
@@ -174,7 +188,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   const estadoInicial = via === 'coordinar' ? 'a_confirmar' : 'pendiente_pago';
   // Una compra no ocupa cupo: le damos más margen (3 días para transferir, 1 día
   // para terminar el pago) así no desaparece del panel antes de que Ceci la vea.
-  const holdMin = compra ? (via === 'coordinar' ? 72 * 60 : 24 * 60) : via === 'coordinar' ? 120 : 30;
+  const holdMin = compra && esMembresia ? (via === 'coordinar' ? 72 * 60 : 24 * 60) : via === 'coordinar' ? 120 : 30;
   const expira = new Date(Date.now() + holdMin * 60 * 1000).toISOString();
   const capSlug = requiereSede(modalidad) ? str(sede) : 'online';
 
@@ -249,6 +263,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
       // Lo que se compró, a qué precio y en qué moneda: el webhook valida el pago
       // contra monto_esperado + moneda (precio_uyu queda null: no es una seña).
+      // Excepción: la sesión completa guarda el total también en precio_uyu.
       const viaPago = via === 'coordinar' ? 'transferencia' : 'mercadopago';
       const montoEsperado = compra ? montoPorVia(compra, viaPago) : null;
       if (compra) {
@@ -302,7 +317,18 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
             ]
               .filter(Boolean)
               .join(' · ');
-          const pref = compra
+          const pref = compra?.modalidad === SESION_ID
+            ? await crearPreferencia({
+                // Sesión completa: turno con cupo (vence con la reserva), hasta 3 cuotas.
+                titulo: tituloItem.replace(/^Seña — /, 'Sesión completa — '),
+                precio: compra.monto,
+                maxCuotas: MAX_CUOTAS,
+                reservaId,
+                origin,
+                email: emailT || null,
+                expiraIso: expira,
+              })
+            : compra
             ? await crearPreferencia({
                 // Compra: el total (no una seña), en su moneda y hasta 3 cuotas.
                 // Sin vencimiento: no hay cupo que liberar.
@@ -331,7 +357,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
       // Aviso por email a Ceci y a la clienta. Fire-and-forget: la latencia de
       // Resend no debe demorar el redirect al checkout (notificarReserva nunca lanza).
-      if (compra) {
+      if (compra && esMembresia) {
         void notificarCompra(
           {
             producto: compra.nombre,
@@ -355,7 +381,8 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         email: emailT || null,
         pagoOnline: !!initPoint,
         via,
-        sena: precioNum,
+        // La sesión completa no es una seña: el mail no habla de saldo.
+        sena: compra ? null : precioNum,
       });
 
       // Casilla opcional "quiero recibir las novedades" (desmarcada por defecto).

@@ -44,7 +44,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     await ensureGestion(sql);
 
     const rows = (await sql`
-      select r.modalidad, coalesce(s.nombre, '') as sede,
+      select r.modalidad, coalesce(s.nombre, '') as sede, r.precio_uyu as sena_pedida,
              r.fecha::text as fecha, to_char(r.hora,'HH24:MI') as hora,
              r.nombre, r.telefono, r.total_acordado, r.sena_pagada, r.token_gestion
         from reservas r left join sedes s on s.id = r.sede_id
@@ -63,7 +63,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       fechaLarga: fechaLarga(r.fecha),
       hora: r.hora,
       sede: r.sede || null,
-      sena: SENA_UYU,
+      // La seña que se pidió al reservar (puede ser la propia del tratamiento).
+      sena: r.sena_pedida != null ? Number(r.sena_pedida) : SENA_UYU,
       senaPagada,
       saldo: total != null ? Math.max(0, total - (senaPagada ?? 0)) : null,
       linkCambio: linkAutogestion(r.token_gestion),

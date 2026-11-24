@@ -56,7 +56,8 @@ export const POLITICA_CANCELACION =
  */
 export const formasDePago = {
   transferencia: '10% de descuento por transferencia bancaria',
-  cuotas: 'Hasta 3 cuotas con Mercado Pago',
+  // El interés de las cuotas lo paga la paciente (decisión de Sebas, nov-2026): nunca decir "sin interés".
+  cuotas: 'Hasta 3 cuotas con Mercado Pago (el interés de las cuotas lo define Mercado Pago)',
 };
 
 /** ¿Hay datos bancarios cargados como para mostrarlos en la web? */

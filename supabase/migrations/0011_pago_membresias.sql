@@ -30,3 +30,8 @@ alter table reservas add column if not exists mp_monto numeric(10,2);
 alter table reservas add column if not exists pagado_at timestamptz;
 
 create index if not exists reservas_producto on reservas (producto) where producto is not null;
+
+-- Seña por tratamiento, editable en /admin → Precios. NULL = la seña general
+-- ($700, SENA_UYU). Solo se cobra con SENA_POR_TRATAMIENTO_ACTIVA prendida.
+-- (La aplica ensurePrecios() en src/lib/db.ts.)
+alter table precios add column if not exists sena integer check (sena is null or sena between 0 and 1000000);

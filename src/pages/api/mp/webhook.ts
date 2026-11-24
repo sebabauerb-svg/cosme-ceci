@@ -10,7 +10,7 @@ import {
   alertarPagoSinTurno,
   notificarCompraConfirmada,
 } from '../../../lib/email';
-import { formatMonto, mismoMonto, PAQUETE_ID } from '../../../lib/compras';
+import { formatMonto, mismoMonto, PAQUETE_ID, esProductoSesion } from '../../../lib/compras';
 import { crearEventoReserva } from '../../../lib/calendar';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
@@ -106,7 +106,7 @@ export const POST: APIRoute = async ({ request }) => {
       // moneda contra lo que fijó el servidor. La seña sigue el camino de siempre.
       const compraRow = (await sql`
         select producto, producto_nombre, moneda, monto_esperado, nombre, telefono, email
-          from reservas where id = ${reservaId} and producto is not null
+          from reservas where id = ${reservaId} and producto is not null and producto not like 'sesion:%'
       `) as any[];
       if (compraRow.length) {
         await confirmarCompra(sql, pago, String(paymentId), reservaId, compraRow[0]);
@@ -115,13 +115,18 @@ export const POST: APIRoute = async ({ request }) => {
 
       // Integridad de monto: el pago debe coincidir con el precio que registramos
       // server-side. Defensa extra contra manipulación del monto.
+      // Seña o sesión pagada completa (producto 'sesion:<id>'): las dos validan
+      // contra precio_uyu, que fijó el servidor al reservar.
       const prev = (await sql`
-        select precio_uyu, nombre, telefono, email from reservas where id = ${reservaId}
+        select precio_uyu, nombre, telefono, email, producto from reservas where id = ${reservaId}
       `) as any[];
+      const esTotal = esProductoSesion(prev[0]?.producto);
       const precioEsperado = prev[0]?.precio_uyu != null ? Number(prev[0].precio_uyu) : null;
       const montoPagado =
         typeof pago.transaction_amount === 'number' ? Math.round(pago.transaction_amount) : null;
-      if (precioEsperado != null && montoPagado != null && montoPagado !== precioEsperado) {
+      // Todo lo que no es compra del Club/paquete se cobra en pesos.
+      const monedaOk = !pago.currency_id || pago.currency_id === 'UYU';
+      if ((precioEsperado != null && montoPagado != null && montoPagado !== precioEsperado) || !monedaOk) {
         // Hay plata acreditada que no confirma turno: dejar rastro y avisar a Ceci
         // (MP recibe 200 y no reintenta; sin esto nadie se entera).
         console.error(
@@ -190,6 +195,19 @@ export const POST: APIRoute = async ({ request }) => {
           where r.id = ${reservaId}
         `) as any[];
         const d = r[0];
+        // Cuotas y moneda del pago (para el panel). Nunca traba la confirmación.
+        try {
+          await sql`
+            update reservas
+               set mp_cuotas = ${Number.isInteger(pago.installments) ? Number(pago.installments) : null},
+                   mp_moneda = ${pago.currency_id ?? null}, mp_monto = ${pago.transaction_amount ?? null},
+                   pagado_at = now(),
+                   total_acordado = coalesce(${esTotal ? precioEsperado : null}::numeric, total_acordado)
+             where id = ${reservaId}
+          `;
+        } catch (e) {
+          console.error('MP webhook: no se pudieron guardar las cuotas:', e instanceof Error ? e.message : e);
+        }
         if (d) {
           const nombreModalidad = NOMBRE_MODALIDAD[d.modalidad] ?? d.modalidad;
           await notificarReservaConfirmada({
@@ -201,7 +219,9 @@ export const POST: APIRoute = async ({ request }) => {
             telefono: d.telefono,
             email: d.email,
             // Lo cobrado por la web es la seña; el resto se abona en la consulta.
+            // (Salvo la sesión pagada completa: no queda saldo.)
             sena,
+            pagoTotal: esTotal,
             linkCambio: linkAutogestion(d.token_gestion),
           });
           // Mismo aviso por WhatsApp, desde el número de Ceci (si está activo).
