@@ -115,8 +115,8 @@ export async function crearPreferencia(opts: {
         currency_id: opts.moneda ?? 'UYU',
       },
     ],
-    // Solo limita CUÁNTAS cuotas se ofrecen. El interés de las cuotas lo paga
-    // la paciente y lo fija Mercado Pago (decisión de Sebas, nov-2026).
+    // Solo limita CUÁNTAS cuotas se ofrecen. La financiación la absorbe Ceci
+    // (cubierta por el +10%); la configura ella en su cuenta de MP.
     ...(opts.maxCuotas ? { payment_methods: { installments: opts.maxCuotas } } : {}),
     external_reference: opts.reservaId,
     // En previews (vendedor de prueba de MP) NO se manda el email: si es de una

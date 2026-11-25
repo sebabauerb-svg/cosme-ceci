@@ -7,8 +7,9 @@
  *
  * REGLA DE PRECIO (Sebas, nov-2026: "precio de lista y +10 MP"):
  *  - Transferencia: el precio publicado (de lista).
- *  - Mercado Pago: precio publicado + 10% (cubre la comisión). Encima va el
- *    interés de las cuotas, que define Mercado Pago y paga la paciente.
+ *  - Mercado Pago: precio publicado + 10%, que cubre la comisión y la
+ *    financiación de las cuotas (Ceci absorbe ~7,5%; la paciente no paga
+ *    interés aparte). Los textos solo dicen "hasta en 3 cuotas".
  *  - La seña de los turnos NO lleva recargo (a confirmar con Sebas).
  *
  * Todo esto arranca APAGADO: sin PAGO_MEMBRESIAS_ACTIVO la web se comporta como
@@ -50,7 +51,7 @@ export type Producto = {
 /** Modalidad de los paquetes en la base (texto libre, no es un enum). */
 export const PAQUETE_ID = 'paquete';
 
-/** Máximo de cuotas que ofrece el checkout. El interés de las cuotas lo paga la paciente (lo fija Mercado Pago). */
+/** Máximo de cuotas que ofrece el checkout (la cuenta de MP permite más; acá se topea). */
 export const MAX_CUOTAS = 3;
 
 /** Recargo por pagar con Mercado Pago sobre el precio publicado (src/data/pago.ts → formasDePago). */

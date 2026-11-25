@@ -264,7 +264,7 @@ const senaLabel = fmt(SENA_UYU);
             tratamientos con valor por sesión (el JS la muestra si aplica). */}
         <div class="pay-sep" id="pay-sep-total" hidden><span>o</span></div>
         <button class="btn btn--ghost pay" id="pagar-total" hidden>Pagar la sesión completa con Mercado Pago</button>
-        <p class="step__hint center tic" id="hint-total" hidden>Precio de la sesión + 10%, hasta 3 cuotas (el interés de las cuotas lo define Mercado Pago). No te queda saldo para ese día</p>
+        <p class="step__hint center tic" id="hint-total" hidden>Precio de la sesión + 10%, con opción de pagar hasta en 3 cuotas. No te queda saldo para ese día</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -655,7 +655,7 @@ const senaLabel = fmt(SENA_UYU);
       if (m.compra.nota) filas.push(`<p class="resumen__nota">${m.compra.nota}</p>`);
       filas.push(`<div class="resumen__row resumen__row--total"><span>Por transferencia</span><strong>${m.compra.transf}</strong></div>`);
       filas.push(`<div class="resumen__row"><span>Con Mercado Pago (+10%), hasta 3 cuotas</span><strong>${m.compra.mp}</strong></div>`);
-      filas.push(`<p class="resumen__nota">Con Mercado Pago se suma un 10% al precio publicado. Si elegís cuotas, el interés de las cuotas lo define Mercado Pago.</p>`);
+      filas.push(`<p class="resumen__nota">Con Mercado Pago se suma un 10% al precio publicado y podés pagar hasta en 3 cuotas.</p>`);
     } else if (m.sena != null) {
       const esSesion = m.id === 'sesion';
       filas.push(`<div class="resumen__row"><span>${esSesion ? 'Valor de la sesión' : 'Valor de la consulta'}</span><strong>${esSesion && !m.tratamientoId ? 'Según tu tratamiento' : m.precio}</strong></div>`);
@@ -682,7 +682,7 @@ const senaLabel = fmt(SENA_UYU);
     }
     if (mpHint) {
       mpHint.hidden = esMemb;
-      mpHint.textContent = m.compra ? 'Queda confirmada al instante. El interés de las cuotas lo define Mercado Pago' : 'Tu turno queda confirmado al instante';
+      mpHint.textContent = m.compra ? 'Queda confirmada al instante. Podés pagar hasta en 3 cuotas' : 'Tu turno queda confirmado al instante';
     }
     if (sep) sep.hidden = esMemb;
     // Sesión completa (hasta 3 cuotas): solo tratamientos con total conocido.
