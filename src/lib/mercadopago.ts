@@ -119,7 +119,9 @@ export async function crearPreferencia(opts: {
     // la paciente y lo fija Mercado Pago (decisión de Sebas, nov-2026).
     ...(opts.maxCuotas ? { payment_methods: { installments: opts.maxCuotas } } : {}),
     external_reference: opts.reservaId,
-    ...(opts.email ? { payer: { email: opts.email } } : {}),
+    // En previews (vendedor de prueba de MP) NO se manda el email: si es de una
+    // cuenta real, MP corta el pago con "una de las partes es de prueba".
+    ...(opts.email && process.env.VERCEL_ENV !== 'preview' ? { payer: { email: opts.email } } : {}),
     back_urls: {
       success: `${opts.origin}/reservar?pago=ok&rid=${opts.reservaId}`,
       pending: `${opts.origin}/reservar?pago=pendiente&rid=${opts.reservaId}`,
