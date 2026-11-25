@@ -325,7 +325,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
           const pref = compra?.modalidad === SESION_ID
             ? await crearPreferencia({
                 // Sesión completa: turno con cupo (vence con la reserva), hasta 3 cuotas.
-                titulo: tituloItem.replace(/^Seña — /, 'Sesión completa — '),
+                titulo: tituloItem.replace(/^Seña — (Sesión de tratamiento: )?/, 'Sesión completa — '),
                 precio: precioNum as number,
                 maxCuotas: MAX_CUOTAS,
                 reservaId,
