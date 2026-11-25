@@ -135,6 +135,24 @@ export async function ensureAutogestion(sql: any) {
   await sql`create unique index if not exists reservas_token_gestion on reservas (token_gestion)`;
 }
 
+/**
+ * Compras online del Club y de los paquetes (idempotente, solo agrega columnas).
+ * Ver supabase/migrations/0012_pago_membresias.sql y src/lib/compras.ts.
+ */
+export async function ensureCompras(sql: any) {
+  await sql`alter table reservas add column if not exists producto text`;
+  await sql`alter table reservas add column if not exists producto_nombre text`;
+  await sql`alter table reservas add column if not exists moneda text`;
+  await sql`alter table reservas add column if not exists precio_lista numeric(10,2)`;
+  await sql`alter table reservas add column if not exists monto_esperado numeric(10,2)`;
+  await sql`alter table reservas add column if not exists via_pago text`;
+  await sql`alter table reservas add column if not exists mp_cuotas integer`;
+  await sql`alter table reservas add column if not exists mp_moneda text`;
+  await sql`alter table reservas add column if not exists mp_monto numeric(10,2)`;
+  await sql`alter table reservas add column if not exists pagado_at timestamptz`;
+  await sql`create index if not exists reservas_producto on reservas (producto) where producto is not null`;
+}
+
 export async function ensureConfirmacion(sql: any) {
   await sql`alter type reserva_estado add value if not exists 'a_confirmar'`;
   await sql`alter table reservas add column if not exists monto_cobrado numeric(10,2)`;
@@ -253,6 +271,8 @@ export async function ensurePrecios(sql: any) {
       updated_at timestamptz not null default now()
     )
   `;
+  // Seña por tratamiento (nov-2026). Vacía = la general ($700). Ver precios-vigentes.ts.
+  await sql`alter table precios add column if not exists sena integer check (sena is null or sena between 0 and 1000000)`;
 }
 
 /**

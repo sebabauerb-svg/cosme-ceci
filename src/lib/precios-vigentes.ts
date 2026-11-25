@@ -6,12 +6,16 @@
  *   - tratamientos → src/data/tratamientos.ts
  *   - modalidades  → PRECIOS_UYU en src/lib/precios.ts
  *
- * Solo corre en el servidor (páginas SSR y endpoints). La SEÑA que se cobra por
- * la web no sale de acá: sigue fija en src/lib/precios.ts (SENA_UYU).
+ * Solo corre en el servidor (páginas SSR y endpoints).
+ *
+ * SEÑA POR TRATAMIENTO (nov-2026, pedido de Sebas): Ceci puede fijar la seña de
+ * cada tratamiento (columna `sena`). Vacía = la seña general (SENA_UYU, $700).
+ * Solo se COBRA con SENA_POR_TRATAMIENTO_ACTIVA prendida; apagada, todo sigue
+ * con $700 aunque haya valores cargados. Ver senaDeReserva().
  */
 import { categoriasTratamientos, CONFIRMAR, formatUYU } from '../data/tratamientos';
 import { modalidades } from '../data/modalidades';
-import { PRECIOS_UYU } from './precios';
+import { PRECIOS_UYU, SENA_UYU, SESION_ID, senaOnline } from './precios';
 import { getSql } from './db';
 
 export type ValorPrecio = {
@@ -19,6 +23,8 @@ export type ValorPrecio = {
   precio: number | null;
   /** Paquete de 6 sesiones; null = no se muestra. */
   paquete6: number | null;
+  /** Seña para reservar este tratamiento; null = la general (SENA_UYU). */
+  sena: number | null;
   /** Sin valor en el código ni en la base: falta que Ceci lo cargue. */
   pendiente: boolean;
 };
@@ -49,6 +55,7 @@ export function itemsBase(): ItemPrecio[] {
       grupo: 'Consultas',
       precio: PRECIOS_UYU[m.id],
       paquete6: null,
+      sena: null,
       pendiente: false,
       conPaquete: false,
     });
@@ -62,6 +69,7 @@ export function itemsBase(): ItemPrecio[] {
         unidad: t.unidad,
         precio: t.precio === CONFIRMAR ? null : t.precio,
         paquete6: typeof t.paquete6 === 'number' ? t.paquete6 : null,
+        sena: null,
         pendiente: t.precio === CONFIRMAR,
         conPaquete: true,
       });
@@ -99,19 +107,32 @@ export async function leerPrecios(opts: { fresco?: boolean } = {}): Promise<Prec
   if (!opts.fresco && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   const out: Precios = {};
-  for (const i of itemsBase()) out[i.clave] = { precio: i.precio, paquete6: i.paquete6, pendiente: i.pendiente };
+  for (const i of itemsBase())
+    out[i.clave] = { precio: i.precio, paquete6: i.paquete6, sena: i.sena, pendiente: i.pendiente };
 
   try {
     const sql = getSql();
-    const filas = (await conTimeout(
-      sql`select clave, precio, paquete6 from precios` as Promise<any[]>,
-      2500
-    )) as any[];
+    let filas: any[];
+    try {
+      filas = (await conTimeout(
+        sql`select clave, precio, paquete6, sena from precios` as Promise<any[]>,
+        2500
+      )) as any[];
+    } catch (e) {
+      // Base sin la columna `sena` todavía (se crea al guardar precios desde el
+      // panel): leemos lo de siempre, así los precios NO vuelven a los del código.
+      if (!/column "sena" does not exist/.test(e instanceof Error ? e.message : String(e))) throw e;
+      filas = (await conTimeout(
+        sql`select clave, precio, paquete6, null as sena from precios` as Promise<any[]>,
+        2500
+      )) as any[];
+    }
     for (const f of filas) {
       if (!(f.clave in out)) continue; // ítem que ya no existe en el catálogo
       out[f.clave] = {
         precio: f.precio == null ? null : Number(f.precio),
         paquete6: f.paquete6 == null ? null : Number(f.paquete6),
+        sena: f.sena == null ? null : Number(f.sena),
         pendiente: false,
       };
     }
@@ -125,6 +146,25 @@ export async function leerPrecios(opts: { fresco?: boolean } = {}): Promise<Prec
 
   cache = { at: Date.now(), data: out };
   return out;
+}
+
+/** ¿Se cobra la seña que Ceci cargó por tratamiento? (si no, $700 para todo) */
+export function senaPorTratamientoActiva(): boolean {
+  const v = String(process.env.SENA_POR_TRATAMIENTO_ACTIVA ?? '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'si' || v === 'sí' || v === 'on';
+}
+
+/**
+ * Seña que se cobra al reservar. Es la fuente única para /reservar (lo que se
+ * muestra) y /api/reservar (lo que se guarda en precio_uyu y valida el webhook).
+ * Solo la sesión de un tratamiento elegido puede tener seña propia; todo lo
+ * demás sigue con senaOnline() (la general, o null si no se cobra online).
+ */
+export function senaDeReserva(p: Precios, modalidad: unknown, tratamientoId?: string | null): number | null {
+  const base = senaOnline(modalidad);
+  if (base == null || modalidad !== SESION_ID || !tratamientoId || !senaPorTratamientoActiva()) return base;
+  const propia = p[claveTratamiento(tratamientoId)]?.sena;
+  return propia != null && propia > 0 ? propia : SENA_UYU;
 }
 
 /** Catálogo completo con los valores vigentes (para el panel). */

@@ -7,9 +7,10 @@ import { modalidades } from '../data/modalidades';
 import { esMembresia } from '../data/club';
 import { site, whatsappLink } from '../data/site';
 import { SENA_UYU, SESION_ID, senaOnline } from '../lib/precios';
-import { leerPrecios, precioModalidadTexto, claveTratamiento } from '../lib/precios-vigentes';
+import { leerPrecios, precioModalidadTexto, claveTratamiento, senaDeReserva, senaPorTratamientoActiva } from '../lib/precios-vigentes';
 import { categoriasTratamientos, formatUYU } from '../data/tratamientos';
 import { cacheCdn } from '../lib/cache';
+import { pagoMembresiasActivo, productoPorId, productosPaquete, productoSesion, paqueteDeTratamiento, requiereSesionCompleta, montoPorVia, formatMonto, type Producto } from '../lib/compras';
 
 // SSR con caché de CDN: el precio de cada modalidad es el que Ceci carga en
 // /admin → Precios, sin redeploy. La seña sigue fija (src/lib/precios.ts).
@@ -61,20 +62,68 @@ const itemsModalidades = modalidades.map((m) => ({
   sena: senaOnline(m.id),
   senaLabel: senaOnline(m.id) != null ? fmt(SENA_UYU) : null,
 }));
+// Cobro online del Club y los paquetes (src/lib/compras.ts). Apagado
+// (PAGO_MEMBRESIAS_ACTIVO sin definir) la página queda exactamente como antes.
+const pagoActivo = pagoMembresiasActivo();
+const datosCompra = (p: Producto) => ({
+  productoId: p.id,
+  // Precio publicado (= transferencia) y con Mercado Pago (+10%).
+  lista: formatMonto(p.monto, p.moneda),
+  transf: formatMonto(montoPorVia(p, 'transferencia'), p.moneda),
+  mp: formatMonto(montoPorVia(p, 'mercadopago'), p.moneda),
+  nota: p.nota ?? '',
+  esPaquete: p.modalidad === 'paquete',
+});
+if (pagoActivo) {
+  for (const it of itemsModalidades) {
+    const p = it.esMembresia ? productoPorId(it.id, precios) : null;
+    if (p) Object.assign(it, { compra: datosCompra(p) });
+  }
+}
+// Paquetes: se llega desde Tratamientos (?paquete=paquete6:<id>), no desde el paso 1.
+const paquetes = pagoActivo
+  ? productosPaquete(precios).map((p) => ({ id: p.id, nombre: p.nombre, compra: datosCompra(p) }))
+  : [];
 const items = [itemSesion, ...itemsModalidades];
 
-// Tratamientos del catálogo, reservables directo desde la home
-// (?tratamiento=id). Precio vigente del panel; sin precio → "Valor en consulta".
+// Tratamientos del catálogo: se eligen en el paso 1 (desplegable "Tratamientos")
+// o directo desde la home (?tratamiento=id). Precio vigente del panel; sin precio
+// → "Valor en consulta". La seña puede ser propia del tratamiento
+// (SENA_POR_TRATAMIENTO_ACTIVA) y, con el cobro online prendido, la sesión se
+// puede pagar completa en hasta 3 cuotas (solo las que tienen valor por sesión).
+const senaPorTrat = senaPorTratamientoActiva();
 const tratamientos = categoriasTratamientos.flatMap((cat) =>
   cat.tratamientos.map((t) => {
     const v = precios[claveTratamiento(t.id)];
+    const sena = senaDeReserva(precios, SESION_ID, t.id);
+    const total = pagoActivo ? productoSesion(precios, t.id) : null;
+    // Varias sesiones (tiene paquete): sin seña, se paga la sesión completa y se
+    // sugiere el tratamiento completo (Sebas, 25-nov).
+    const soloTotal = requiereSesionCompleta(precios, t.id);
+    const paq = soloTotal ? paqueteDeTratamiento(precios, t.id) : null;
     return {
       id: t.id,
       nombre: t.nombre,
+      grupo: `${cat.grupo} · ${cat.titulo}`,
       precio: v?.precio != null ? `${formatUYU(v.precio)} ${t.unidad ?? 'por sesión'}` : 'Valor en consulta',
+      sena,
+      senaLabel: sena != null ? fmt(sena) : null,
+      // Sesión completa con Mercado Pago: precio publicado + 10%.
+      total: total
+        ? {
+            label: formatMonto(montoPorVia(total, 'mercadopago'), total.moneda),
+            transf: formatMonto(montoPorVia(total, 'transferencia'), total.moneda),
+          }
+        : null,
+      soloTotal,
+      paquete: paq ? { id: paq.id, nombre: paq.nombre, transf: formatMonto(paq.monto, paq.moneda) } : null,
     };
   })
 );
+const gruposTrat = [...new Set(tratamientos.map((t) => t.grupo))].map((g) => ({
+  grupo: g,
+  items: tratamientos.filter((t) => t.grupo === g),
+}));
 
 // Datos bancarios para señar por transferencia. Si todavía no se cargaron en
 // src/data/pago.ts, la web no inventa nada: dice que Ceci los pasa por WhatsApp.
@@ -109,7 +158,7 @@ const senaLabel = fmt(SENA_UYU);
           <p class="como__t">Así funciona la reserva</p>
           <ol class="como__pasos">
             <li><strong>Elegís qué reservar, el día y el horario.</strong></li>
-            <li><strong>Dejás una seña de {senaLabel}</strong> por transferencia o Mercado Pago. Es para todas las reservas, seas paciente o vengas por primera vez, y se descuenta de lo que abonás ese día.</li>
+            <li><strong>Dejás una seña de {senaLabel}{senaPorTrat && ' (o la que indique tu tratamiento)'}</strong> por transferencia o Mercado Pago. Es para todas las reservas, seas paciente o vengas por primera vez, y se descuenta de lo que abonás ese día.</li>
             <li><strong>Te llega la confirmación por mail</strong> con el día y la hora.</li>
           </ol>
           <p class="como__extra">
@@ -135,6 +184,29 @@ const senaLabel = fmt(SENA_UYU);
             </button>
           ))}
         </div>
+
+        {/* Tratamientos puntuales (pedido de Sebas, nov-2026): antes solo se
+            elegían desde la home y en /reservar no se veían sus precios. */}
+        <details class="trat-sel">
+          <summary class="trat-sel__sum">
+            <span class="trat-sel__t">Tratamientos</span>
+            <span class="trat-sel__sub">Elegí el tuyo y mirá su valor y su seña</span>
+          </summary>
+          {gruposTrat.map((g) => (
+            <div class="trat-sel__grupo">
+              <p class="trat-sel__g">{g.grupo}</p>
+              {g.items.map((t) => (
+                <button type="button" class="trat-opt" data-trat={t.id}>
+                  <span class="trat-opt__nom">{t.nombre}</span>
+                  <span class="trat-opt__val">
+                    {t.precio}
+                    {t.senaLabel && <span class="trat-opt__sena"> · seña {t.senaLabel}</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </details>
       </section>
 
       <!-- Paso 2: Fecha y hora -->
@@ -199,6 +271,11 @@ const senaLabel = fmt(SENA_UYU);
         <div class="pay-sep" id="pay-sep"><span>o</span></div>
         <button class="btn btn--ghost pay" id="confirmar">Pagar la seña con Mercado Pago</button>
         <p class="step__hint center tic" id="hint-mp">Tu turno queda confirmado al instante</p>
+        {/* Sesión completa en cuotas: solo con el cobro online prendido y para
+            tratamientos con valor por sesión (el JS la muestra si aplica). */}
+        <div class="pay-sep" id="pay-sep-total" hidden><span>o</span></div>
+        <button class="btn btn--ghost pay" id="pagar-total" hidden>Pagar la sesión completa con Mercado Pago</button>
+        <p class="step__hint center tic" id="hint-total" hidden>Precio de la sesión + 10%, con opción de pagar hasta en 3 cuotas. No te queda saldo para ese día</p>
         <div class="step__nav center">
           <button class="btn btn--ghost" data-back>← Volver</button>
         </div>
@@ -222,7 +299,7 @@ const senaLabel = fmt(SENA_UYU);
 
           <!-- Datos para señar por transferencia (solo en el camino "coordinar") -->
           <div class="banco" id="datos-banco" hidden>
-            <p class="banco__t">Datos para transferir la seña de {senaLabel}</p>
+            <p class="banco__t" id="banco-t">Datos para transferir la seña de {senaLabel}</p>
             {datosBanco.length ? (
               <dl class="banco__list">
                 {datosBanco.map((f) => (
@@ -258,7 +335,7 @@ const senaLabel = fmt(SENA_UYU);
   <WhatsappFloat mensaje="Hola Ceci! Estoy reservando en la web y tengo una duda: " />
 </Base>
 
-<script define:vars={{ items, tratamientos, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0, conceptoPrefijo: CONCEPTO_PREFIJO }}>
+<script define:vars={{ items, tratamientos, paquetes, whatsapp: site.contacto.whatsapp, pago: site.enlaces.pagoMercadoPago, senaLabel, hayBanco: datosBanco.length > 0, conceptoPrefijo: CONCEPTO_PREFIJO }}>
   const state = { modalidad: null, sedeSlug: 'online', lugar: null, fecha: null, fechaLabel: null, hora: null, nombre: '', tel: '', email: '', newsletter: false };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -326,6 +403,22 @@ const senaLabel = fmt(SENA_UYU);
   // Paso 1: opciones
   $$('.opt').forEach((b) =>
     b.addEventListener('click', () => elegir(items.find((i) => i.id === b.dataset.id)))
+  );
+  // Un tratamiento puntual es una sesión en sede, con su nombre, su valor, su
+  // seña (puede ser propia) y, si aplica, el pago completo en cuotas.
+  function itemTratamiento(trat) {
+    const base = items.find((i) => i.id === 'sesion');
+    return {
+      ...base, servicio: trat.nombre, precio: trat.precio, tratamientoId: trat.id,
+      sena: trat.sena, senaLabel: trat.senaLabel, total: trat.total,
+      soloTotal: !!trat.soloTotal, paquete: trat.paquete,
+    };
+  }
+  $$('.trat-opt').forEach((b) =>
+    b.addEventListener('click', () => {
+      const t = tratamientos.find((x) => x.id === b.dataset.trat);
+      if (t) elegir(itemTratamiento(t));
+    })
   );
 
   function elegir(m) {
@@ -554,10 +647,25 @@ const senaLabel = fmt(SENA_UYU);
     goTo(4);
   });
 
+  // Textos de pago según lo que se cobra: compra (Club/paquete), sesión
+  // completa (tratamiento de varias sesiones) o seña.
+  function textoBotonMp(m) {
+    if (m?.compra) return `Pagar ${m.compra.mp} con Mercado Pago`;
+    if (m?.soloTotal && m.total) return `Pagar la sesión (${m.total.label}) con Mercado Pago`;
+    return 'Pagar la seña con Mercado Pago';
+  }
+  function queTransfiere(m) {
+    if (m.compra) return m.compra.transf;
+    if (m.soloTotal && m.total) return `la sesión completa (${m.total.transf})`;
+    return `la seña de ${m.senaLabel}`;
+  }
+
   // Paso 4: resumen
   function renderResumen() {
     const m = state.modalidad;
-    const cuando = m.esMembresia
+    const cuando = m.compra?.esPaquete
+      ? 'Coordinás las sesiones con Ceci después de pagar'
+      : m.esMembresia
       ? 'Membresía anual (coordinamos la primera consulta al sumarte)'
       : `${state.fechaLabel} · ${state.hora} h`;
     const filas = [`<div class="resumen__row"><span>Servicio</span><strong>${m.servicio}</strong></div>`];
@@ -567,7 +675,20 @@ const senaLabel = fmt(SENA_UYU);
     filas.push(`<div class="resumen__row"><span>A nombre de</span><strong>${state.nombre}</strong></div>`);
     // La web cobra una seña, no el total: lo dejamos explícito para que nadie
     // llegue a la consulta creyendo que ya pagó todo.
-    if (m.sena != null) {
+    if (m.compra) {
+      // Compra (Club o paquete): se paga el total, no una seña.
+      if (m.compra.nota) filas.push(`<p class="resumen__nota">${m.compra.nota}</p>`);
+      filas.push(`<div class="resumen__row resumen__row--total"><span>Por transferencia</span><strong>${m.compra.transf}</strong></div>`);
+      filas.push(`<div class="resumen__row"><span>Con Mercado Pago (+10%)</span><strong>${m.compra.mp}</strong></div>`);
+      filas.push(`<p class="resumen__nota">Con Mercado Pago se suma un 10% al precio publicado y podés pagar hasta en 3 cuotas.</p>`);
+    } else if (m.soloTotal && m.total) {
+      // Tratamiento de varias sesiones: se paga la sesión completa, sin seña.
+      filas.push(`<div class="resumen__row resumen__row--total"><span>Sesión por transferencia</span><strong>${m.total.transf}</strong></div>`);
+      filas.push(`<div class="resumen__row"><span>Con Mercado Pago (+10%)</span><strong>${m.total.label}</strong></div>`);
+      filas.push(`<p class="resumen__nota">Este tratamiento se hace en varias sesiones: para reservar se paga la sesión completa. Con Mercado Pago podés pagar hasta en 3 cuotas.${
+        m.paquete ? ` Lo ideal es el tratamiento completo: <a href="/reservar?paquete=${encodeURIComponent(m.paquete.id)}">${m.paquete.nombre} (${m.paquete.transf})</a>.` : ''
+      }</p>`);
+    } else if (m.sena != null) {
       const esSesion = m.id === 'sesion';
       filas.push(`<div class="resumen__row"><span>${esSesion ? 'Valor de la sesión' : 'Valor de la consulta'}</span><strong>${esSesion && !m.tratamientoId ? 'Según tu tratamiento' : m.precio}</strong></div>`);
       filas.push(`<div class="resumen__row resumen__row--total"><span>Seña para reservar</span><strong>${m.senaLabel}</strong></div>`);
@@ -583,19 +704,39 @@ const senaLabel = fmt(SENA_UYU);
     }
     $('#resumen').innerHTML = filas.join('');
 
-    // El Club (membresía anual) no tiene pago online: solo el camino de coordinar.
-    const esMemb = !!m.esMembresia;
+    // El Club (membresía anual) sin cobro online: solo el camino de coordinar.
+    // Con el cobro online prendido (m.compra), Club y paquetes ofrecen los dos.
+    const esMemb = !!m.esMembresia && !m.compra;
     const mpBtn = $('#confirmar'), mpHint = $('#hint-mp'), sep = $('#pay-sep');
-    if (mpBtn) mpBtn.hidden = esMemb;
-    if (mpHint) mpHint.hidden = esMemb;
+    if (mpBtn) {
+      mpBtn.hidden = esMemb;
+      mpBtn.textContent = textoBotonMp(m);
+    }
+    if (mpHint) {
+      mpHint.hidden = esMemb;
+      mpHint.textContent = m.compra ? 'Queda confirmada al instante' : 'Tu turno queda confirmado al instante';
+    }
     if (sep) sep.hidden = esMemb;
+    // Sesión completa (hasta 3 cuotas): solo tratamientos con total conocido.
+    const conTotal = !!m.total && !m.compra && !m.soloTotal;
+    ['#pay-sep-total', '#pagar-total', '#hint-total'].forEach((s) => { const el = $(s); if (el) el.hidden = !conTotal; });
+    const totBtn = $('#pagar-total');
+    if (totBtn && conTotal) totBtn.textContent = `Pagar la sesión completa (${m.total.label}) con Mercado Pago`;
     // La política es sobre la seña: no aplica al Club, que se coordina aparte.
     const politica = $('#politica');
-    if (politica) politica.hidden = esMemb;
+    if (politica) politica.hidden = !!m.esMembresia;
     const coordBtn = $('#coordinar');
-    if (coordBtn) coordBtn.textContent = esMemb ? 'Coordinar con Ceci' : 'Transferir la seña y confirmar con Ceci';
+    if (coordBtn) coordBtn.textContent = m.compra
+      ? `Transferir ${m.compra.transf} y confirmar con Ceci`
+      : m.soloTotal && m.total
+      ? `Transferir ${m.total.transf} y confirmar con Ceci`
+      : esMemb ? 'Coordinar con Ceci' : 'Transferir la seña y confirmar con Ceci';
     const coordHint = $('#hint-coord');
-    if (coordHint) coordHint.textContent = esMemb
+    if (coordHint) coordHint.textContent = m.compra
+      ? hayBanco
+        ? 'Te mostramos los datos y Ceci confirma al ver la transferencia'
+        : 'Ceci te pasa los datos por WhatsApp y confirma al ver la transferencia'
+      : esMemb
       ? 'Ceci coordina con vos por WhatsApp'
       : hayBanco
         ? 'Te mostramos los datos y Ceci confirma al ver el pago'
@@ -604,6 +745,15 @@ const senaLabel = fmt(SENA_UYU);
 
   function waMensajeCompartir() {
     const m = state.modalidad;
+    if (m.compra) {
+      return [
+        `Hola Ceci! Compré por la web: ${m.servicio}`,
+        `• A nombre de: ${state.nombre}`,
+        state.email ? `• Email: ${state.email}` : null,
+        `Voy a transferir ${m.compra.transf}.`,
+        hayBanco ? 'Te paso el comprobante. ¡Gracias!' : '¿Me pasás los datos de la cuenta? ¡Gracias!',
+      ].filter(Boolean).join('\n');
+    }
     const l = m.esMembresia
       ? ['Hola Ceci! Me gustaría sumarme al Club de las Estaciones:', `• ${m.servicio}`]
       : ['Hola Ceci! Me gustaría agendar este turno por la web:', `• ${m.servicio}`];
@@ -614,7 +764,7 @@ const senaLabel = fmt(SENA_UYU);
     if (m.esMembresia) {
       l.push('Queda sujeto a tu confirmación. ¡Gracias!');
     } else {
-      l.push(`Voy a señar ${m.senaLabel} por transferencia.`);
+      l.push(m.soloTotal && m.total ? `Voy a transferir la sesión completa (${m.total.transf}).` : `Voy a señar ${m.senaLabel} por transferencia.`);
       l.push(hayBanco ? 'Te paso el comprobante para confirmar. ¡Gracias!' : '¿Me pasás los datos de la cuenta? ¡Gracias!');
     }
     return l.join('\n');
@@ -648,7 +798,7 @@ const senaLabel = fmt(SENA_UYU);
   // Registra la reserva y BLOQUEA el cupo. via='pagar' (MercadoPago) o
   // via='coordinar' (sin pago, queda a confirmar por Ceci). Devuelve los datos
   // de la reserva, o null si hubo un problema (ya deja el botón/alertas listos).
-  async function enviarReserva(via, btn) {
+  async function enviarReserva(via, btn, cobro = null) {
     const orig = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Reservando…';
@@ -667,6 +817,9 @@ const senaLabel = fmt(SENA_UYU);
           email: state.email,
           newsletter: state.newsletter,
           tratamiento: m.tratamientoId || null,
+          producto: m.compra ? m.compra.productoId : null,
+          // Tratamiento de varias sesiones: siempre la sesión completa.
+          cobro: cobro ?? (m.soloTotal ? 'total' : null),
           via,
         }),
       });
@@ -702,15 +855,19 @@ const senaLabel = fmt(SENA_UYU);
   }
 
   // Camino PAGAR: al confirmar, vamos directo al checkout de MercadoPago.
-  $('#confirmar').addEventListener('click', async () => {
+  // cobro 'total' = la sesión completa en hasta 3 cuotas, en vez de la seña.
+  $('#confirmar').addEventListener('click', () => pagarConMp($('#confirmar'), null));
+  $('#pagar-total').addEventListener('click', () => pagarConMp($('#pagar-total'), 'total'));
+  async function pagarConMp(boton, cobro) {
     const m = state.modalidad;
-    const data = await enviarReserva('pagar', $('#confirmar'));
+    const data = await enviarReserva('pagar', boton, cobro);
     if (!data) return;
     // Guardamos el detalle para armar el mensaje "PAGO CONFIRMADO" al volver de MP.
     try {
       sessionStorage.setItem('reservaPago', JSON.stringify({
         rid: data.id, nombre: state.nombre, modalidad: m.servicio,
         lugar: state.lugar, fechaLabel: state.fechaLabel, hora: state.hora, esMembresia: !!m.esMembresia,
+        esCompra: !!m.compra, esPaquete: !!m.compra?.esPaquete,
       }));
     } catch { /* sessionStorage puede fallar en modo privado */ }
     if (data.initPoint) { window.location.href = data.initPoint; return; }
@@ -718,17 +875,23 @@ const senaLabel = fmt(SENA_UYU);
     // Fallback (MercadoPago sin configurar): link de pago manual + WhatsApp.
     const waLink = $('#wa-link');
     if (waLink) { waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensaje())}`; waLink.hidden = false; }
-    $('#done-text').textContent = m.esMembresia
+    $('#done-text').textContent = m.compra
+      ? `${state.nombre}, registramos tu compra de ${m.servicio}.`
+      : m.esMembresia
       ? `${state.nombre}, registramos tu interés en ${m.servicio}.`
       : `${state.nombre}, tu ${m.servicio}${state.lugar ? ' en ' + state.lugar : ''} quedó reservada para el ${state.fechaLabel} a las ${state.hora} h.`;
     const hint = $('#done-hint');
-    if (hint) hint.textContent = m.esMembresia
+    if (hint) hint.textContent = m.compra
+      ? 'No pudimos abrir Mercado Pago. Escribile a Ceci por WhatsApp con el botón de abajo y coordinan el pago.'
+      : m.esMembresia
       ? 'Coordinamos la primera consulta al sumarte. Avisale a Ceci por WhatsApp con el botón de abajo.'
       : 'Tu cupo queda reservado. Coordiná el pago con Ceci por WhatsApp para confirmarlo.';
     const pagoLink = $('#pago-link');
-    if (pago && pagoLink) { pagoLink.href = pago; pagoLink.hidden = false; }
+    // El link genérico de Ceci (monto a mano) solo sirve para la seña: para un
+    // total (compra o sesión completa) se coordina por WhatsApp.
+    if (pago && pagoLink && !m.compra && !cobro && !m.soloTotal) { pagoLink.href = pago; pagoLink.hidden = false; }
     goTo(5);
-  });
+  }
 
   // Camino COORDINAR: reserva sin pagar → queda a confirmar por Ceci (cupo 2 h).
   $('#coordinar').addEventListener('click', async () => {
@@ -748,28 +911,40 @@ const senaLabel = fmt(SENA_UYU);
     $('#pago-link').hidden = true;
     const titulo = $('.done h2');
     if (titulo && !m.esMembresia) titulo.textContent = 'Tu horario está guardado por 2 horas';
-    $('#done-text').textContent = m.esMembresia
+    if (titulo && m.compra) titulo.textContent = 'Tu compra quedó registrada';
+    $('#done-text').textContent = m.compra
+      ? `${state.nombre}, registramos tu compra de ${m.servicio}. Falta la transferencia.`
+      : m.esMembresia
       ? `${state.nombre}, registramos tu interés en ${m.servicio}.`
-      : `${state.nombre}, separamos tu ${m.servicio}${state.lugar ? ' en ' + state.lugar : ''} para el ${state.fechaLabel} a las ${state.hora} h. Todavía no está confirmada: falta la seña.`;
+      : `${state.nombre}, separamos tu ${m.servicio}${state.lugar ? ' en ' + state.lugar : ''} para el ${state.fechaLabel} a las ${state.hora} h. Todavía no está confirmada: falta ${m.soloTotal ? 'el pago' : 'la seña'}.`;
     const hint = $('#done-hint');
     if (hint) {
-      if (m.esMembresia) {
+      if (m.compra) {
+        hint.classList.add('done__pasos');
+        hint.innerHTML = hayBanco
+          ? `<strong>Para confirmarla:</strong><br>1. Transferí ${m.compra.transf} con los datos de abajo.<br>2. Mandale el comprobante a Ceci por WhatsApp.<br>Cuando lo vea, te llega la confirmación por mail.`
+          : `<strong>Para confirmarla:</strong><br>1. Escribile a Ceci por WhatsApp y te pasa los datos para transferir ${m.compra.transf}.<br>2. Transferí y mandale el comprobante.<br>Cuando lo vea, te llega la confirmación por mail.`;
+      } else if (m.esMembresia) {
         hint.textContent = 'Ceci coordina con vos a la brevedad. Avisale por WhatsApp con el botón de abajo.';
       } else {
         // Los dos pasos que faltan, numerados: antes era un párrafo y no quedaba
         // claro si la reserva ya estaba hecha.
         hint.classList.add('done__pasos');
         hint.innerHTML = hayBanco
-          ? `<strong>Para confirmarla:</strong><br>1. Transferí la seña de ${m.senaLabel} con los datos de abajo.<br>2. Mandale el comprobante a Ceci por WhatsApp.<br>Cuando lo vea, te llega la confirmación por mail.`
-          : `<strong>Para confirmarla:</strong><br>1. Escribile a Ceci por WhatsApp y te pasa los datos para la seña de ${m.senaLabel}.<br>2. Transferí y mandale el comprobante.<br>Cuando lo vea, te llega la confirmación por mail.`;
+          ? `<strong>Para confirmarla:</strong><br>1. Transferí ${queTransfiere(m)} con los datos de abajo.<br>2. Mandale el comprobante a Ceci por WhatsApp.<br>Cuando lo vea, te llega la confirmación por mail.`
+          : `<strong>Para confirmarla:</strong><br>1. Escribile a Ceci por WhatsApp y te pasa los datos para ${queTransfiere(m)}.<br>2. Transferí y mandale el comprobante.<br>Cuando lo vea, te llega la confirmación por mail.`;
       }
     }
     // Los datos para transferir solo aplican a un turno, no a la membresía.
     const banco = $('#datos-banco');
-    if (banco) banco.hidden = !!m.esMembresia;
+    if (banco) banco.hidden = !!m.esMembresia && !m.compra;
+    const bancoT = $('#banco-t');
+    if (bancoT) bancoT.textContent = m.compra
+      ? `Datos para transferir ${m.compra.transf}`
+      : `Datos para transferir ${queTransfiere(m)}`;
     // El concepto lleva el nombre para que Ceci identifique la transferencia.
     const concepto = $('#banco-concepto');
-    if (concepto) concepto.textContent = `${conceptoPrefijo} ${state.nombre}`;
+    if (concepto) concepto.textContent = `${m.compra ? (m.compra.esPaquete ? 'Paquete' : 'Club') : conceptoPrefijo} ${state.nombre}`;
     goTo(5);
   });
 
@@ -799,7 +974,12 @@ const senaLabel = fmt(SENA_UYU);
       const btn = $('#confirmar');
       if (btn) {
         btn.disabled = false;
-        btn.textContent = 'Pagar la seña con Mercado Pago';
+        btn.textContent = textoBotonMp(state.modalidad);
+      }
+      const tot = $('#pagar-total');
+      if (tot && state.modalidad?.total && !state.modalidad.soloTotal) {
+        tot.disabled = false;
+        tot.textContent = `Pagar la sesión completa (${state.modalidad.total.label}) con Mercado Pago`;
       }
     }
   });
@@ -809,6 +989,10 @@ const senaLabel = fmt(SENA_UYU);
   const pagoEstado = qsRetorno.get('pago');
   const reservaRid = qsRetorno.get('rid');
   if (pagoEstado) {
+    // ¿Volvió de pagar una compra (Club o paquete) y no un turno?
+    let infoPago = {};
+    try { infoPago = JSON.parse(sessionStorage.getItem('reservaPago') || '{}'); } catch { /* modo privado */ }
+    const esCompra = !!infoPago.esCompra && infoPago.rid === reservaRid;
     const done = $('#done-text');
     const check = $('.done__check');
     const titulo = $('.done h2');
@@ -818,7 +1002,7 @@ const senaLabel = fmt(SENA_UYU);
       // El query param solo dice que MP redirigió: la confirmación real la hace
       // el webhook. Mostramos "confirmado" recién cuando la reserva lo está.
       if (titulo) titulo.textContent = 'Pago recibido';
-      if (done) done.textContent = 'Estamos confirmando tu turno…';
+      if (done) done.textContent = esCompra ? 'Estamos confirmando tu compra…' : 'Estamos confirmando tu turno…';
       if (reservaRid) {
         (async () => {
           for (let i = 0; i < 5; i++) {
@@ -826,8 +1010,10 @@ const senaLabel = fmt(SENA_UYU);
               const r = await fetch(`/api/reserva-estado?id=${encodeURIComponent(reservaRid)}`);
               const d = await r.json().catch(() => ({}));
               if (d.ok && d.estado === 'confirmada') {
-                if (titulo) titulo.textContent = '¡Turno confirmado!';
-                if (done) done.textContent = 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
+                if (titulo) titulo.textContent = esCompra ? '¡Compra confirmada!' : '¡Turno confirmado!';
+                if (done) done.textContent = esCompra
+                  ? `Recibimos tu pago. Te enviamos la confirmación por email y Ceci te escribe por WhatsApp para coordinar ${infoPago.esPaquete ? 'tus sesiones' : 'tu primera consulta'}.`
+                  : 'Recibimos tu pago y tu turno quedó confirmado. Te enviamos la confirmación por email. ¡Te esperamos!';
                 const waLink = $('#wa-link');
                 if (waLink) {
                   waLink.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(waMensajePagado())}`;
@@ -850,11 +1036,15 @@ const senaLabel = fmt(SENA_UYU);
     } else if (pagoEstado === 'pendiente') {
       if (titulo) titulo.textContent = 'Pago en proceso';
       if (check) check.textContent = '⏳';
-      if (done) done.textContent = 'Tu pago está pendiente de acreditación. Cuando se confirme te llega el aviso por email y el turno queda reservado.';
+      if (done) done.textContent = esCompra
+        ? 'Tu pago está pendiente de acreditación. Cuando se confirme te llega el aviso por email.'
+        : 'Tu pago está pendiente de acreditación. Cuando se confirme te llega el aviso por email y el turno queda reservado.';
     } else {
       if (titulo) titulo.textContent = 'No se completó el pago';
       if (check) { check.textContent = '!'; check.classList.add('done__check--error'); }
-      if (done) done.textContent = 'El pago no se completó, así que el turno no quedó confirmado. Podés intentarlo de nuevo cuando quieras.';
+      if (done) done.textContent = esCompra
+        ? 'El pago no se completó, así que la compra no quedó confirmada. Podés intentarlo de nuevo, o elegir pagar por transferencia.'
+        : 'El pago no se completó, así que el turno no quedó confirmado. Podés intentarlo de nuevo cuando quieras.';
     }
     history.replaceState(null, '', '/reservar'); // limpiamos los parámetros de la URL
     goTo(5);
@@ -868,9 +1058,14 @@ const senaLabel = fmt(SENA_UYU);
     // Desde un tratamiento de la home (?tratamiento=id): es una sesión en sede
     // física con la misma agenda, pero con el nombre y el valor de ese tratamiento.
     const trat = tratamientos.find((t) => t.id === qs.get('tratamiento'));
-    if (trat) {
-      const base = items.find((i) => i.id === 'sesion');
-      elegir({ ...base, servicio: trat.nombre, precio: trat.precio, tratamientoId: trat.id });
+    // Desde un paquete de Tratamientos (?paquete=paquete6:<id>): compra sin fecha.
+    const paq = paquetes.find((p) => p.id === qs.get('paquete'));
+    if (paq) {
+      elegir({ id: 'paquete', nombre: paq.nombre, servicio: paq.nombre, subtitulo: '', precio: paq.compra.lista, precioNota: '', esMembresia: true, sena: null, senaLabel: null, compra: paq.compra });
+      pasoEntrada = 3;
+      history.replaceState(null, '', '/reservar');
+    } else if (trat) {
+      elegir(itemTratamiento(trat));
       pasoEntrada = 2;
       history.replaceState(null, '', '/reservar');
     } else if (pre) {
@@ -909,6 +1104,21 @@ const senaLabel = fmt(SENA_UYU);
     padding: 0.6rem 1rem;
   }
   .booking__wrap { max-width: 660px; margin-inline: auto; }
+  /* Desplegable de tratamientos en el paso 1 */
+  .trat-sel { margin-top: 1rem; border: 1px solid var(--sand); border-radius: var(--radius-sm); background: var(--white); }
+  .trat-sel__sum { list-style: none; cursor: pointer; display: grid; gap: 0.15rem; padding: 1rem 2.6rem 1rem 1.1rem; position: relative; }
+  .trat-sel__sum::-webkit-details-marker { display: none; }
+  .trat-sel__sum::after { content: '+'; position: absolute; right: 1.1rem; top: 50%; transform: translateY(-50%); font-size: 1.3rem; color: var(--sage-deep); }
+  .trat-sel[open] .trat-sel__sum::after { content: '–'; }
+  .trat-sel__t { font-weight: 600; color: var(--ink); }
+  .trat-sel__sub { font-size: 0.86rem; color: var(--ink-soft); }
+  .trat-sel__grupo { padding: 0 1.1rem 0.6rem; }
+  .trat-sel__g { margin: 0.6rem 0 0.3rem; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--clay-deep); font-weight: 600; }
+  .trat-opt { display: grid; gap: 0.1rem; width: 100%; text-align: left; font: inherit; padding: 0.65rem 0; border: 0; border-top: 1px solid var(--sand); background: none; cursor: pointer; color: var(--ink); min-width: 0; }
+  .trat-opt:hover .trat-opt__nom, .trat-opt:focus-visible .trat-opt__nom { color: var(--sage-deep); text-decoration: underline; text-underline-offset: 2px; }
+  .trat-opt__nom { font-weight: 600; overflow-wrap: anywhere; }
+  .trat-opt__val { font-size: 0.86rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
   .booking__head { text-align: center; margin-bottom: 2.5rem; }
   .booking__head h1 {
     margin: 0.3rem 0 0.6rem;

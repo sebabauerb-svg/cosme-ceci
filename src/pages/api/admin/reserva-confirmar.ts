@@ -1,8 +1,10 @@
 import type { APIRoute } from 'astro';
-import { getSql, ensureConfirmacion, ensureGoogleEventId, ensureGestion } from '../../../lib/db';
+import { getSql, ensureConfirmacion, ensureGoogleEventId, ensureGestion, ensureCompras } from '../../../lib/db';
 import { isAdmin } from '../../../lib/admin';
 import { crearEventoReserva } from '../../../lib/calendar';
-import { notificarReservaConfirmada } from '../../../lib/email';
+import { notificarReservaConfirmada, notificarCompraConfirmada } from '../../../lib/email';
+import { formatMonto, PAQUETE_ID } from '../../../lib/compras';
+import { planDesdePaquetePagado } from '../../../lib/compras-plan';
 import { SENA_UYU } from '../../../lib/precios';
 import { sedeConDireccion } from '../../../data/sedes';
 import { linkAutogestion, fechaLarga } from '../../../lib/reprogramar';
@@ -53,6 +55,53 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     await ensureConfirmacion(sql);
     await ensureGoogleEventId(sql);
     await ensureGestion(sql);
+    await ensureCompras(sql);
+
+    // Compra (Club o paquete) pagada por transferencia: lo cobrado es el total,
+    // no una seña. Va por su propio camino (sin calendario ni plantilla de turno).
+    const compra = (await sql`
+      select producto, producto_nombre, moneda, monto_esperado from reservas
+       where id = ${id} and estado = 'a_confirmar' and producto is not null
+         and producto not like 'sesion:%'
+    `) as any[];
+    // (La sesión completa por transferencia es un turno: sigue el camino normal,
+    // con calendario; lo cobrado es el total y queda en sena_pagada.)
+    if (compra.length) {
+      const c = compra[0];
+      const monto = pagado ? (montoCobrado ?? (c.monto_esperado != null ? Number(c.monto_esperado) : null)) : montoCobrado;
+      const updC = (await sql`
+        update reservas
+           set estado = 'confirmada', expira_at = null,
+               monto_cobrado = ${monto}, pagado = ${pagado},
+               forma_pago = ${pagado ? 'transferencia' : null},
+               pagado_at = ${pagado ? new Date().toISOString() : null}
+         where id = ${id} and estado = 'a_confirmar'
+         returning nombre, telefono, email
+      `) as any[];
+      if (!updC.length)
+        return json({ ok: false, error: 'Esa compra ya no está a confirmar (quizá venció o ya se resolvió).' }, 409);
+      const d = updC[0];
+      // Paquete con la transferencia vista → plan con sus sesiones en la ficha.
+      if (pagado) await planDesdePaquetePagado(sql, id, 'transferencia');
+      if (pagado) {
+        void notificarCompraConfirmada({
+          producto: c.producto_nombre ?? c.producto,
+          nombre: d.nombre,
+          telefono: d.telefono,
+          email: d.email,
+          monto: formatMonto(monto ?? 0, c.moneda),
+          via: 'transferencia',
+          esPaquete: String(c.producto).startsWith(PAQUETE_ID),
+        });
+      }
+      // Sin WhatsApp automático: la plantilla "confirmado" es de turnos con día y
+      // hora. El panel ofrece el botón manual.
+      return json({
+        ok: true,
+        waEnviado: false,
+        reserva: { nombre: d.nombre, telefono: d.telefono, modalidad: c.producto_nombre ?? c.producto, sede: null, fechaLabel: null, hora: null, compra: true },
+      });
+    }
 
     const upd = (await sql`
       update reservas
@@ -60,11 +109,13 @@ export const POST: APIRoute = async ({ request, cookies }) => {
              monto_cobrado = ${montoCobrado}, pagado = ${pagado},
              -- Si Ceci marcó que ya pagó, eso es la seña (por transferencia,
              -- que es el único camino sin MercadoPago que llega acá).
-             sena_pagada = ${pagado ? (montoCobrado ?? SENA_UYU) : null},
+             -- Sin monto anotado, vale la seña que se pidió al reservar (puede
+             -- ser la propia del tratamiento), o la general.
+             sena_pagada = case when coalesce(${pagado}::boolean, false) then coalesce(${montoCobrado}::numeric, precio_uyu, ${SENA_UYU}) else null end,
              forma_pago = ${pagado ? 'transferencia' : null}
        where id = ${id} and estado = 'a_confirmar'
        returning modalidad, sede_id, fecha::text as fecha, to_char(hora,'HH24:MI') as hora,
-                 nombre, telefono, email, duracion_min, token_gestion
+                 nombre, telefono, email, duracion_min, token_gestion, sena_pagada
     `) as any[];
     if (!upd.length)
       return json({ ok: false, error: 'Esa reserva ya no está a confirmar (quizá venció o ya se resolvió).' }, 409);
@@ -89,7 +140,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         email: d.email,
         // Solo hablamos de seña abonada si Ceci marcó que ya pagó: puede
         // confirmar un turno sin haber visto el pago todavía.
-        sena: pagado ? (montoCobrado ?? SENA_UYU) : null,
+        sena: pagado && d.sena_pagada != null ? Number(d.sena_pagada) : null,
         linkCambio: linkAutogestion(d.token_gestion),
       },
       { online: false }

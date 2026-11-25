@@ -1,6 +1,6 @@
 ---
 import { modalidades } from '../data/modalidades';
-import { leerPrecios, precioModalidadTexto } from '../lib/precios-vigentes';
+import { leerPrecios, precioModalidadTexto, senaPorTratamientoActiva } from '../lib/precios-vigentes';
 import { SENA_UYU } from '../lib/precios';
 
 const precios = await leerPrecios();
@@ -12,7 +12,7 @@ const faqs = [
     q: '¿Cómo reservo un turno?',
     a:
       'Desde el botón “Reservar consulta”: elegís la modalidad, el día y el horario, dejás tus datos ' +
-      `y una seña de $${SENA_UYU.toLocaleString('es-UY')} por transferencia o Mercado Pago (se descuenta ` +
+      `y una seña de $${SENA_UYU.toLocaleString('es-UY')}${senaPorTratamientoActiva() ? ' (algunos tratamientos tienen otra, que ves al elegirlos)' : ''} por transferencia o Mercado Pago (se descuenta ` +
       'de lo que abonás ese día). Te llega la confirmación por mail. Si ya sos paciente, elegí ' +
       '“Ya soy paciente: mi próxima sesión”.',
   },
