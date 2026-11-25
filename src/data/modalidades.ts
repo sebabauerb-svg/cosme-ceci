@@ -81,7 +81,7 @@ export const modalidades: Modalidad[] = [
       'Dos planes: Regular, con las 4 consultas virtuales, y Premium, con las 4 presenciales y ' +
       'un registro de seguimiento de tu piel.',
     precio: '$4.800 / año',
-    precioNota: 'Por transferencia, el precio publicado. Con Mercado Pago, +10% y hasta 3 cuotas (el interés lo define Mercado Pago)',
+    precioNota: 'Por transferencia, el precio publicado. Con Mercado Pago, +10% y la opción de pagar hasta en 3 cuotas',
     destacado: true,
     ctaTexto: 'Ver los dos planes',
   },
@@ -93,7 +93,7 @@ export const modalidades: Modalidad[] = [
     descripcion: '',
     alcance: '',
     precio: 'U$S 200 / año',
-    precioNota: 'Por transferencia, el precio publicado. Con Mercado Pago, +10% y hasta 3 cuotas (el interés lo define Mercado Pago)',
+    precioNota: 'Por transferencia, el precio publicado. Con Mercado Pago, +10% y la opción de pagar hasta en 3 cuotas',
     ctaTexto: 'Sumarme',
   },
 ];
