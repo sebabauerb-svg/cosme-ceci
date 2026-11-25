@@ -1220,7 +1220,9 @@ if (authed) {
 
       const nom = document.createElement('div'); nom.className = 'pc-item__nom'; nom.textContent = r.nombre;
       const cuando = document.createElement('div'); cuando.className = 'pc-item__cuando';
-      cuando.textContent = r.producto
+      cuando.textContent = r.producto && String(r.producto).startsWith('sesion:')
+        ? `${r.producto_nombre || r.producto} · sesión completa por transferencia${r.monto_esperado != null ? ` ($${Number(r.monto_esperado)})` : ''} · ${fmtCuando(r.fecha, r.hora)}`
+        : r.producto
         ? `${r.producto_nombre || r.producto} · compra por transferencia${r.monto_esperado != null ? ` (${r.moneda === 'USD' ? 'U$S ' : '$'}${Number(r.monto_esperado)})` : ''}`
         : `${r.modalidad === 'manual' ? 'Reserva manual' : r.modalidad} · ${fmtCuando(r.fecha, r.hora)}`;
 

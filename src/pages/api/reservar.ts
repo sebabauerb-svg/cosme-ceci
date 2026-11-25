@@ -16,6 +16,7 @@ import {
   MAX_CUOTAS,
   PAQUETE_ID,
   productoSesion,
+  requiereSesionCompleta,
   type Producto,
 } from '../../lib/compras';
 import { leerPrecios, senaDeReserva } from '../../lib/precios-vigentes';
@@ -174,13 +175,16 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
   // Sesión de un tratamiento pagada COMPLETA (hasta 3 cuotas) en vez de la seña.
   // Es un turno normal (fecha, cupo, calendario); solo cambia cuánto se cobra.
   // El webhook la valida como la seña, contra precio_uyu (= el total).
+  // Tratamiento de varias sesiones (tiene paquete): no se reserva con seña, se
+  // paga al menos la sesión completa (Sebas, 25-nov).
+  if (modalidad === SESION_ID && body?.cobro !== 'total' && requiereSesionCompleta(precios, tratamientoElegido?.id))
+    return json({ ok: false, error: 'Este tratamiento se reserva pagando la sesión completa.' }, 400);
   if (cobroCompras && modalidad === SESION_ID && body?.cobro === 'total') {
     compra = productoSesion(precios, tratamientoElegido?.id);
     if (!compra) return json({ ok: false, error: 'Esta sesión no se puede pagar completa online. Elegí la seña.' }, 400);
-    if (body?.via === 'coordinar')
-      return json({ ok: false, error: 'La sesión completa se paga con Mercado Pago.' }, 400);
-    // Con Mercado Pago: precio publicado + 10% (src/lib/compras.ts).
-    precioNum = montoPorVia(compra, 'mercadopago');
+    // Transferencia: precio publicado (Ceci la confirma en el panel). Mercado
+    // Pago: precio publicado + 10% (src/lib/compras.ts).
+    precioNum = montoPorVia(compra, body?.via === 'coordinar' ? 'transferencia' : 'mercadopago');
   }
 
   // Camino de reserva: 'pagar' (MercadoPago, hold 30 min) o 'coordinar' (sin pago,
@@ -344,6 +348,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
             : await crearPreferencia({
                 titulo: tituloItem,
                 precio: precioNum as number,
+                // La seña va en un solo pago: en cuotas la financiación le
+                // cuesta a Ceci y la seña no lleva recargo (Sebas, 25-nov).
+                maxCuotas: 1,
                 reservaId,
                 origin,
                 email: emailT || null,

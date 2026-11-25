@@ -9,8 +9,7 @@
  *  - Transferencia: el precio publicado (de lista).
  *  - Mercado Pago: precio publicado + 10%, que cubre la comisión y la
  *    financiación de las cuotas (Ceci absorbe ~7,5%; la paciente no paga
- *    interés aparte). Los textos no mencionan cuotas hasta que aparezcan
- *    en la cuenta de MP de Ceci (src/data/pago.ts).
+ *    interés aparte). Los textos dicen "hasta en 3 cuotas", sin hablar de interés.
  *  - La seña de los turnos NO lleva recargo (a confirmar con Sebas).
  *
  * Todo esto arranca APAGADO: sin PAGO_MEMBRESIAS_ACTIVO la web se comporta como
@@ -133,6 +132,22 @@ export function productoSesion(precios: Precios, tratamientoId: unknown): Produc
     monto: v.precio,
     moneda: 'UYU',
   };
+}
+
+/** Paquete del tratamiento (el de 6 si hay; si no, el de 12), o null. */
+export function paqueteDeTratamiento(precios: Precios, tratamientoId: unknown): Producto | null {
+  if (typeof tratamientoId !== 'string') return null;
+  return productosPaquete(precios).find((p) => p.id.endsWith(`:${tratamientoId}`)) ?? null;
+}
+
+/**
+ * Tratamiento de VARIAS sesiones (tiene paquete) con valor por sesión: con el
+ * cobro online prendido se reserva pagando al menos la sesión completa, sin seña;
+ * lo ideal es el tratamiento completo (el paquete). Decisión de Sebas, 25-nov.
+ * Los de una sesión (sin paquete) siguen con seña.
+ */
+export function requiereSesionCompleta(precios: Precios, tratamientoId: unknown): boolean {
+  return pagoMembresiasActivo() && !!productoSesion(precios, tratamientoId) && !!paqueteDeTratamiento(precios, tratamientoId);
 }
 
 /** ¿Es una sesión pagada completa (turno con fecha) y no una compra sin fecha? */

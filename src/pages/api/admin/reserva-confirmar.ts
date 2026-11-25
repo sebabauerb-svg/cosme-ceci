@@ -62,7 +62,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const compra = (await sql`
       select producto, producto_nombre, moneda, monto_esperado from reservas
        where id = ${id} and estado = 'a_confirmar' and producto is not null
+         and producto not like 'sesion:%'
     `) as any[];
+    // (La sesión completa por transferencia es un turno: sigue el camino normal,
+    // con calendario; lo cobrado es el total y queda en sena_pagada.)
     if (compra.length) {
       const c = compra[0];
       const monto = pagado ? (montoCobrado ?? (c.monto_esperado != null ? Number(c.monto_esperado) : null)) : montoCobrado;
