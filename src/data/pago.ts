@@ -74,6 +74,8 @@ export const anticipacionH = (sede?: string | null): number =>
  * (Reemplaza al "10% de descuento por transferencia".)
  */
 export const formasDePago = {
+  /** Solo para precios en dólares (Club Premium): MP cobra en pesos (Sebas, 25-nov). */
+  enPesosMp: 'Con Mercado Pago se cobra en pesos, al tipo de cambio de Mercado Pago',
   transferencia: 'Transferencia bancaria: el precio publicado',
   cuotas: 'Mercado Pago: precio publicado + 10%, con opción de pagar hasta en 3 cuotas',
 };

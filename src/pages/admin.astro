@@ -1128,7 +1128,7 @@ if (authed) {
         const monto = c.cobrado ?? c.esperado ?? '—';
         const fecha = c.fecha ? new Date(c.fecha).toLocaleDateString('es-UY', { day: 'numeric', month: 'short' }) : '';
         pago.textContent = [
-          `${c.pagada ? 'Pagó' : 'A cobrar'} ${monto}`,
+          `${c.pagada ? 'Pagó' : 'A cobrar'} ${monto}${c.nota ? ` (${c.nota})` : ''}`,
           c.medio,
           c.cuotas ? (c.cuotas > 1 ? `${c.cuotas} cuotas` : '1 pago') : null,
           fecha,

@@ -73,6 +73,8 @@ const datosCompra = (p: Producto) => ({
   mp: formatMonto(montoPorVia(p, 'mercadopago'), p.moneda),
   nota: p.nota ?? '',
   esPaquete: p.modalidad === 'paquete',
+  // Precio en dólares (Club Premium): Mercado Pago lo cobra en pesos.
+  enPesosMp: p.moneda === 'USD',
 });
 if (pagoActivo) {
   for (const it of itemsModalidades) {
@@ -680,7 +682,9 @@ const senaLabel = fmt(SENA_UYU);
       if (m.compra.nota) filas.push(`<p class="resumen__nota">${m.compra.nota}</p>`);
       filas.push(`<div class="resumen__row resumen__row--total"><span>Por transferencia</span><strong>${m.compra.transf}</strong></div>`);
       filas.push(`<div class="resumen__row"><span>Con Mercado Pago (+10%)</span><strong>${m.compra.mp}</strong></div>`);
-      filas.push(`<p class="resumen__nota">Con Mercado Pago se suma un 10% al precio publicado y podés pagar hasta en 3 cuotas.</p>`);
+      filas.push(`<p class="resumen__nota">Con Mercado Pago se suma un 10% al precio publicado y podés pagar hasta en 3 cuotas.${
+        m.compra.enPesosMp ? ' Mercado Pago te lo cobra en pesos, al tipo de cambio que aplique al pagar.' : ''
+      }</p>`);
     } else if (m.soloTotal && m.total) {
       // Tratamiento de varias sesiones: se paga la sesión completa, sin seña.
       filas.push(`<div class="resumen__row resumen__row--total"><span>Sesión por transferencia</span><strong>${m.total.transf}</strong></div>`);

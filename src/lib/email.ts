@@ -458,6 +458,8 @@ type DatosCompra = {
   concepto?: string;
   /** Cuotas del pago aprobado por Mercado Pago (si se sabe). */
   cuotas?: number | null;
+  /** Aclaración del monto (ej. "U$S 220 convertido por Mercado Pago"). */
+  nota?: string | null;
   /** true = es un paquete de sesiones (las coordina Ceci por WhatsApp). */
   esPaquete?: boolean;
 };
@@ -465,7 +467,7 @@ type DatosCompra = {
 function bloqueCompra(d: DatosCompra) {
   const filas = [
     `<strong>Compra:</strong> ${esc(d.producto)}`,
-    `<strong>Monto:</strong> ${esc(d.monto)}${d.via === 'mercadopago' ? ' (precio publicado + 10% por Mercado Pago)' : ''}${d.cuotas && d.cuotas > 1 ? ` · en ${esc(d.cuotas)} cuotas` : ''}`,
+    `<strong>Monto:</strong> ${esc(d.monto)}${d.nota ? ` (${esc(d.nota)})` : d.via === 'mercadopago' ? ' (precio publicado + 10% por Mercado Pago)' : ''}${d.cuotas && d.cuotas > 1 ? ` · en ${esc(d.cuotas)} cuotas` : ''}`,
     `<strong>A nombre de:</strong> ${esc(d.nombre)}`,
     `<strong>WhatsApp:</strong> ${esc(d.telefono)}`,
   ];

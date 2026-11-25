@@ -66,6 +66,11 @@ export const GET: APIRoute = async ({ cookies }) => {
         cobrado: cobrado != null ? formatMonto(cobrado, moneda) : null,
         esperado: r.monto_esperado != null ? formatMonto(Number(r.monto_esperado), r.moneda) : null,
         lista: r.precio_lista != null ? formatMonto(Number(r.precio_lista), r.moneda) : null,
+        // Club Premium (en dólares) cobrado en pesos por Mercado Pago.
+        nota:
+          r.mp_moneda && r.moneda && r.mp_moneda !== r.moneda && r.monto_esperado != null
+            ? `${formatMonto(Number(r.monto_esperado), r.moneda)} convertido por Mercado Pago`
+            : null,
         fecha: r.pagado_at || r.creada,
       };
     });

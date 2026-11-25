@@ -4,6 +4,7 @@ import {
   obtenerPago,
   verificarFirmaWebhook,
   webhookSecretConfigurado,
+  obtenerOrden,
 } from '../../../lib/mercadopago';
 import {
   notificarReservaConfirmada,
@@ -106,33 +107,9 @@ export const POST: APIRoute = async ({ request }) => {
       // ¿Es una compra (Club o paquete)? Tiene su propia validación: monto Y
       // moneda contra lo que fijó el servidor. La seña sigue el camino de siempre.
       const compraRow = (await sql`
-        select producto, producto_nombre, moneda, monto_esperado, nombre, telefono, email
+        select producto, producto_nombre, moneda, monto_esperado, nombre, telefono, email, mp_preference_id
           from reservas where id = ${reservaId} and producto is not null and producto not like 'sesion:%'
       `) as any[];
-      if (compraRow.length && process.env.VERCEL_ENV === 'preview') {
-        // DIAGNÓSTICO TEMPORAL (solo preview): qué trae MP cuando la preferencia
-        // es en USD y cobra en pesos. Solo campos de montos; nada de la pagadora.
-        try {
-          const it = (pago.additional_info?.items ?? []).map((i: any) => ({ unit_price: i.unit_price, currency_id: i.currency_id, quantity: i.quantity }));
-          const diag: any = {
-            keys: Object.keys(pago),
-            currency_id: pago.currency_id, transaction_amount: pago.transaction_amount,
-            transaction_details: pago.transaction_details, installments: pago.installments,
-            order: pago.order, metadata: pago.metadata, items: it,
-            currency_conversion: pago.currency_conversion, exchange_rate: pago.exchange_rate,
-            fee_details: pago.fee_details, charges_details: (pago.charges_details ?? []).map((c: any) => ({ name: c.name, type: c.type, amounts: c.amounts })),
-            point_of_interaction_type: pago.point_of_interaction?.type,
-          };
-          if (pago.order?.id) {
-            const { obtenerOrden } = await import('../../../lib/mercadopago');
-            const o = await obtenerOrden(String(pago.order.id));
-            if (o) diag.orden = { preference_id: o.preference_id, total_amount: o.total_amount, paid_amount: o.paid_amount, items: (o.items ?? []).map((i: any) => ({ unit_price: i.unit_price, currency_id: i.currency_id, quantity: i.quantity })), payments: (o.payments ?? []).map((p: any) => ({ id: p.id, transaction_amount: p.transaction_amount, total_paid_amount: p.total_paid_amount, currency_id: p.currency_id, status: p.status })) };
-          }
-          console.log('MP DIAG compra', reservaId, JSON.stringify(diag));
-        } catch (e) {
-          console.error('MP DIAG error', e instanceof Error ? e.message : e);
-        }
-      }
       if (compraRow.length) {
         await confirmarCompra(sql, pago, String(paymentId), reservaId, compraRow[0]);
         return new Response('ok', { status: 200 });
@@ -357,7 +334,16 @@ async function confirmarCompra(sql: any, pago: any, paymentId: string, reservaId
   const monedaPagada: string | null = pago.currency_id ?? null;
   const cuotas = Number.isInteger(pago.installments) ? Number(pago.installments) : null;
 
-  if (esperado == null || pagado == null || !mismoMonto(pagado, esperado) || monedaPagada !== monedaEsperada) {
+  const okDirecto =
+    esperado != null && pagado != null && mismoMonto(pagado, esperado) && monedaPagada === monedaEsperada;
+  // Club Premium (precio en dólares) cobrado en PESOS: Mercado Pago convierte al
+  // tipo de cambio que aplique (decisión de Sebas, 25-nov). Ver pagoConvertidoValido.
+  const convertido =
+    !okDirecto && monedaEsperada === 'USD' && monedaPagada === 'UYU' && esperado != null && pagado != null
+      ? await pagoConvertidoValido(pago, c, esperado, pagado, reservaId)
+      : false;
+
+  if (!okDirecto && !convertido) {
     console.error(
       `MP webhook: compra con monto/moneda distinto (esperado ${esperado} ${monedaEsperada}, pagado ${pagado} ${monedaPagada}) reserva ${reservaId} — no se confirma`
     );
@@ -398,11 +384,52 @@ async function confirmarCompra(sql: any, pago: any, paymentId: string, reservaId
     nombre: c.nombre,
     telefono: c.telefono,
     email: c.email,
-    monto: formatMonto(pagado, monedaPagada),
+    monto: formatMonto(pagado as number, monedaPagada),
+    nota: convertido ? `${formatMonto(esperado as number, monedaEsperada)} convertido por Mercado Pago` : null,
     via: 'mercadopago',
     cuotas,
     esPaquete: String(c.producto).startsWith(PAQUETE_ID),
   });
+}
+
+/**
+ * Pago en PESOS de una compra con precio en DÓLARES (Club Premium): Mercado Pago
+ * cobra en UYU al tipo de cambio que aplique y el pago NO trae el monto en USD
+ * (probado 25-nov: currency_id UYU, transaction_amount en pesos). Sin un monto
+ * original no se puede comparar 1 a 1, así que se valida que el pago salió de
+ * NUESTRA preferencia, cuyo precio fijó el servidor y la paciente no puede tocar:
+ *  1. La orden de MP del pago apunta a la preferencia guardada en la reserva.
+ *  2. Los ítems del pago (additional_info, copiados de esa preferencia) suman el
+ *     precio esperado en dólares.
+ *  3. Piso de cordura en pesos: al menos TC_MINIMO pesos por dólar. No es un tipo
+ *     de cambio (no se publica ni se cobra); solo descarta un monto absurdo.
+ * Un pago armado por fuera (otro link, otro monto) no pasa el punto 1.
+ */
+const TC_MINIMO = 25;
+
+async function pagoConvertidoValido(pago: any, c: any, esperadoUsd: number, pagadoUyu: number, reservaId: string): Promise<boolean> {
+  try {
+    const prefGuardada = c.mp_preference_id ? String(c.mp_preference_id) : null;
+    const orden = pago.order?.id ? await obtenerOrden(String(pago.order.id)) : null;
+    const deNuestraPreferencia = !!prefGuardada && !!orden && String(orden.preference_id) === prefGuardada;
+
+    const items: any[] = Array.isArray(pago.additional_info?.items) ? pago.additional_info.items : [];
+    const sumaItems = items.reduce((t, i) => t + Number(i.unit_price) * (Number(i.quantity) || 1), 0);
+    const itemsOk = items.length > 0 && mismoMonto(sumaItems, esperadoUsd);
+
+    const pisoOk = pagadoUyu >= esperadoUsd * TC_MINIMO;
+
+    const ok = deNuestraPreferencia && itemsOk && pisoOk;
+    console.log(
+      `MP webhook: compra en USD cobrada en UYU reserva ${reservaId}: ${pagadoUyu} UYU por ${esperadoUsd} USD ` +
+        `(preferencia ${deNuestraPreferencia ? 'ok' : 'NO coincide'}, ítems ${itemsOk ? 'ok' : `NO (${sumaItems})`}, ` +
+        `piso ${pisoOk ? 'ok' : 'NO'}, counter_currency ${JSON.stringify(pago.counter_currency ?? null)}) → ${ok ? 'se confirma' : 'no se confirma'}`
+    );
+    return ok;
+  } catch (e) {
+    console.error('MP webhook: no se pudo validar el pago convertido:', e instanceof Error ? e.message : e);
+    return false;
+  }
 }
 
 // MercadoPago a veces hace un GET de verificación al registrar la URL.
