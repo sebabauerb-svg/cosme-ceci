@@ -159,3 +159,12 @@ export async function obtenerPago(paymentId: string): Promise<any | null> {
   if (!res.ok) return null;
   return res.json();
 }
+
+/** Consulta una orden (merchant order) por id: trae la preferencia y sus ítems. null si no se pudo. */
+export async function obtenerOrden(orderId: string): Promise<any | null> {
+  const res = await fetch(`${MP_API}/merchant_orders/${encodeURIComponent(orderId)}`, {
+    headers: { Authorization: `Bearer ${accessToken()}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}

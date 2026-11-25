@@ -109,6 +109,30 @@ export const POST: APIRoute = async ({ request }) => {
         select producto, producto_nombre, moneda, monto_esperado, nombre, telefono, email
           from reservas where id = ${reservaId} and producto is not null and producto not like 'sesion:%'
       `) as any[];
+      if (compraRow.length && process.env.VERCEL_ENV === 'preview') {
+        // DIAGNÓSTICO TEMPORAL (solo preview): qué trae MP cuando la preferencia
+        // es en USD y cobra en pesos. Solo campos de montos; nada de la pagadora.
+        try {
+          const it = (pago.additional_info?.items ?? []).map((i: any) => ({ unit_price: i.unit_price, currency_id: i.currency_id, quantity: i.quantity }));
+          const diag: any = {
+            keys: Object.keys(pago),
+            currency_id: pago.currency_id, transaction_amount: pago.transaction_amount,
+            transaction_details: pago.transaction_details, installments: pago.installments,
+            order: pago.order, metadata: pago.metadata, items: it,
+            currency_conversion: pago.currency_conversion, exchange_rate: pago.exchange_rate,
+            fee_details: pago.fee_details, charges_details: (pago.charges_details ?? []).map((c: any) => ({ name: c.name, type: c.type, amounts: c.amounts })),
+            point_of_interaction_type: pago.point_of_interaction?.type,
+          };
+          if (pago.order?.id) {
+            const { obtenerOrden } = await import('../../../lib/mercadopago');
+            const o = await obtenerOrden(String(pago.order.id));
+            if (o) diag.orden = { preference_id: o.preference_id, total_amount: o.total_amount, paid_amount: o.paid_amount, items: (o.items ?? []).map((i: any) => ({ unit_price: i.unit_price, currency_id: i.currency_id, quantity: i.quantity })), payments: (o.payments ?? []).map((p: any) => ({ id: p.id, transaction_amount: p.transaction_amount, total_paid_amount: p.total_paid_amount, currency_id: p.currency_id, status: p.status })) };
+          }
+          console.log('MP DIAG compra', reservaId, JSON.stringify(diag));
+        } catch (e) {
+          console.error('MP DIAG error', e instanceof Error ? e.message : e);
+        }
+      }
       if (compraRow.length) {
         await confirmarCompra(sql, pago, String(paymentId), reservaId, compraRow[0]);
         return new Response('ok', { status: 200 });
