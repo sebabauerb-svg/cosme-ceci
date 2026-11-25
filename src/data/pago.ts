@@ -68,13 +68,15 @@ export const anticipacionH = (sede?: string | null): number =>
  *
  * Regla de Sebas (nov-2026): el precio publicado es el de transferencia; con
  * Mercado Pago se suma un 10%, que cubre la comisión y la financiación de las
- * cuotas (Ceci absorbe ~7,5%; la paciente no paga interés aparte). El texto solo
- * ofrece la POSIBILIDAD de pagar en cuotas: no hablar de interés ni de "sin interés".
+ * cuotas (Ceci absorbe ~7,5%; la paciente no paga interés aparte).
+ * Por ahora NO se mencionan cuotas: en la cuenta de MP de Ceci todavía no
+ * aparecen (25-nov). Cuando aparezcan: "con opción de pagar hasta en 3 cuotas",
+ * sin hablar de interés.
  * (Reemplaza al "10% de descuento por transferencia".)
  */
 export const formasDePago = {
   transferencia: 'Transferencia bancaria: el precio publicado',
-  cuotas: 'Mercado Pago: precio publicado + 10%, con opción de pagar hasta en 3 cuotas',
+  cuotas: 'Mercado Pago: precio publicado + 10%',
 };
 
 /** ¿Hay datos bancarios cargados como para mostrarlos en la web? */

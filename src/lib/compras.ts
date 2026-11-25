@@ -9,7 +9,8 @@
  *  - Transferencia: el precio publicado (de lista).
  *  - Mercado Pago: precio publicado + 10%, que cubre la comisión y la
  *    financiación de las cuotas (Ceci absorbe ~7,5%; la paciente no paga
- *    interés aparte). Los textos solo dicen "hasta en 3 cuotas".
+ *    interés aparte). Los textos no mencionan cuotas hasta que aparezcan
+ *    en la cuenta de MP de Ceci (src/data/pago.ts).
  *  - La seña de los turnos NO lleva recargo (a confirmar con Sebas).
  *
  * Todo esto arranca APAGADO: sin PAGO_MEMBRESIAS_ACTIVO la web se comporta como
