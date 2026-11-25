@@ -47,6 +47,7 @@ import { formasDePago } from '../data/pago';
             <ul class="club__pago">
               <li>{formasDePago.transferencia}</li>
               <li>{formasDePago.cuotas}</li>
+              {p.moneda === 'USD' && <li>{formasDePago.enPesosMp}</li>}
             </ul>
             <a href={`/reservar?modalidad=${p.modalidadId}`} class="btn btn--primary">
               {club.cta}<span class="sr-only"> al {p.nombre}</span>

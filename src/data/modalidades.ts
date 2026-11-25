@@ -93,7 +93,7 @@ export const modalidades: Modalidad[] = [
     descripcion: '',
     alcance: '',
     precio: 'U$S 200 / año',
-    precioNota: 'Por transferencia, el precio publicado. Con Mercado Pago, +10% y la opción de pagar hasta en 3 cuotas',
+    precioNota: 'Por transferencia, el precio publicado. Con Mercado Pago, +10%, en pesos al tipo de cambio de Mercado Pago y con opción de pagar hasta en 3 cuotas',
     ctaTexto: 'Sumarme',
   },
 ];
